@@ -19,6 +19,26 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
     cluster_class = data.cluster_class;
     waveforms = double(data.spikes);
     features = double(data.inspk);
+    if ~isempty(features)
+    
+        % 1. Calculate the mean (mu) and standard deviation (sigma) of all features
+        % mean(..., 1) calculates the mean down the columns (per feature)
+        feat_mean = mean(features, 1);
+        feat_std = std(features, 0, 1);
+        
+        % 2. CRITICAL: Handle features with zero standard deviation (constant features)
+        % Replace 0 std with a tiny value (eps) to prevent division by zero
+        feat_std(feat_std == 0) = eps;
+        
+        % 3. Apply Z-Score Normalization (Features = (Features - mu) / sigma)
+        % MATLAB's bsxfun is ideal for broadcasting the subtraction and division
+        features = bsxfun(@rdivide, bsxfun(@minus, features, feat_mean), feat_std);
+        
+        % Alternative for R2017a+ (more readable)
+        % features = (features - feat_mean) ./ feat_std;
+        
+        fprintf('DEBUG: Successfully Z-Score normalized %d features.\n', size(features, 2));
+    end
 
     if ~isfield(data,'filename') || isempty(data.filename)
         if isfield(data,'fullpath') && ~isempty(data.fullpath)
@@ -459,66 +479,88 @@ function fraction_missing = amplitude_cutoff(waveforms, num_histogram_bins, hist
     fraction_missing = min(fraction_missing, 0.5);
 end
 function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, target_cluster)
-% MAHALANOBIS_METRICS - Compute isolation distance and L-ratio
+    % ... (Initial checks and splitting are correct) ...
     
-    if size(features, 1) ~= length(labels)
-        error('features and labels must have same length');
-    end
-    
-    % split target vs others
     target_mask = (labels == target_cluster);
-    if ~any(target_mask)
-        error('Cluster %d not found', target_cluster);
-    end
-    
     pcs_for_this = features(target_mask, :);
     pcs_for_other = features(~target_mask, :);
     
     n_self = size(pcs_for_this, 1);
     n_other = size(pcs_for_other, 1);
     
-    % need at least 2 in each group to be meaningful
     if n_self < 2 || n_other < 1
         isolation_distance = NaN;
         l_ratio = NaN;
+        fprintf('DEBUG C%d: Too few spikes. n_self=%d, n_other=%d\n', target_cluster, n_self, n_other);
         return;
     end
     
-    % cluster mean
     mean_val = mean(pcs_for_this, 1);
+    dof = size(pcs_for_this, 2); % #features
     
-    % covariance of cluster
+    % --- Robust Covariance Calculation and Regularization ---
     try
         cov_matrix = cov(pcs_for_this);
-        VI = inv(cov_matrix);
-    catch
-        % singular covariance
+        
+        % CRITICAL FIX: Diagonal Loading 
+        min_variance_threshold = 1e-6; % Must be > 0.
+        
+        diag_cov = diag(cov_matrix);
+        
+        % PRINT 1: Check the minimum variance before regularization
+        fprintf('DEBUG C%d: Min variance before regularization: %e\n', target_cluster, min(diag_cov));
+
+        small_variance_mask = (diag_cov < min_variance_threshold);
+        
+        if any(small_variance_mask)
+             % Add the threshold to all small-variance dimensions
+             % Note: This is a simplified way to apply diagonal loading.
+             cov_matrix(small_variance_mask, small_variance_mask) = ...
+                 cov_matrix(small_variance_mask, small_variance_mask) + ...
+                 min_variance_threshold * eye(sum(small_variance_mask));
+             fprintf('DEBUG C%d: Applied diagonal loading to %d features.\n', target_cluster, sum(small_variance_mask));
+        end
+
+        VI = pinv(cov_matrix);
+        
+        % PRINT 2: Check the condition number of the final matrix
+        cond_num = cond(cov_matrix);
+        %fprintf('DEBUG C%d: Condition Number (cond()): %e\n', target_cluster, cond_num);
+
+    catch ME
+        % PRINT 3: Report crash during matrix inversion
+        fprintf('DEBUG C%d: CRASH in pinv/cov. Error: %s\n', target_cluster, ME.message);
         isolation_distance = NaN;
         l_ratio = NaN;
         return;
     end
     
-    % mahalanobis distances from cluster mean to *other* spikes
-    mahal_other = pdist2(mean_val, pcs_for_other, 'mahalanobis', VI);
-    mahal_other = sort(mahal_other);
+    % --- Metric Calculation ---
+
+    % Calculate Mahalanobis DISTANCE (D) to *other* spikes
+    mahal_other_dist = pdist2(mean_val, pcs_for_other, 'mahalanobis', VI);
     
-    % mahalanobis distances from cluster mean to *self* spikes  
-    mahal_self = pdist2(mean_val, pcs_for_this, 'mahalanobis', VI);
-    mahal_self = sort(mahal_self);
+    % Convert to SQUARED Mahalanobis Distance (delta^2)
+    delta2_other = mahal_other_dist.^2;
+
+    delta2_other_sorted = sort(delta2_other);
     
-    % n = min(self, other)
     n = min(n_self, n_other);
-    dof = size(pcs_for_this, 2); % #features
     
     % L-ratio: sum over OTHER, divided by size of THIS cluster
-    l_ratio = sum(1 - chi2cdf(mahal_other.^2, dof)) / n_self;
+    p_values = chi2cdf(delta2_other, dof, 'upper');
+    l_ratio = sum(p_values) / double(n_self);
     
-    % Isolation distance: squared distance to n-th closest OTHER spike
+    % Isolation distance: n-th element of the sorted SQUARED distances
     if n >= 1
-        isolation_distance = (mahal_other(n))^2;
+        isolation_distance = delta2_other_sorted(n);
     else
         isolation_distance = NaN;
     end
+    
+    % PRINT 4: Report calculated metrics
+    fprintf('DEBUG C%d: FINAL ID: %e | FINAL L_ratio: %e\n', target_cluster, isolation_distance, l_ratio);
+
 end
 
 function dprime = d_prime_lda(features, cluster_labels, target_cluster)

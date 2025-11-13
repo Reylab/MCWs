@@ -1,5 +1,5 @@
 function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
-% MAKE_CLUSTER_REPORT - MATLAB port to match Python plotting layout
+    % MAKE_CLUSTER_REPORT - MATLAB port to match Python plotting layout
     p = inputParser;
     addParameter(p, 'calc_metrics', false, @islogical);
     addParameter(p, 'metrics_df', [], @(x) isempty(x) || istable(x));
@@ -14,9 +14,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     addParameter(p, 'show_figures', false, @islogical);
     parse(p, varargin{:});
 
-    % Ensure all figures created inside use the requested visibility.
-    % Use root DefaultFigureVisible so even figure() calls without explicit
-    % 'Visible' follow the flag.
+    % --- Setup ---
     if p.Results.show_figures
         visstr = 'on';
     else
@@ -24,15 +22,10 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     end
     origDefault = get(0, 'DefaultFigureVisible');
     set(0, 'DefaultFigureVisible', visstr);
-
-    % make sure we restore the original DefaultFigureVisible on exit
     cleanupObj = onCleanup(@() set(0, 'DefaultFigureVisible', origDefault));
-
-    % Validate data
     if ~isstruct(data) || ~isfield(data,'cluster_class') || ~isfield(data,'spikes') || ~isfield(data,'inspk')
         error('data must contain cluster_class, spikes, inspk');
     end
-
     cluster_class = data.cluster_class;
     waveforms = double(data.spikes);
     features = double(data.inspk);
@@ -40,8 +33,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     spike_times_ms = double(cluster_class(:,2));
     unique_clusters = unique(cluster_ids);
     recording_duration_ms = max(spike_times_ms);
-
-    % Compute metrics if requested
     if p.Results.calc_metrics
         [df_metrics, SS] = compute_cluster_metrics(data, 'exclude_cluster_0', p.Results.exclude_cluster_0, ...
             'n_neighbors', p.Results.n_neighbors, 'bin_duration', p.Results.bin_duration_ms, 'make_plots', false);
@@ -52,26 +43,32 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             error('If calc_metrics=false, you must provide metrics_df and SS');
         end
     end
-
-    % plotting helpers
     figs = {};
-    % color list
     leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; 0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; 0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
-
-    % Build pages (first column summary + per-cluster columns)
+    
+    % --- Paging Logic ---
     pages = {};
     K = numel(unique_clusters);
     for i = 1:p.Results.clusters_per_page:K
         pages{end+1} = unique_clusters(i:min(i+p.Results.clusters_per_page-1,K));
     end
 
-    % Summary + per-page plotting
+    % --- Summary + per-page plotting ---
     for page_i = 1:length(pages)
         page = pages{page_i};
+
+        % Reorder page 1 to put cluster 0 last
+        if page_i == 1
+            idx_0 = find(page == 0, 1);
+            if ~isempty(idx_0)
+                page(idx_0) = []; 
+                page(end+1) = 0;
+            end
+        end
+
         nclusters_on_page = numel(page);
         ncols = 1 + nclusters_on_page; % 1 summary + clusters
 
-        % determine visibility string
         if p.Results.show_figures
             visstr = 'on';
         else
@@ -103,6 +100,10 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 end
                 title(ax1, sprintf('Means (total n = %d)', total_spikes));
                 xlabel(ax1, xlabel_str); ylabel(ax1,'Amplitude'); grid(ax1,'on');
+                
+                % Style Update (Match Python)
+                box(ax1, 'off');
+                set(ax1, 'GridAlpha', 0.25, 'LineWidth', 0.8);
 
                 % presence KDE (row2)
                 ax2 = subplot(3, ncols, ncols+1);
@@ -111,15 +112,24 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 % SNR bar (row3)
                 ax3 = subplot(3, ncols, 2*ncols+1);
                 if istable(df_metrics) && all(ismember({'cluster_id','snr'}, df_metrics.Properties.VariableNames))
-                    [~,order] = ismember(unique_clusters, df_metrics.cluster_id);
-                    snrs = nan(size(unique_clusters));
-                    for ii=1:numel(unique_clusters)
-                        idx = find(df_metrics.cluster_id==unique_clusters(ii),1);
-                        if ~isempty(idx), snrs(ii) = df_metrics.snr(idx); end
-                    end
-                    bar(ax3, 1:numel(unique_clusters), snrs, 'FaceColor',[0.2 0.2 0.8]);
-                    set(ax3, 'XTick', 1:numel(unique_clusters), 'XTickLabel', arrayfun(@(c)sprintf('C%d',c), unique_clusters, 'UniformOutput',false), 'XTickLabelRotation',90);
-                    ylabel(ax3,'SNR'); title(ax3,'SNR by cluster');
+                    [lia, ~] = ismember(df_metrics.cluster_id, unique_clusters);
+                    table_clusters = df_metrics.cluster_id(lia);
+                    table_snrs = df_metrics.snr(lia);
+                    
+                    [~, color_indices] = ismember(table_clusters, unique_clusters);
+                    bar_colors = leicolors(mod(color_indices-1, size(leicolors,1))+1, :);
+
+                    % --- FIX START: Use h.CData instead of ax3.CData ---
+                    h = bar(ax3, 1:numel(table_clusters), table_snrs, 'FaceColor', 'flat', 'BarWidth', 0.9);
+                    h.CData = bar_colors; 
+                    % --- FIX END ---
+                    
+                    set(ax3, 'XTick', 1:numel(table_clusters), 'XTickLabel', arrayfun(@(c)sprintf('C%d',c), table_clusters, 'UniformOutput',false), 'XTickLabelRotation',90);ylabel(ax3,'SNR'); title(ax3,'SNR by cluster');
+                    
+                    % Style Update (Match Python)
+                    box(ax3, 'off');
+                    grid(ax3, 'on');
+                    set(ax3, 'GridAlpha', 0.25, 'LineWidth', 0.8, 'XGrid', 'off');
                 else
                     text(ax3,0.5,0.5,'metrics_df missing (cluster_id,snr)','HorizontalAlignment','center');
                     axis(ax3,'off');
@@ -136,14 +146,14 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 end
                 n_here = size(W,1);
                 take = min(p.Results.max_waveforms_per_cluster, n_here);
-                rng = RandStream('mlfg6331_64'); inds = 1:n_here;
+                rng = RandStream('mlfg6331_64'); % Use fixed-seed stream
                 if n_here > take
                     idx = randperm(rng, n_here, take);
                 else
                     idx = 1:n_here;
                 end
                 hold(axW,'on');
-                colc = leicolors(mod(find(unique_clusters==cid)-1,size(leicolors,1))+1,:);
+                colc = leicolors(mod(find(unique_clusters==cid, 1)-1,size(leicolors,1))+1,:);
                 if ~isempty(p.Results.samplerate_hz)
                     tvec = (0:size(W,2)-1)/p.Results.samplerate_hz*1000;
                     xlabel_str = 'Time (ms)';
@@ -151,12 +161,16 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     tvec = 1:size(W,2);
                     xlabel_str = 'Samples';
                 end
-                plot(axW, tvec, W(idx,:)', 'Color', [colc, 0.1], 'LineWidth', 0.5);
-                plot(axW, tvec, mean(W,1), 'Color', colc, 'LineWidth', 2);
+                plot(axW, tvec, W(idx,:)', 'Color', [colc, 0.15], 'LineWidth', 0.8); % Python alpha=0.15, lw=0.8
+                plot(axW, tvec, mean(W,1), 'Color', 'k', 'LineWidth', 2.4); % Python color='k', lw=2.4
                 title(axW, sprintf('Cluster %d (n=%d)', cid, sum(mask)), 'FontSize', 10);
                 xlabel(axW, xlabel_str);
                 ylabel(axW, 'Amplitude');
                 grid(axW, 'on');
+
+                % Style Update (Match Python)
+                box(axW, 'off');
+                set(axW, 'GridAlpha', 0.25, 'LineWidth', 0.8);
 
                 % Density image (row2) - match Python layout
                 axD = subplot(3,ncols, col + ncols);
@@ -164,7 +178,8 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
 
                 % ISI histogram (row3)
                 axI = subplot(3,ncols, col + 2*ncols);
-                plot_isi_histogram(spike_times_ms(mask), p.Results.refractory_ms, colc);
+                % Note: Hardcoding line_freq=60Hz. Change if needed.
+                plot_isi_histogram(spike_times_ms(mask), p.Results.refractory_ms, 60, colc);
             end
         end
 
@@ -174,28 +189,58 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
 
     % Metrics overview page
     if ~isempty(df_metrics) && ~isempty(SS)
-        fig_metrics = create_metrics_overview_page(df_metrics, SS, p.Results.show_figures);
+        fig_metrics = create_metrics_overview_page(df_metrics, SS, p.Results.show_figures, leicolors);
         figs{end+1} = fig_metrics;
     end
 
     fprintf('Generated %d figure pages for cluster report\n', length(figs));
 end
 
-function plot_isi_histogram(spike_times, refractory_ms, color)
-% PLOT_ISI_HISTOGRAM - Plot ISI distribution with violations
+function plot_isi_histogram(spike_times, refractory_ms, line_freq, color)
+    % PLOT_ISI_HISTOGRAM - Plot ISI distribution with violations (Python Style)
+    ax = gca; % Get the current axes handle
+    
     times_sorted = sort(spike_times);
     isi_ms = diff(times_sorted);
     isi_ms = isi_ms(isi_ms >= 0 & isfinite(isi_ms));
     
     if ~isempty(isi_ms)
+        % Binning (Match Python: 2ms bins up to 100ms)
         nbins = 50;
-        histogram(isi_ms, nbins, 'FaceColor', color, 'EdgeColor', 'none');
+        bin_step = 2;
+        ISI_max_ms = nbins * bin_step;
+        bin_edges = 0:bin_step:ISI_max_ms;
+        
+        [n, c] = histcounts(isi_ms, bin_edges);
+        
+        % Plot using bar
+        bar(ax, c(1:end-1) + (bin_step/2), n, 'EdgeColor', 'none','FaceColor',color, 'BarWidth', 1);
+        
+        hold(ax, 'on');
+        % Add line_freq lines (if any)
+        if ~isempty(line_freq) && line_freq > 0
+            line_period_ms = 1000 / line_freq; 
+            for i_freq = 1:floor(ISI_max_ms / line_period_ms)
+                interval = i_freq * line_period_ms;
+                line([interval, interval], ylim(ax), 'LineWidth', 0.8, 'LineStyle', ':', 'Color', 'r');
+            end
+        end
+        hold(ax, 'off');
+        
+        % Formatting (Match Python)
+        xlim(ax, [0 ISI_max_ms]);
         n_viol = sum(isi_ms < refractory_ms);
-        title(sprintf('ISI: %d < %dms', n_viol, refractory_ms), 'FontSize', 10);
-        xlabel('ISI (ms)');
-        grid on;
+        title(ax, sprintf('%d in < %.1fms', n_viol, refractory_ms), 'FontSize', 10);
+        xlabel(ax, 'ISI (ms)');
+        ylabel(ax, 'Count');
+        box(ax, 'off');
+        grid(ax, 'on');
+        set(ax, 'GridAlpha', 0.25, 'LineWidth', 0.8);
+        set(ax, 'TickDir', 'out');
+
     else
-        title('No ISIs', 'FontSize', 10);
+        title(ax, 'No ISIs', 'FontSize', 10);
+        axis(ax, 'off');
     end
 end
 
@@ -212,8 +257,8 @@ function plot_cluster_metrics_summary(df_metrics, cluster_id, color)
     axis off;
 end
 
-function fig = create_metrics_overview_page(df_metrics, SS, show_figures)
-% CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
+function fig = create_metrics_overview_page(df_metrics, SS, show_figures, leicolors)
+    % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
     if show_figures
         fig = figure('Visible', 'on', 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
     else
@@ -224,6 +269,18 @@ function fig = create_metrics_overview_page(df_metrics, SS, show_figures)
     exclude = {'cluster_id', 'snr', 'SNR', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
     cols = df_metrics.Properties.VariableNames;
     metrics_cols = cols(~ismember(cols, exclude));
+
+    all_unique_clusters = unique(df_metrics.cluster_id); 
+    
+    % Check for the presence of Cluster 0. If it's excluded from df_metrics, 
+    % we adjust the index lookup to skip the first color (black).
+    if ismember(0, all_unique_clusters)
+        % If C0 IS in df_metrics (unlikely, but safe), colors are 1-based index
+        cluster_list_for_colors = all_unique_clusters;
+    else
+        % If C0 is NOT in df_metrics (typical for metrics), skip the index 0 -> color 1 (black)
+        cluster_list_for_colors = df_metrics.cluster_id; % [1, 2, 3, 4, 5, ...]
+    end
 
     n_metrics = numel(metrics_cols);
     cols_per_row = 6;
@@ -236,10 +293,36 @@ function fig = create_metrics_overview_page(df_metrics, SS, show_figures)
             if idx <= n_metrics
                 ax = subplot(n_rows, cols_per_row, (r-1)*cols_per_row + c);
                 y = df_metrics{:, metrics_cols{idx}};
-                bar(ax, (1:height(df_metrics)), y, 'FaceColor', [0.2 0.4 0.7]);
+                
+                % Use cluster colors
+                num_bars = height(df_metrics);
+                bar_colors_rep = zeros(num_bars, 3);
+                
+                % Find the index of each cluster_id in the *full* cluster list (which defines leicolors)
+                % We need the index of 'df_metrics.cluster_id' relative to 'all_unique_clusters'
+                
+                % We need a reference list of ALL cluster IDs in the data, including 0,
+                % to use the indices of the leicolors array.
+                % Since we don't have the original 'unique_clusters' here, let's assume
+                % that C1 maps to leicolors(2,:), C2 maps to leicolors(3,:), etc., 
+                % *if* C0 is excluded from df_metrics.
+                
+                % Get the indices relative to the cluster ID (1 is C1, 2 is C2, etc.)
+                % Since C0 (ID 0) is index 1 (black), C1 (ID 1) is index 2.
+                % The actual color index in leicolors is (cluster_id + 1).
+                
+                color_indices = df_metrics.cluster_id + 1;
+                
+                % Ensure no index is out of bounds
+                valid_indices = color_indices(color_indices <= size(leicolors, 1));
+                bar_colors_rep(1:numel(valid_indices), :) = leicolors(valid_indices, :);
+
+                h = bar(ax, (1:num_bars), y, 'FaceColor', 'flat', 'BarWidth', 0.9);
+                h.CData = bar_colors_rep; % This sets the individual bar colors
+
                 if r == n_rows
-                    xticks(ax, 1:height(df_metrics));
-                    xticklabels(ax, arrayfun(@(x)sprintf('c%d', df_metrics.cluster_id(x)), 1:height(df_metrics), 'UniformOutput',false));
+                    xticks(ax, 1:num_bars);
+                    xticklabels(ax, arrayfun(@(x)sprintf('c%d', df_metrics.cluster_id(x)), 1:num_bars, 'UniformOutput',false));
                     xtickangle(ax, 90);
                 else
                     set(ax, 'XTick', []);
@@ -247,6 +330,11 @@ function fig = create_metrics_overview_page(df_metrics, SS, show_figures)
                 ylabel(ax, metrics_cols{idx});
                 title(ax, metrics_cols{idx}, 'Interpreter', 'none');
                 grid(ax, 'on');
+
+                % Style Update (Match Python)
+                box(ax, 'off');
+                set(ax, 'GridAlpha', 0.3, 'LineWidth', 0.8, 'XGrid', 'off');
+                
                 axes_handles(r,c) = ax;
                 idx = idx + 1;
             else
@@ -265,17 +353,44 @@ function fig = create_metrics_overview_page(df_metrics, SS, show_figures)
             axis(ax_sil,'off');
         else
             S = SS;
-            STri = tril(true(size(S)), -1); % show lower triangle to match python masking of upper
+            
+            % 1. MATLAB Equivalent of S = np.where(np.isnan(SS), SS.T, SS) 
+            %    Ensures symmetry by filling NaNs with the transpose value.
+            for i = 1:size(S, 1)
+                for j = 1:size(S, 2)
+                    if isnan(S(i, j)) && ~isnan(S(j, i))
+                        S(i, j) = S(j, i);
+                    end
+                end
+            end
+            
+            % 2. MATLAB Equivalent of np.fill_diagonal(S, np.nan)
+            S(1:size(S,1)+1:end) = NaN; 
+            
+            % 3. MATLAB Equivalent of mask = np.triu(np.ones_like(S, dtype=bool))
+            %    and then plotting with mask=mask, which hides the masked area.
+            %    In MATLAB's imagesc, we must explicitly set the masked area 
+            %    (the upper triangle) to NaN.
+            mask_upper_tri = triu(true(size(S)), 1); % Upper triangle, excluding diagonal
+            S(mask_upper_tri) = NaN; % Set the upper triangle to NaN
+            
+            cluster_labels = arrayfun(@(x)sprintf('c%d', x), df_metrics.cluster_id, 'UniformOutput', false);
+
+            % Plotting the masked matrix
             imagesc(ax_sil, S, [-1 1]);
-            % Use a MATLAB builtin colormap (parula) instead of 'viridis'
-            colormap(ax_sil, 'parula');
-             colorbar(ax_sil);
-             ax_sil.XTick = 1:size(S,1);
-             ax_sil.YTick = 1:size(S,1);
-             ax_sil.XTickLabel = arrayfun(@(x)sprintf('c%d', x), 1:size(S,1), 'UniformOutput', false);
-             ax_sil.YTickLabel = ax_sil.XTickLabel;
-             title(ax_sil, 'Silhouette Score Heatmap');
-         end
+            colormap(ax_sil, 'parula'); % 'parula' is MATLAB's 'viridis'
+            cb = colorbar(ax_sil);
+            cb.Label.String = 'Silhouette Score';
+
+            ax_sil.XTick = 1:size(S,2);
+            ax_sil.YTick = 1:size(S,1);
+            ax_sil.XTickLabel = cluster_labels;
+            ax_sil.YTickLabel = cluster_labels;
+            xtickangle(ax_sil, 90);
+            title(ax_sil, 'Silhouette Score Heatmap');
+            axis(ax_sil, 'equal', 'tight'); % Match Python 'square=True'
+            box(ax_sil, 'off');
+        end
     end
 
     sgtitle('Cluster Metrics Overview', 'FontSize', 14);
@@ -287,7 +402,7 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
     p = inputParser;
     addParameter(p, 'w', 400, @isscalar);
     addParameter(p, 'h', 240, @isscalar);
-    addParameter(p, 'cmap', 'inferno', @ischar);
+    addParameter(p, 'cmap', 'inferno', @ischar); % Use 'inferno' to match Python
     parse(p, varargin{:});
 
     if isempty(W)
@@ -297,15 +412,20 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
     [n, T] = size(W);
     x_min = 0; x_max = T-1;
     y_min = min(W(:)); y_max = max(W(:));
-    if y_min == y_max
-        y_min = y_min - 1; y_max = y_max + 1;
-    end
+    
+    % Add padding to y-axis (matches Python)
+    pad = 1e-6 * (y_max - y_min);
+    if pad == 0, pad = 1e-6; end
+    y_min = y_min - pad; y_max = y_max + pad;
 
     x_edges = linspace(x_min, x_max, p.Results.w+1);
     y_edges = linspace(y_min, y_max, p.Results.h+1);
 
-    % interpolate each waveform to higher temporal resolution
-    Ti = max(2, min(T * 20, p.Results.w));
+    % --- 1. MATCH PYTHON INTERPOLATION ---
+    % Use the 200x interpolation factor from the Python default
+    interpolation_factor = 200; 
+    Ti = max(2, min(T * interpolation_factor, p.Results.w));
+    
     x_orig = 0:(T-1);
     x_hi = linspace(x_min, x_max, Ti);
     hi = zeros(n, Ti);
@@ -319,29 +439,72 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
     t_flat = t_flat(:);
 
     H = histcounts2(t_flat, a_flat, x_edges, y_edges);
+    
+    % --- 2. MATCH PYTHON DENSITY CALC ---
+    % Transpose H to H' to match Python's H.T
     D = H' ./ (numel(t_flat) * mean(diff(x_edges)) * mean(diff(y_edges)));
-    % plot (use log scaling for visual dynamic range)
+    
+    % --- 3. MATCH PYTHON LOG SCALING (THE CRITICAL FIX) ---
+    
+    % a) Data to plot: log10(D). This is the MATLAB equivalent of
+    %    plotting D with a LogNorm color scale.
+    D_log = log10(D + eps); 
+
+    % b) Calculate caxis limits based on Python's LogNorm logic:
+    %    vmin = log10( max( smallest non-zero D, 1e-12 ) )
+    %    vmax = log10( max(D) )
+    
+    D_pos = D(D>0);
+    if isempty(D_pos), D_pos = 1; end % Safety for empty arrays
+    
+    vmin_log = log10(max(min(D_pos), 1e-12));
+    vmax_log = log10(max(D(:)));
+
+    % Safety check if all data is zero
+    if vmax_log <= vmin_log, vmax_log = vmin_log + 1; end 
+    
     axes(ax);
-    imagesc(ax, [x_min x_max], [y_min y_max], log10(D + eps));
-    set(ax, 'YDir','normal');
+    % Plot the log-scaled data
+    imagesc(ax, [x_min x_max], [y_min y_max], D_log);
+    set(ax, 'YDir', 'normal');
+
+    % --- 4. MATCH PYTHON COLORMAP & STYLE ---
+    try
+        % 'inferno' is available in MATLAB R2017a+
+        colormap(ax, p.Results.cmap); 
+    catch
+        % 'hot' is a great Black-Red-Yellow-White fallback
+        colormap(ax, 'hot'); 
+    end
+
+    % Apply the caxis limits derived from Python's LogNorm
+    caxis(ax, [vmin_log, vmax_log]);
+
+    % Set background to black to match ax.set_facecolor("black")
+    set(ax, 'Color', 'black');
+    
     if ~isempty(samplerate_hz)
         xlabel(ax, 'Time (ms)');
-        xticks = get(ax,'XTick');
-        set(ax,'XTickLabel', arrayfun(@(x) sprintf('%.0f', x/samplerate_hz*1e3), xticks, 'UniformOutput', false));
+        xticks_data = get(ax,'XTick');
+        set(ax,'XTickLabel', arrayfun(@(x) sprintf('%.0f', x/samplerate_hz*1e3), xticks_data, 'UniformOutput', false));
     else
         xlabel(ax, 'Sample');
     end
-    colormap(ax, parula);
-    axis(ax, 'tight');
-    grid(ax, 'on');
-end
 
-% -----------------------
+    axis(ax, 'tight');
+    
+    % Add grid to match Python ax.grid()
+   % grid(ax, 'on');
+    %set(ax, 'GridColor', [1 1 1], 'GridAlpha', 0.2, 'LineWidth', 0.5);
+    % Hide top/right spines
+    box(ax, 'off');
+    set(ax, 'YColor', [1 1 1], 'XColor', [1 1 1]); % Make ticks/labels white
+end
 % Helper: cluster activity KDE matrix (per-cluster rows)
 function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax, time_pixels, cmapname)
     if nargin < 4, ax = gca; end
     if nargin < 5 || isempty(time_pixels), time_pixels = 100; end
-    if nargin < 6, cmapname = 'parula'; end
+    if nargin < 6, cmapname = 'inferno'; end % Default to 'inferno'
 
     clusters = unique(cluster_ids);
     clusters = sort(clusters,'descend');
@@ -351,12 +514,12 @@ function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_dura
     t_grid_min = linspace(0, T/60000.0, time_pixels); % minutes
     kde_matrix = zeros(K, time_pixels);
 
+    % --- KDE Matrix Calculation (No changes here) ---
     for r = 1:K
         cid = clusters(r);
         t = spike_times_ms(cluster_ids == cid) / 60000.0;
         if numel(t) > 1
             try
-                % ksdensity over t_grid_min
                 [f,xi] = ksdensity(t, t_grid_min);
                 kde_matrix(r,:) = f;
             catch
@@ -374,8 +537,34 @@ function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_dura
     end
 
     axes(ax);
+
+    % --- START: PLOTTING CHANGES TO MATCH PYTHON (Linear Scale) ---
+
+    % 1. Plot the *original* linear kde_matrix
     imagesc(ax, 1:time_pixels, 1:K, kde_matrix);
-    colormap(ax, parula);
+    
+    % 2. Apply the colormap (e.g., 'inferno' passed by the parent)
+    try
+        colormap(ax, cmapname); 
+    catch
+        colormap(ax, 'hot'); % Fallback
+    end
+
+    % 3. Calculate robust LINEAR caxis limits
+    %    Set min to 0 (black) and max to the 98th percentile
+    %    to prevent a few hot spots from washing out the colormap.
+    vmax = quantile(kde_matrix(:), 0.98);
+    if vmax <= 0, vmax = max(kde_matrix(:)); end % Handle sparse data
+    if vmax == 0, vmax = 1; end % Handle all-zero data
+
+    caxis(ax, [0, vmax]);
+    
+    % 4. Apply black background and white text/ticks
+    set(ax, 'Color', 'black');
+    set(ax, 'YColor', [1 1 1], 'XColor', [1 1 1]);
+    
+    % --- END: PLOTTING CHANGES ---
+
     set(ax, 'YTick', 1:K, 'YTickLabel', arrayfun(@(c)sprintf('Cl: %d', c), clusters, 'UniformOutput', false));
     xlabel(ax, 'Time (min)');
     ylabel(ax, 'Presence Plot');

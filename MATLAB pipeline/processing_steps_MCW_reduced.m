@@ -260,7 +260,7 @@ if par.micros
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
 
-        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
+        %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
         compute_metrics_batch('all','parallel',false,'quar',false);
     end
@@ -276,6 +276,10 @@ if par.micros
         % [new_data, ~, metrics, SS] = merge_and_report('times_CH123.mat', [1, 2, 3], ...
         %         'calc_metrics', true, ...
         %         'make_plots', false);
+
+ %% to see former metric plotting        
+        %        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
+
 
     %% reintroduce quarantined spikes
     % see if they match any templates
