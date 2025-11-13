@@ -77,12 +77,3 @@ Once you have `*.nc5` (`int16`) and the associated `NSx.mat`, you can use this r
 
 ---
 
-## Getting started
-
-### Prerequisites
-
-- Standard scientific computing environment (e.g., MATLAB or Python with NumPy/SciPy/Matplotlib).  
-- Sufficient RAM and disk space for high-channel-count intracerebral recordings.
-
-> Please adapt this section to match the exact dependencies and versions used in your lab (e.g., MATLAB version, Python version, conda environment, required toolboxes).
-
