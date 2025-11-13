@@ -1,8 +1,8 @@
 """
 SPC Clustering Module for Spike Sorting Pipeline
-Performs Super-Paramagnetic Clustering on extracted features.
+Performs clustering on extracted features using K-means (primary) or SPC (fallback).
 
-Based on WaveClus SPC clustering implementation.
+FIXED VERSION - Includes K-means clustering for better results
 
 Features:
 - Process all channels or specific channels
@@ -13,7 +13,7 @@ Features:
 - Generates times_*.mat files in WaveClus format
 
 Usage:
-    from Clustering import SPCClustering
+    from core.Clustering import SPCClustering
     
     # Initialize clustering
     clusterer = SPCClustering(input_dir='/path/to/features')
@@ -36,6 +36,11 @@ from scipy.sparse.csgraph import connected_components
 from datetime import datetime
 import warnings
 
+# Scikit-learn imports
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.preprocessing import StandardScaler
+
 warnings.filterwarnings('ignore')
 
 # Try to import WaveClus SPC clustering
@@ -44,12 +49,12 @@ try:
     WAVECLUS_AVAILABLE = True
 except ImportError:
     WAVECLUS_AVAILABLE = False
-    print("Warning: WaveClus not available. Using fallback clustering method.")
+    print("Warning: WaveClus not available. Using K-means clustering method.")
 
 
 class SPCClustering:
     """
-    SPC (Super-Paramagnetic Clustering) for spike sorting.
+    Clustering for spike sorting using K-means (primary) or SPC (fallback).
     
     Processes feature files or spike files with pre-extracted features
     and assigns cluster labels to each spike.
@@ -80,7 +85,7 @@ class SPCClustering:
     
     def __init__(self, input_dir, output_dir=None, times_output_dir=None, min_clus=20, max_clus=20,
                  temperature=0.201, knn=11, generate_times_files=True, verbose=True):
-        """Initialize SPC clustering."""
+        """Initialize clustering."""
         self.input_dir = input_dir
         self.output_dir = output_dir if output_dir else input_dir
         self.verbose = verbose
@@ -90,7 +95,7 @@ class SPCClustering:
         if not os.path.exists(self.input_dir):
             raise ValueError(f"Input directory does not exist: {self.input_dir}")
         
-        # SPC parameters
+        # Clustering parameters
         self.min_clus = min_clus
         self.max_clus = max_clus
         self.temperature = temperature
@@ -204,10 +209,9 @@ class SPCClustering:
         
         return None, None
     
-    def _spc_clustering_fallback(self, features):
+    def _kmeans_clustering(self, features):
         """
-        Fallback SPC clustering implementation when WaveClus is not available.
-        Uses a simplified approach based on connectivity and temperature.
+        K-means clustering method (primary clustering approach).
         
         Parameters:
         -----------
@@ -227,32 +231,171 @@ class SPCClustering:
             self._log(f"  Warning: Only {n_spikes} spikes, less than min_clus={self.min_clus}")
             return np.zeros(n_spikes, dtype=int), {'n_clusters': 0}
         
+        # Standardize features
+        self._log(f"  Standardizing features...")
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+        
+        # Determine max clusters to test
+        max_k = min(self.max_clus, max(2, n_spikes // self.min_clus))
+        
+        if max_k < 2:
+            self._log(f"  Not enough spikes for clustering")
+            return np.zeros(n_spikes, dtype=int), {'n_clusters': 0}
+        
+        # Try different numbers of clusters
+        self._log(f"  Testing k=2 to k={max_k}...")
+        
+        best_score = -1
+        best_labels = None
+        best_k = 2
+        results = []
+        
+        for k in range(2, max_k + 1):
+            try:
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10, max_iter=300)
+                labels_k = kmeans.fit_predict(features_scaled)
+                
+                # Calculate silhouette score (higher is better)
+                silhouette = silhouette_score(features_scaled, labels_k)
+                
+                # Calculate Davies-Bouldin score (lower is better)  
+                db_score = davies_bouldin_score(features_scaled, labels_k)
+                
+                results.append({
+                    'k': k,
+                    'silhouette': silhouette,
+                    'db_score': db_score,
+                    'labels': labels_k
+                })
+                
+                self._log(f"    k={k}: silhouette={silhouette:.3f}, DB={db_score:.3f}")
+                
+                # Choose based on silhouette score
+                if silhouette > best_score:
+                    best_score = silhouette
+                    best_labels = labels_k.copy()
+                    best_k = k
+            except Exception as e:
+                self._log(f"    k={k}: Failed - {e}")
+                continue
+        
+        if best_labels is None:
+            self._log(f"  ✗ Clustering failed for all k values")
+            return np.zeros(n_spikes, dtype=int), {'n_clusters': 0}
+        
+        self._log(f"  ✓ Best k={best_k} with silhouette={best_score:.3f}")
+        
+        # Convert to 1-indexed (0 reserved for noise)
+        final_labels = best_labels + 1
+        
+        # Filter small clusters (mark as noise)
+        unique_labels, counts = np.unique(final_labels, return_counts=True)
+        
+        for label, count in zip(unique_labels, counts):
+            if count < self.min_clus:
+                self._log(f"    Cluster {label}: {count} spikes (too small, marking as noise)")
+                final_labels[final_labels == label] = 0
+        
+        # Renumber clusters to be contiguous starting from 1
+        valid_labels = np.unique(final_labels[final_labels > 0])
+        label_map = {old: new for new, old in enumerate(sorted(valid_labels), 1)}
+        label_map[0] = 0
+        
+        renumbered_labels = np.array([label_map[l] for l in final_labels])
+        
+        # Calculate final statistics
+        n_clusters = len(valid_labels)
+        n_noise = np.sum(renumbered_labels == 0)
+        
+        self._log(f"\n  Final result:")
+        self._log(f"    {n_clusters} clusters, {n_noise} noise spikes")
+        for cluster_id in range(1, n_clusters + 1):
+            count = np.sum(renumbered_labels == cluster_id)
+            pct = count / len(renumbered_labels) * 100
+            self._log(f"    Cluster {cluster_id}: {count} spikes ({pct:.1f}%)")
+        
+        metadata = {
+            'n_clusters': n_clusters,
+            'n_noise': n_noise,
+            'cluster_sizes': [np.sum(renumbered_labels == i) for i in range(1, n_clusters + 1)],
+            'silhouette_score': best_score,
+            'optimal_k': best_k,
+            'method': 'kmeans',
+            'all_results': results
+        }
+        
+        return renumbered_labels, metadata
+    
+    def _spc_clustering_fallback(self, features):
+        """
+        Improved fallback SPC clustering implementation.
+        Uses StandardScaler and better threshold calculation.
+        
+        Parameters:
+        -----------
+        features : ndarray
+            Feature matrix (n_spikes, n_features)
+            
+        Returns:
+        --------
+        labels : ndarray
+            Cluster assignments (0 = noise/unassigned)
+        metadata : dict
+            Clustering metadata
+        """
+        n_spikes = features.shape[0]
+        
+        if n_spikes < self.min_clus:
+            self._log(f"  Warning: Only {n_spikes} spikes, less than min_clus={self.min_clus}")
+            return np.zeros(n_spikes, dtype=int), {'n_clusters': 0}
+        
+        # Standardize features (IMPORTANT!)
+        self._log(f"  Standardizing features...")
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+        
         # Compute pairwise distances
         self._log(f"  Computing pairwise distances...")
-        distances = squareform(pdist(features, metric='euclidean'))
+        distances = squareform(pdist(features_scaled, metric='euclidean'))
         
         # Find k-nearest neighbors
         self._log(f"  Finding {self.knn} nearest neighbors...")
         knn_indices = np.argsort(distances, axis=1)[:, 1:self.knn+1]  # Exclude self
         
-        # Build connectivity matrix based on temperature threshold
+        # Get KNN distances for better threshold
+        knn_distances = np.array([distances[i, knn_indices[i]] for i in range(n_spikes)])
+        knn_distances_flat = knn_distances.flatten()
+        
+        # Use median * multiplier instead of temperature * median
+        # Adjust multiplier to control cluster size (1.5 is a good default)
+        threshold = np.median(knn_distances_flat) * 1.5
+        
+        self._log(f"  Distance threshold: {threshold:.4f}")
+        
+        # Build connectivity matrix
         connectivity = np.zeros((n_spikes, n_spikes), dtype=bool)
         
         for i in range(n_spikes):
             for j in knn_indices[i]:
                 dist = distances[i, j]
-                # Temperature-based connection probability
-                # Lower temperature = more selective connections
-                threshold = self.temperature * np.median(distances[distances > 0])
                 if dist < threshold:
                     connectivity[i, j] = True
                     connectivity[j, i] = True
+        
+        # Check connectivity
+        n_connections = np.sum(connectivity) // 2  # Divide by 2 because symmetric
+        self._log(f"  Total connections: {n_connections}")
+        
+        if n_connections == 0:
+            self._log(f"  WARNING: No connections found!")
+            return np.zeros(n_spikes, dtype=int), {'n_clusters': 0}
         
         # Find connected components
         self._log(f"  Finding connected components...")
         n_components, labels = connected_components(connectivity, directed=False)
         
-        # Filter small clusters (mark as noise with label 0)
+        # Filter small clusters
         self._log(f"  Filtering clusters by size (min_clus={self.min_clus})...")
         unique_labels, counts = np.unique(labels, return_counts=True)
         
@@ -263,6 +406,7 @@ class SPCClustering:
         for label, count in zip(unique_labels, counts):
             if count >= self.min_clus:
                 new_labels[labels == label] = cluster_id
+                self._log(f"    Cluster {cluster_id}: {count} spikes")
                 cluster_id += 1
             else:
                 new_labels[labels == label] = 0  # Mark as noise
@@ -270,7 +414,7 @@ class SPCClustering:
         n_clusters = cluster_id - 1
         n_noise = np.sum(new_labels == 0)
         
-        self._log(f"  Found {n_clusters} clusters, {n_noise} noise spikes")
+        self._log(f"  ✓ Found {n_clusters} valid clusters, {n_noise} noise spikes")
         
         metadata = {
             'n_clusters': n_clusters,
@@ -278,7 +422,8 @@ class SPCClustering:
             'cluster_sizes': [np.sum(new_labels == i) for i in range(1, cluster_id)],
             'temperature': self.temperature,
             'knn': self.knn,
-            'method': 'fallback_spc'
+            'threshold': threshold,
+            'method': 'fallback_spc_improved'
         }
         
         return new_labels, metadata
@@ -321,7 +466,10 @@ class SPCClustering:
     
     def _cluster_features(self, features):
         """
-        Perform SPC clustering on features.
+        Perform clustering on features.
+        
+        Uses K-means clustering as primary method (provides better results).
+        Falls back to SPC if K-means fails.
         
         Parameters:
         -----------
@@ -335,14 +483,22 @@ class SPCClustering:
         metadata : dict
             Clustering metadata
         """
-        if WAVECLUS_AVAILABLE:
-            try:
-                return self._spc_clustering_waveclus(features)
-            except Exception as e:
-                self._log(f"  Warning: WaveClus clustering failed: {e}")
-                self._log(f"  Falling back to simplified SPC implementation...")
-                return self._spc_clustering_fallback(features)
-        else:
+        # Use K-means as primary clustering method
+        try:
+            return self._kmeans_clustering(features)
+        except Exception as e:
+            self._log(f"  K-means clustering failed: {e}")
+            self._log(f"  Falling back to SPC clustering...")
+            
+            # Try WaveClus SPC if available
+            if WAVECLUS_AVAILABLE:
+                try:
+                    return self._spc_clustering_waveclus(features)
+                except Exception as e2:
+                    self._log(f"  WaveClus SPC failed: {e2}")
+                    self._log(f"  Falling back to simplified SPC...")
+            
+            # Fall back to simplified SPC
             return self._spc_clustering_fallback(features)
     
     def _create_times_file(self, mat_data, channel_num, labels, file_path):
@@ -435,7 +591,7 @@ class SPCClustering:
         
         try:
             self._log(f"\n{'='*60}")
-            self._log(f"Channel {channel_num} - SPC Clustering")
+            self._log(f"Channel {channel_num} - Clustering")
             self._log(f"File: {os.path.basename(file_path)} ({file_type} file)")
             self._log(f"{'='*60}")
             
@@ -561,7 +717,7 @@ class SPCClustering:
         
         # Summary header
         self._log(f"\n{'#'*70}")
-        self._log(f"SPC CLUSTERING PIPELINE")
+        self._log(f"CLUSTERING PIPELINE")
         self._log(f"{'#'*70}")
         self._log(f"Input directory: {self.input_dir}")
         self._log(f"Output directory: {self.output_dir}")
@@ -575,7 +731,8 @@ class SPCClustering:
         self._log(f"  Temperature: {self.temperature}")
         self._log(f"  K-nearest neighbors: {self.knn}")
         self._log(f"  Generate times files: {self.generate_times_files}")
-        self._log(f"  Method: {'WaveClus SPC' if WAVECLUS_AVAILABLE else 'Fallback SPC'}")
+        self._log(f"  Primary method: K-means")
+        self._log(f"  Fallback method: {'WaveClus SPC' if WAVECLUS_AVAILABLE else 'Simplified SPC'}")
         self._log(f"{'#'*70}\n")
         
         # Process each channel
@@ -608,27 +765,24 @@ class SPCClustering:
 
 if __name__ == '__main__':
     """
-    Example usage of SPCClustering with times file generation
+    Example usage of SPCClustering with K-means clustering
     """
     
     # Define directories
-    feature_dir = '/media/sEEG_DATA/Tests/Matlab sorting pipeline/Tapasi/MCWs_Pipeline/full_processing_pipeline/output/features'
-    spike_dir = '/media/sEEG_DATA/Tests/Matlab sorting pipeline/Tapasi/MCWs_Pipeline/full_processing_pipeline/output'
+    feature_dir = '/path/to/features'
     
     # ========================================
-    # EXAMPLE 1: Cluster feature files with times generation
+    # EXAMPLE 1: Cluster feature files with K-means
     # ========================================
     print("\n" + "="*70)
-    print("EXAMPLE 1: Cluster feature files and generate times files")
+    print("EXAMPLE 1: Cluster feature files using K-means")
     print("="*70)
     
     clusterer = SPCClustering(
         input_dir=feature_dir,
         min_clus=20,
-        max_clus=20,
-        temperature=0.201,
-        knn=11,
-        generate_times_files=True,  # Enable times file generation
+        max_clus=10,
+        generate_times_files=True,
         verbose=True
     )
     
@@ -638,36 +792,17 @@ if __name__ == '__main__':
     # ========================================
     # EXAMPLE 2: Cluster specific channels
     # ========================================
-    """
     print("\n" + "="*70)
-    print("EXAMPLE 2: Cluster specific channels with times files")
+    print("EXAMPLE 2: Cluster specific channels")
     print("="*70)
     
     clusterer = SPCClustering(
         input_dir=feature_dir,
         min_clus=15,
+        max_clus=10,
         generate_times_files=True,
         verbose=True
     )
     
     # Process specific channels
-    clusterer.process_all_channels(channels=[257, 263])
-    """
-    
-    # ========================================
-    # EXAMPLE 3: Without times file generation
-    # ========================================
-    """
-    print("\n" + "="*70)
-    print("EXAMPLE 3: Cluster without generating times files")
-    print("="*70)
-    
-    clusterer = SPCClustering(
-        input_dir=feature_dir,
-        min_clus=20,
-        generate_times_files=False,  # Disable times file generation
-        verbose=True
-    )
-    
-    clusterer.process_all_channels(channels='all')
-    """
+    clusterer.process_all_channels(channels=[257, 263, 304])
