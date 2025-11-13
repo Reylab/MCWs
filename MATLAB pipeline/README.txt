@@ -11,6 +11,7 @@ to use together or independently
 
 - Saving or creating plots as pngs/matlab figs can be turned off in
 	parameter inputs
+ make sure matlab directory has code added to path list
 	 
 ----------------
 if starting with NSX file
