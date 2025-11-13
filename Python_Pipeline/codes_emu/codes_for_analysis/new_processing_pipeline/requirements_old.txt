@@ -1,0 +1,7 @@
+h5py
+pillow
+scikit-learn
+seaborn
+spikeinterface[full]
+joblib
+numba

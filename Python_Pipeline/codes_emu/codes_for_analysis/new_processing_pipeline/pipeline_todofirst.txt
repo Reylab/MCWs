@@ -1,0 +1,25 @@
+
+# recomended IDE: visual studio code
+# alternatives: jupyter notebook or Spyder notebook plugin
+
+# install anaconda or miniconda
+
+# open a terminal and run (choose a proper enviroment name ENV_NAME):
+
+conda create --name ENV_NAME
+conda activate ENV_NAME
+
+conda install -c conda-forge qt
+conda install -c conda-forge pyqtgraph
+conda install --file conda_requirements.txt
+pip install requirements.txt
+
+
+
+# only for  Spyder notebook plugin
+# conda install spyder-notebook -c spyder-ide  # to allow spider to show .ipynb
+
+
+#for mac check that matlab is callable from the terminal
+# to fix it you can use the line: 
+#sudo ln -s /Applications/MATLAB_R2021a.app/bin/matlab /usr/local/bin/matlab

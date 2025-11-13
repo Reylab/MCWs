@@ -1,0 +1,284 @@
+{
+    "dark_mode": "True",
+    "subject_id": "test",
+    "seq_data_folder": "C:\\ReyLab\\SeqData",
+    "responses_file": "responses.xlsx",
+    "pics_main_folder": "Pics",
+    "pics_xlsx_file": "Pics.xlsx",
+    "trellis_oper": 131,
+    "ripple_map": "test.map",
+    "pics_path": "pics_now",
+    "languages": [
+        "English", 
+        "Spanish", 
+        "French"
+    ],
+    "analysis_machines": [
+        "localhost",
+        "tower"
+    ],
+    "acq_systems": [
+        "ripple",
+        "blackrock"
+    ],
+    "clustering_cmb_params": {
+    "algorithm": ["GMM", "BGMM", "SPC", "KMEANS", "ISOSPLIT6"],
+    "channels": ["micros", "macros", "analog"]
+    },
+    "clustering_spb_params": {
+        "pca_components": [3, 2, 100, 1],
+        "cluster_count": [6, 1, 12, 1],
+        "clus_spike_count": [50, 1, 1000, 10],
+        "clus_prob_thr": [0.8, 0.1, 1, 0.1]
+    },
+    "responses_cmb_params":{
+        "channels": ["micros", "macros", "analog"],
+        "cluster": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+        "sorting": ["id", "rank", "z_score", "duration", "onset", "rnet"],
+        "sortorder": ["asc", "desc"],
+        "show": ["25", "40", "80", "160", "320", "all"]
+    },
+    "concepts_spb_params":{
+        "download_count" : [10, 1, 100, 1],
+        "img_size": [160, 100, 10000, 1]
+    },
+    "concepts_cmb_params":{
+        "patient": ["none"]
+    },
+    "concepts_chk_params":{
+        "related_concepts": "True",
+        "download_imgs": "True",
+        "force_replace": "True",
+        "crop_imgs": "True"
+    },
+    "concepts_btn_params":{
+        "process": "True",
+        "delete_all": "True",
+        "update_pics_main": "True"
+    },
+    "sEEG": {
+        "filter_params": {
+            "notch_freqs" : ["60 Hz", "120 Hz"],
+            "notch_width" : 1,
+            "gain": 1
+        },
+        "spike_params": {
+            "negative": "True",
+            "std_min": 5,
+            "std_max": 50,
+            "threshold": 5,
+            "refractory_period": 30,
+            "max_spikes": 1000,
+            "max_spikes_per_channel": 100,
+            "max_spikes_per_epoch": 100
+        },
+        "chk_params": {
+            "enable_ripple": "False",
+            "raw": "True",
+            "filt": "True",
+            "spikes": "True",
+            "rem_collisions": "False",
+            "ph_diode": "True",
+            "pics": "True",
+            "region": "True"
+        },
+        "cmb_params": {
+            "channel": ["micros", "macros", "analog"],
+            "length": ["3 sec", "6 sec", "10 sec", "15 sec", "30 sec", "60 sec"]
+        },
+        "spb_params": {
+            "ch_count": [32, 1, 256, 1],
+            "raw_y": [1000, 1, 10000, 1],
+            "filt_y": [70, 1, 10000, 1],
+            "lowcut": [300, 1, 300, 1],
+            "highcut": [3000, 1, 10000, 1]
+        }
+    },
+    "psd": {
+        "cmb_params" : {
+            "psd_1" : ["10 kHz", "5 kHz"],
+            "psd_2" : ["300 Hz", "600 Hz"]
+        },
+        "spb_params" : {
+            "filt_order" : [2, 2, 20, 1],
+            "rp": [0.1,0.1,5,0.1],
+            "rs": [40,0,40,1]
+        }
+    },
+    "rec_length": [
+        "1 hr",
+        "0.1 hr",
+        "0.5 hr",
+        "2 hr",
+        "2 mins",
+        "1 mins"
+    ],
+    "trial": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+    ],
+    "task": [
+        "RSVPSCR",
+        "Audio",
+        "Video"
+    ],
+    "analysis_machine": "localhost",
+    "trial_config": {
+        "dynamic_scr": {
+            "block_params": {
+                "NPICS" : [180, 180, 180, 120, 60],
+                "P2REMOVE" : [80, 90, 60, 60, 0],
+                "MANUAL_SELECT" : [1, 1, 1, 0, 0],
+                "NREP" : [6, 3, 3, 4, 5]
+            },
+            "exp_params": {
+                "MIN_SAFE_TRIALS" : [15],
+                "ISI" : [0.5],
+                "MAX_SCR_TIME" : [30]
+            },
+            "chk_params": {
+                "remote_analysis": "False", 
+                "acq_network": "False", 
+                "auto_resp": "False",
+                "use_only_main_pics": "False",
+                "templates_required": "False",
+                "is_online": "True",
+                "remove_pics": "True",
+                "do_sorting": "False"
+            }
+        },
+        "dynamic_scr_test": {
+            "block_params": {
+                "NPICS" : [120, 60, 30],
+                "P2REMOVE" : [2, 2, 0],
+                "MANUAL_SELECT" : [1, 1, 0],
+                "NREP" : [2, 2, 2]
+            },
+            "exp_params": {
+                "MIN_SAFE_TRIALS" : [3],
+                "ISI" : [0.5],
+                "MAX_SCR_TIME" : [30]
+            },
+            "chk_params": {
+                "remote_analysis": "False", 
+                "acq_network": "False", 
+                "auto_resp": "True",
+                "use_only_main_pics": "False",
+                "templates_required": "False",
+                "is_online": "True",
+                "remove_pics": "True",
+                "do_sorting": "False"
+            }
+        },
+        "first_time" : {
+            "block_params": {
+                "NPICS" : [0],
+                "P2REMOVE" : [0],
+                "MANUAL_SELECT" : [0],
+                "NREP" : [9]
+            },
+            "exp_params": {
+                "MIN_SAFE_TRIALS" : [9],
+                "ISI" : [0.5],
+                "MAX_SCR_TIME" : [30]
+            },
+            "chk_params": {
+                "remote_analysis": "True", 
+                "acq_network": "False", 
+                "auto_resp": "True",
+                "use_only_main_pics": "False",
+                "templates_required": "False",
+                "is_online": "True",
+                "remove_pics": "True",
+                "do_sorting": "True"
+            }
+        },
+        "online_mini_scr": {
+            "block_params": {
+                "NPICS" : [0],
+                "P2REMOVE" : [0],
+                "MANUAL_SELECT" : [0],
+                "NREP" : [18]
+            },
+            "exp_params": {
+                "MIN_SAFE_TRIALS" : [18],
+                "ISI" : [0.5],
+                "MAX_SCR_TIME" : [30]
+            },
+            "chk_params": {
+                "remote_analysis": "True", 
+                "acq_network": "False", 
+                "auto_resp": "True",
+                "use_only_main_pics": "False",
+                "templates_required": "False",
+                "is_online": "True",
+                "remove_pics": "True",
+                "do_sorting": "True"
+            }
+        },
+        "test": {
+            "BlockParams": {
+                "NPICS" : [180, 180, 180, 120, 60],
+                "P2REMOVE" : [30, 40, 0, 0, 0],
+                "MANUAL_SELECT" : [1, 1, 0, 0, 0],
+                "NREP" : [2, 2, 2, 2, 2]
+            },
+            "exp_params": {
+                "MIN_SAFE_TRIALS" : [4],
+                "ISI" : [0.5],
+                "MAX_SCR_TIME" : [30]
+            },
+            "chk_params": {
+                "remote_analysis": "True", 
+                "acq_network": "False", 
+                "auto_resp": "True",
+                "use_only_main_pics": "False",
+                "templates_required": "False",
+                "is_online": "True",
+                "remove_pics": "True",
+                "do_sorting": "True"
+            }
+        }
+    },
+    "subscr_msgs": {
+        "begin" : {
+            "English": "Ready to begin? Press any key to start.",
+            "Spanish": "Listo para comenzar? Presione cualquier tecla para comenzar.",
+            "French": "Prêt à commencer? Appuyez sur n'importe quelle touche pour commencer."
+        },
+        "continue": {
+            "English": "Ready to continue? Press any key to start.",
+            "Spanish": "Listo para continuar? Presione cualquier tecla para comenzar.",
+            "French": "Prêt à continuer? Appuyez sur n'importe quelle touche pour commencer."
+        },
+        "short_break": {
+            "English": "Take a short break, we will resume shortly.",
+            "Spanish": "Tome un descanso corto, continuaremos en breve.",
+            "French": "Prenez une courte pause, nous reprendrons bientôt."
+        },
+        "end": {
+            "English": "Thank you for participating!",
+            "Spanish": "Gracias por participar!",
+            "French": "Merci d'avoir participé!"
+        }        
+    },
+    "flicker_sq_size": [
+        50, 50
+    ],
+    "rect_bar_size": [
+        160, 5
+    ],
+    "stimulus_ui": {
+        "lyt_info_row_span" : 4,
+        "lyt_raster_row_span" : 12,
+        "lyt_avg_response_row_span" : 2,
+        "stim_col_span" : 9
+    }
+
+}

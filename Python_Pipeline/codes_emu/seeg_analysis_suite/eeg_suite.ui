@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>881</width>
+    <height>597</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QWidget" name="verticalLayoutWidget_3">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>70</y>
+      <width>816</width>
+      <height>361</height>
+     </rect>
+    </property>
+    <layout class="QVBoxLayout" name="vLytMain" stretch="10">
+     <item>
+      <widget class="QTabWidget" name="tabWidgetMain">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="tabTasks">
+        <attribute name="title">
+         <string>Data Acq, Tasks, sEEG study playback</string>
+        </attribute>
+        <widget class="QWidget" name="verticalLayoutWidget_2">
+         <property name="geometry">
+          <rect>
+           <x>180</x>
+           <y>50</y>
+           <width>401</width>
+           <height>201</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="vLytTasksMain"/>
+        </widget>
+       </widget>
+       <widget class="QWidget" name="tabData">
+        <attribute name="title">
+         <string>Data</string>
+        </attribute>
+        <widget class="QWidget" name="verticalLayoutWidget_9">
+         <property name="geometry">
+          <rect>
+           <x>20</x>
+           <y>30</y>
+           <width>771</width>
+           <height>181</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="vLytData" stretch="1,4,5">
+          <item>
+           <layout class="QHBoxLayout" name="hLytFilters"/>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="vLytPlot"/>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tblSummary"/>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+       <widget class="QWidget" name="tabImgData">
+        <attribute name="title">
+         <string>CT/MR</string>
+        </attribute>
+        <widget class="QWidget" name="verticalLayoutWidget_4">
+         <property name="geometry">
+          <rect>
+           <x>160</x>
+           <y>70</y>
+           <width>160</width>
+           <height>80</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="vLytImgData3D"/>
+        </widget>
+       </widget>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionOpen_mat">
+   <property name="text">
+    <string>Open .mat</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

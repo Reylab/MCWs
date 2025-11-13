@@ -1,0 +1,199 @@
+# Saved September 12 2022 4:23:57 pm
+# Trellis Version 1.14.4.41
+# -----------------------------------------------------------------------------
+# Trellis standard electrode map file format: (v.2)
+# Previous map files should be backward comaptible with v.2
+# <hardware.address>; <elec_group.elec_label>; <view.coords>
+#
+# Example: (for use with Ripple processor)
+# -----------------------------------------------------------------------------
+# [processor.]port.FEslot.channel; [array.]electrode; [x.y.z]; [mapx, mapY, mapWidth, mapHeight]; [ImpedanceGreen, ImpedanceYellow, ImpedanceRed, Black]; [HeadX, HeadY, HeadWidth, HeadHeight, headOptions];
+#
+# '[x.y.z];' may be an empty whitespace string (ignored if 
+# whitespace or empty)
+# '[mapx, mapY, mapWidth, mapHeight];' must all be present together if used (along 
+# with all previous coLJmns)
+# mapX, mapY uses a cartesian coordinate system as seen below(map will automatically 
+# scale/translate the map coordinates based off the min/max map cordinates provided)
+#                   Y+
+#                   |
+#              X- --+-- X+
+#                   |
+#                   Y-
+# [ImpedanceGreen, ImpedanceYellow, ImpedanceRed, ImpedanceBlack] must all be present 
+# together if used (along with all previous coLJmns). Once incLJded, all 
+# subsequent electrodes will use the same vaLJes until changed.
+#
+# Multiple heads (ellipes) may optionally be defined. Head options are as followed (must be a single string with any combination of the following):
+# V : Draw a vertical line from top of ellipse to bottom
+# H : Draw a Horizontal line from left to right of Ellipse
+# U : Draw a nose facing upward
+# D : Draw a nose facing downward
+# R : Draw a nose facing right
+# L : Draw a nose facing left
+#
+# NOTE: all fields are 1-indexed and any whitespace will be ignored
+#       terminating semicolon (;) is optional
+# -----------------------------------------------------------------------------------
+
+# port/slot name xyz     mapX        mapY      mapWidth   mapHeight  Green   Yellow   Red    Black     HeadX  HeadY   HdWidth HdHeight headOpts
+#=========  ===  ===  =========   =========   ========   ========    ======  ======  ======  ======   ======  ======  ======  =====     ===
+# dgkdflgkdmflgkd
+
+
+1.A.1.001;	LJ01; ;
+1.A.1.002;	LJ02; ;
+1.A.1.003;	LJ03; ;
+1.A.1.004;	LJ04; ;
+1.A.1.005;	LJ05; ;
+1.A.1.006;	LJ06; ;
+1.A.1.007;	LJ07; ;
+1.A.1.008;	LJ08; ;
+1.A.1.009;	LK01; ;
+1.A.1.010;	LK02; ;
+1.A.1.011;	LK03-Z; ;
+1.A.1.012;	LK04-COM; ;
+1.A.1.013;	LK05; ;
+1.A.1.014;	LK06; ;
+1.A.1.015;	LK07; ;
+1.A.1.016;	LK08; ;
+1.A.1.017;	LO01; ;
+1.A.1.018;	LO02; ;
+1.A.1.019;	LO03; ;
+1.A.1.020;	LO04; ;
+1.A.1.021;	LO05; ;
+1.A.1.022;	LO06; ;
+1.A.1.023;	LO07; ;
+1.A.1.024;	LO08; ;
+1.A.1.025;	LO09; ;
+1.A.1.026;	LO10; ;
+1.A.1.027;	LO11; ;
+1.A.1.028;	LO12; ;
+1.A.1.029;	LH01; ;
+1.A.1.030;	LH02; ;
+1.A.1.031;	LH03; ;
+1.A.1.032;	LH04; ;
+	
+1.A.2.001;	LH05; ;
+1.A.2.002;	LH06; ;
+1.A.2.003;	LH07; ;
+1.A.2.004;	LH08; ;
+1.A.2.005;	LI01; ;
+1.A.2.006;	LI02; ;
+1.A.2.007;	LI03; ;
+1.A.2.008;	LI04; ;
+1.A.2.009;	LI05; ;
+1.A.2.010;	LI06; ;
+1.A.2.011;	LI07; ;
+1.A.2.012;	LI08; ;
+1.A.2.013;	LE01; ;
+1.A.2.014;	LE02; ;
+1.A.2.015;	LE03; ;
+1.A.2.016;	LE04; ;
+1.A.2.017;	LE05; ;
+1.A.2.018;	LE06; ;
+1.A.2.019;	LE07; ;
+1.A.2.020;	LE08; ;
+1.A.2.021;	LA01; ;
+1.A.2.022;	LA02; ;
+1.A.2.023;	LA03; ;
+1.A.2.024;	LA04; ;
+1.A.2.025;	LA05; ;
+1.A.2.026;	LA06; ;
+1.A.2.027;	LA07; ;
+1.A.2.028;	LA08; ;
+1.A.2.029;	LA09; ;
+#1.A.2.030;	LR08; ;
+#1.A.2.031;	LR09; ;
+#1.A.2.032;	LR10; ;
+
+1.A.3.001;	LB01; ;
+1.A.3.002;	LB02; ;
+1.A.3.003;	LB03; ;
+1.A.3.004;	LB04; ;
+1.A.3.005;	LB05; ;
+1.A.3.006;	LB06; ;
+1.A.3.007;	LB07; ;
+1.A.3.008;	LB08; ;
+1.A.3.009;	LC01; ;
+1.A.3.010;	LC02; ;
+1.A.3.011;	LC03; ;
+1.A.3.012;	LC04; ;
+1.A.3.013;	LC05; ;
+1.A.3.014;	LC06; ;
+1.A.3.015;	LC07; ;
+1.A.3.016;	LC08; ;
+1.A.3.017;	LD01; ;
+1.A.3.018;	LD02; ;
+1.A.3.019;	LD03; ;
+1.A.3.020;	LD04; ;
+1.A.3.021;	LD05; ;
+1.A.3.022;	LD06; ;
+1.A.3.023;	LD07; ;
+1.A.3.024;	LD08; ;
+1.A.3.025;	LD09; ;
+1.A.3.026;	LD10; ;
+1.A.3.027;	LF01; ;
+1.A.3.028;	LF02; ;
+1.A.3.029;	LF03; ;
+1.A.3.030;	LF04; ;
+1.A.3.031;	LF05; ;
+1.A.3.032;	LF06; ;
+	
+1.A.4.001;	LF07; ;
+1.A.4.002;	LF08; ;
+1.A.4.003;	LG01; ;
+1.A.4.004;	LG02; ;
+1.A.4.005;	LG03; ;
+1.A.4.006;	LG04; ;
+1.A.4.007;	LG05; ;
+1.A.4.008;	LG06; ;
+1.A.4.009;	LG07; ;
+1.A.4.010;	LG08; ;
+1.A.4.011;	EKG01; ;
+1.A.4.012;	EKG02; ;
+#1.A.4.013;	LB08; ;
+#1.A.4.014;	LC01; ;
+#1.A.4.015;	LC02; ;
+#1.A.4.016;	LC03; ;
+#1.A.4.017;	LC04; ;
+#1.A.4.018;	LC05; ;
+#1.A.4.019;	LC06; ;
+#1.A.4.020;	LC07; ;
+#1.A.4.021;	LC08; ;
+#1.A.4.022;	LF01; ;
+#1.A.4.023;	LF02; ;
+#1.A.4.024;	LF03; ;
+#1.A.4.025;	LF04; ;
+#1.A.4.026;	LF05; ;
+#1.A.4.027;	LF06; ;
+#1.A.4.028;	LF07; ;
+#1.A.4.029;	LF08; ;
+#1.A.4.030;	LJ01; ;
+#1.A.4.031;	LJ02; ;
+#1.A.4.032;	LJ03; ;
+
+1.D.1.001; mLPBTG01; ;
+1.D.1.002; mLPBTG02; ;
+1.D.1.003; mLPBTG03; ;
+1.D.1.004; mLPBTG04; ;
+1.D.1.005; mLPBTG05; ;
+1.D.1.006; mLPBTG06; ;
+1.D.1.007; mLPBTG07; ;
+1.D.1.008; mLPBTG08; ;
+1.D.1.009; mLPBTG09ref; ;
+1.D.1.010; mLHIPB01; ;
+1.D.1.011; mLHIPB02; ;
+1.D.1.012; mLHIPB03; ;
+1.D.1.013; mLHIPB04; ;
+1.D.1.014; mLHIPB05; ;
+1.D.1.015; mLHIPB06; ;
+1.D.1.016; mLHIPB07; ;
+1.D.1.017; mLHIPB08; ;
+1.D.1.018; mLHIPB09ref; ;
+
+1.DIO.BNC.001; Photo_digital; ;
+1.DIO.PAR.001; parallel_dig; ;
+1.AIO.AUD.001; MicL; ;
+1.AIO.AUD.002; MicR; ;
+1.AIO.BNC.001; Photo_analog; ;
