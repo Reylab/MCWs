@@ -173,7 +173,7 @@ class ClusterMerger:
         cluster_class = new_data['cluster_class'].copy()
         cluster_ids = cluster_class[:, 0].astype(int)
         
-        self._log("\n=� Original cluster distribution:")
+        self._log("\n= Original cluster distribution:")
         unique_original = np.unique(cluster_ids)
         for cid in unique_original:
             count = np.sum(cluster_ids == cid)
@@ -190,7 +190,7 @@ class ClusterMerger:
                 target_cluster = merge_group[0]
                 source_clusters = merge_group[1:]
                 
-                self._log(f"\n   Merging {merge_group} � {target_cluster}")
+                self._log(f"\n   Merging {merge_group} and {target_cluster}")
                 
                 total_merged = 0
                 for source_cluster in source_clusters:
@@ -263,7 +263,7 @@ class ClusterMerger:
             self._log(f"\nSaved merged data to: {output_mat_path}")
             
             # --- 3. Generate and Save Report ---
-            self._log("\n=� Generating cluster report for merged data...")
+            self._log("\n= Generating cluster report for merged data...")
             figs, df_metrics, SS = make_cluster_report(
                 new_data, 
                 calc_metrics=self.calc_metrics, 
