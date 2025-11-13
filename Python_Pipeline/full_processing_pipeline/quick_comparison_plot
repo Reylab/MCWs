@@ -1,0 +1,12 @@
+function
+I = find(5<rms_wave_error); 
+idxs = associated_spikes(I,:);
+mat_wave = [];
+py_wave =[];
+for i=1:numel(idx)
+mat_wave = spikes_mat.spikes(idxs(1));
+py_wave = spikes_py.spikes(idxs(2));
+end
+
+figure
+plot(1:numel(py_wave(1,:)),py_wave(1,:),1:numel(mat_wave(1,:)),mat_wave(1,:))

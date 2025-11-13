@@ -1,0 +1,79 @@
+{
+    "lfp_par":{
+        "freq":{
+            "30000":{
+                "mV":{
+                    "freqs_lim": [0,4000],
+                    "freqs_lim_zoom":[0,300],
+                    "filter_pass":[300, 300],
+                    "filter_order":2,
+                    "filter_stop": [],
+                    "filter_Rs":40,
+                    "filter_Rp":0.1,
+                    "notch_q":[],
+                    "freqs_fit":[1,300,1000,3000],
+                    "threshold":5,
+                    "notch_width":[]
+                },
+                "uV":{
+                    "freqs_lim":[0,10000],
+                    "freqs_lim_zoom":[0,300],
+                    "filter_pass":[300, 3000],
+                    "filter_order":2,
+                    "filter_stop": [],
+                    "filter_Rs":40,
+                    "filter_Rp":0.1,
+                    "notch_q":[],
+                    "freqs_fit":[1,300,1000,3000],
+                    "threshold":5,
+                    "notch_width":1
+                }
+            },
+            "2000":{
+                "mV":{
+                    "freqs_lim": [0,1000],
+                    "freqs_lim_zoom":[0,300],
+                    "filter_pass":[1,120],
+                    "filter_order":2,
+                    "filter_stop": [],
+                    "filter_Rs":40,
+                    "filter_Rp":0.1,
+                    "notch_q":[],
+                    "freqs_fit":[1,300,1000],
+                    "threshold":[],
+                    "notch_width":1
+                }
+            },
+            "7500":{
+                "uV":{
+                    "freqs_lim":[0,1000],
+                    "freqs_lim_zoom":[0,300],
+                    "filter_pass":[1, 120],
+                    "filter_order":2,
+                    "filter_stop": [],
+                    "filter_Rs":40,
+                    "filter_Rp":0.1,
+                    "notch_q":[],
+                    "freqs_fit":[1,300,1000,3000],
+                    "threshold":[],
+                    "notch_width":[] 
+                }
+            },
+            "10000":{
+                "uV":{
+                    "freqs_lim":[0,3000],
+                    "freqs_lim_zoom":[0,300],
+                    "filter_pass":[1, 600],
+                    "filter_order":2,
+                    "filter_stop": [],
+                    "filter_Rs":40,
+                    "filter_Rp":0.1,
+                    "notch_q":[],
+                    "freqs_fit":[1,300,1000],
+                    "threshold":5,
+                    "notch_width":1
+                }
+            }
+        }
+    }
+}
