@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 # 1. Assumes a 'PlotReport.py' file exists in 'core/' containing 'make_cluster_report'
 # 2. Assumes 'make_cluster_report' returns: figs, df_metrics, SS
 try:
-    from core.PlotReport import make_cluster_report
+    from PlotReport import make_cluster_report
 except ImportError:
     print("Warning: Could not import 'make_cluster_report' from 'core.PlotReport'.")
     print("The ClusterMerger class will be defined, but reporting will fail.")
