@@ -15,20 +15,23 @@ addParameter(ipr,'do_power_plot',1); % do_power_plot = 1;
 addParameter(ipr,'notchfilter',1); % notchfilter = 1;
 addParameter(ipr,'do_sorting',1); % do_sorting = 1;
 addParameter(ipr,'do_loop_plot',1); % do_loop_plot = 1;
-addParameter(ipr,'extract_events',1); % extract_events = 1;
-addParameter(ipr,'extra_stims_win',0); % extra_stims_win = 0;
-addParameter(ipr,'is_online',false); % is_online = false;
-addParameter(ipr,'plot_best_stims_only',false); % plot_best_stims_only = false;
-addParameter(ipr,'copy2miniscrfolder', false); % copy2miniscrfolder = false;
-%addParameter(ipr,'copy2dailyminiscrfolder', false); % copy2dailyminiscrfolder = false;
-addParameter(ipr,'show_sel_count', false); % show_sel_count = false;
-addParameter(ipr,'show_best_stims_wins', false); % show_best_stims_wins = false;
-addParameter(ipr,'best_stims_nwins', 8); % best_stims_nwins = 8;
 addParameter(ipr,'ch_grapes_nwins', 2); % ch_grapes_nwins = 2;
 addParameter(ipr,'max_spikes_plot', 5000); % max_spikes_plot = 5000;
 addParameter(ipr,'use_blanks', true); % use_blanks = false;
 addParameter(ipr,'circshiftblanks', true); % circshiftblanks = true;
 addParameter(ipr,'make_templates', false); % make_templates = false;
+
+% task parameters
+addParameter(ipr,'plot_best_stims_only',false); % plot_best_stims_only = false;
+
+addParameter(ipr,'extract_events',1); % extract_events = 1;
+addParameter(ipr,'extra_stims_win',0); % extra_stims_win = 0;
+addParameter(ipr,'is_online',false); % is_online = false;
+addParameter(ipr,'copy2miniscrfolder', false); % copy2miniscrfolder = false;
+%addParameter(ipr,'copy2dailyminiscrfolder', false); % copy2dailyminiscrfolder = false;
+addParameter(ipr,'show_sel_count', false); % show_sel_count = false;
+addParameter(ipr,'show_best_stims_wins', false); % show_best_stims_wins = false;
+addParameter(ipr,'best_stims_nwins', 8); % best_stims_nwins = 8;
 
 
 % check if varargin is empty
@@ -184,6 +187,17 @@ if par.do_power_plot
     fprintf('Power spectrum DONE in %d mins %0.0f seconds.\n', time_taken_mins, time_taken_secs)
 end
 
+%% plot continuous data (spike filtered) for each macro (we dont really gain time by running it in parallel, at least when plotting just 2 mins per channel)
+
+% sequential
+filt_order=4;
+plot_bundles_start = tic;
+fprintf('Plot_continuous_bundles BEGIN..\n')
+Plot_continuous_bundles(channels,par.notchfilter,filt_order,'neg')
+time_taken = toc(plot_bundles_start);
+time_taken_mins = floor(time_taken / 60);
+time_taken_secs = mod(time_taken, 60);
+fprintf('Plot_continuous_bundles DONE in %d mins %0.0f seconds.\n', time_taken_mins, time_taken_secs)
 %% spike detection
 if par.micros
     if par.fast_analysis || par.nowait
@@ -276,7 +290,6 @@ if par.micros
         % [new_data, ~, metrics, SS] = merge_and_report('times_CH123.mat', [1, 2, 3], ...
         %         'calc_metrics', true, ...
         %         'make_plots', false);
-
  %% to see former metric plotting        
         %        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
