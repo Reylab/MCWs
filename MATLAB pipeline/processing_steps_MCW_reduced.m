@@ -270,6 +270,7 @@ if par.micros
         param.max_std_templates = 3;
         param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
         
+        Do_features(channels, 'parallel', true, 'par', param);
         Do_clustering(channels, 'parallel', true, 'make_times', true, ...
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
