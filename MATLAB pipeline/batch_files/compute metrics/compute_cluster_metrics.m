@@ -216,7 +216,7 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
 
     % Generate plots if requested (delegate to make_cluster_report)
     figs = [];
-    if p.Results.make_plots || p.Results.save_plots
+    if p.Results.show_plots || p.Results.save_plots
         plot_params = p.Results.plot_params;
         plot_params.calc_metrics = false;
         plot_params.metrics_df = df_metrics;
@@ -272,7 +272,7 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
                 'refractory_ms', 3.0, ...
                 'n_neighbors', p.Results.n_neighbors, ...
                 'max_waveforms_per_cluster', max_w, ...
-                'show_figures', p.Results.make_plots ...
+                'show_figures', p.Results.show_plots ...
             );
         catch ME
             warning('make_cluster_report failed: %s', ME.message);
@@ -508,7 +508,7 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
     if n_self < 2 || n_other < 1
         isolation_distance = NaN;
         l_ratio = NaN;
-        fprintf('DEBUG C%d: Too few spikes. n_self=%d, n_other=%d\n', target_cluster, n_self, n_other);
+       % fprintf('DEBUG C%d: Too few spikes. n_self=%d, n_other=%d\n', target_cluster, n_self, n_other);
         return;
     end
     
@@ -525,7 +525,7 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
         diag_cov = diag(cov_matrix);
         
         % PRINT 1: Check the minimum variance before regularization
-        fprintf('DEBUG C%d: Min variance before regularization: %e\n', target_cluster, min(diag_cov));
+       % fprintf('DEBUG C%d: Min variance before regularization: %e\n', target_cluster, min(diag_cov));
 
         small_variance_mask = (diag_cov < min_variance_threshold);
         
@@ -535,7 +535,7 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
              cov_matrix(small_variance_mask, small_variance_mask) = ...
                  cov_matrix(small_variance_mask, small_variance_mask) + ...
                  min_variance_threshold * eye(sum(small_variance_mask));
-             fprintf('DEBUG C%d: Applied diagonal loading to %d features.\n', target_cluster, sum(small_variance_mask));
+           %  fprintf('DEBUG C%d: Applied diagonal loading to %d features.\n', target_cluster, sum(small_variance_mask));
         end
 
         VI = pinv(cov_matrix);
@@ -546,7 +546,7 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
 
     catch ME
         % PRINT 3: Report crash during matrix inversion
-        fprintf('DEBUG C%d: CRASH in pinv/cov. Error: %s\n', target_cluster, ME.message);
+     %   fprintf('DEBUG C%d: CRASH in pinv/cov. Error: %s\n', target_cluster, ME.message);
         isolation_distance = NaN;
         l_ratio = NaN;
         return;
@@ -576,7 +576,7 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
     end
     
     % PRINT 4: Report calculated metrics
-    fprintf('DEBUG C%d: FINAL ID: %e | FINAL L_ratio: %e\n', target_cluster, isolation_distance, l_ratio);
+   % fprintf('DEBUG C%d: FINAL ID: %e | FINAL L_ratio: %e\n', target_cluster, isolation_distance, l_ratio);
 
 end
 
