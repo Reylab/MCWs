@@ -7,6 +7,12 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
      addParameter(p, 'cross_correlograms', [], @(x) isempty(x) || isstruct(x));
     addParameter(p, 'l1_distances', [], @(x) isempty(x) || isnumeric(x));
     addParameter(p, 'exclude_cluster_0', true, @islogical);
+    addParameter(p, 'test', true, @islogical);            % save plots/metrics as test files by default
+    addParameter(p, 'apply_report', false, @islogical);   % accept previously saved test report files
+    addParameter(p, 'backup_original', false, @islogical);
+    addParameter(p, 'test_suffix', '_testMerge', @ischar);
+    addParameter(p, 'outdir', '', @ischar);
+    addParameter(p, 'save_figs', false, @islogical);
     addParameter(p, 'samplerate_hz', [], @isscalar);
     addParameter(p, 'clusters_per_page', 6, @isscalar);
     addParameter(p, 'bin_duration_ms', 60000.0, @isscalar);
@@ -203,6 +209,94 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     end
 
     fprintf('Generated %d figure pages for cluster report\n', length(figs));
+
+    % --- Saving logic (figures + metrics) ---
+    % Determine filename base and outdir
+    if isfield(data, 'filename') && ~isempty(data.filename)
+        [pathstr, fname, fext] = fileparts(data.filename);
+        if isempty(pathstr), pathstr = pwd; end
+    else
+        pathstr = pwd; fname = 'cluster_report'; fext = '.mat';
+    end
+    outdir = pathstr;
+    if ~isempty(p.Results.outdir)
+        outdir = p.Results.outdir;
+    end
+
+    suffix = '';
+    if p.Results.test
+        suffix = p.Results.test_suffix;
+    end
+
+    % Save figures if requested
+    if p.Results.save_figs && ~isempty(figs)
+        for i = 1:numel(figs)
+            fig = figs{i};
+            if isempty(fig) || ~ishandle(fig)
+                continue;
+            end
+            % skip invisible figures
+            try
+                if isprop(fig, 'Visible') && ~strcmp(get(fig, 'Visible'), 'on')
+                    % still save hidden figs
+                end
+            catch
+            end
+            fname_fig = fullfile(outdir, sprintf('%s_fig%d%s.png', fname, fig.Number, suffix));
+            try
+                if exist('exportgraphics', 'file') == 2
+                    exportgraphics(fig, fname_fig, 'BackgroundColor', 'white');
+                else
+                    saveas(fig, fname_fig);
+                end
+                fprintf('Saved figure: %s\n', fname_fig);
+            catch MEf
+                fprintf('Failed saving figure %d: %s\n', fig.Number, MEf.message);
+            end
+        end
+    end
+
+    % Save metrics and SS if present
+    if ~isempty(df_metrics)
+        metrics_file = fullfile(outdir, sprintf('%s%s_metrics%s', fname, suffix, fext));
+        try
+            save(metrics_file, 'df_metrics', 'SS');
+            fprintf('Saved metrics: %s\n', metrics_file);
+        catch MEm
+            fprintf('Failed saving metrics %s: %s\n', metrics_file, MEm.message);
+        end
+    end
+
+    % Apply/accept previously saved test files if requested
+    if p.Results.apply_report
+        target_dir = outdir;
+        test_pattern = fullfile(outdir, [fname p.Results.test_suffix '*']);
+        test_files = dir(test_pattern);
+        if isempty(test_files)
+            fprintf('No test report files found to apply for "%s"\n', fname);
+        else
+            if p.Results.backup_original
+                backup_dir = fullfile(target_dir, 'backup_originals');
+                if ~exist(backup_dir, 'dir')
+                    mkdir(backup_dir);
+                end
+            end
+            for k = 1:length(test_files)
+                tf = test_files(k).name;
+                src = fullfile(outdir, tf);
+                dest_name = strrep(tf, p.Results.test_suffix, '');
+                dest = fullfile(target_dir, dest_name);
+                if exist(dest, 'file')
+                    if p.Results.backup_original
+                        try movefile(dest, fullfile(backup_dir, dest_name)); catch, end
+                    else
+                        try delete(dest); catch, end
+                    end
+                end
+                try movefile(src, dest); fprintf('Applied report file: %s -> %s\n', src, dest); catch MEa, fprintf('Failed to apply %s: %s\n', src, MEa.message); end
+            end
+        end
+    end
 end
 
 function plot_isi_histogram(spike_times, refractory_ms, line_freq, color)

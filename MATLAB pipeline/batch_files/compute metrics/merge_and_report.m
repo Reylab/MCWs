@@ -24,15 +24,90 @@ addParameter(p, 'make_plots', false, @islogical);
 addParameter(p, 'save_plots', false, @islogical);
 addParameter(p, 'calc_metrics', false, @islogical);
 addParameter(p, 'output_file', '', @ischar);
+addParameter(p, 'test', true, @islogical);            % save a test merge variant (default true)
+addParameter(p, 'apply_merge', false, @islogical);    % accept/apply previously saved test merge
+addParameter(p, 'backup_original', false, @islogical);% backup originals before overwriting when applying
+addParameter(p, 'test_suffix', '_testMerge', @ischar);% suffix used for test files
+addParameter(p, 'outdir', '', @ischar);               % optional explicit output directory
+addParameter(p, 'parallel', false, @islogical);       % run merges across channels in parallel
+addParameter(p, 'n_workers', 0, @isscalar);           % number of workers for parallel (0 = auto)
+addParameter(p, 'apply_report', false, @islogical);   % accept/apply previously saved test report files
 parse(p, varargin{:});
 
 % Handle file input
-if ischar(data) || isstring(data)
+if isnumeric(data)
+    % treat numeric input as channel list (one or more channels)
+    channels = data(:)';
+    % Build file list for each channel
+    file_list = {};
+    for c = channels
+        % try several patterns used in this repo: chNN, _NN, plain NN
+        pats = {sprintf('times_*ch%d*.mat', c), sprintf('times_*_%d*.mat', c), sprintf('times_*%d*.mat', c)};
+        found = {};
+        for pi = 1:length(pats)
+            d = dir(pats{pi});
+            if ~isempty(d)
+                found = [found, {d.name}]; %#ok<AGROW>
+            end
+        end
+        if isempty(found)
+            warning('No file found for channel %d (looked for patterns: %s)', c, strjoin(pats, ', '));
+        else
+            % use unique and pick first match if multiple
+            found = unique(found);
+            file_list{end+1} = found{1}; %#ok<AGROW>
+        end
+    end
+
+    if isempty(file_list)
+        error('No files found for provided channel(s)');
+    end
+
+    % Run merge_and_report on each found file (optionally in parallel)
+    if p.Results.parallel
+        if p.Results.n_workers > 0
+            n_workers = p.Results.n_workers;
+        else
+            n_workers = feature('numcores');
+        end
+        if isempty(gcp('nocreate'))
+            parpool(n_workers);
+        end
+        parfor i = 1:length(file_list)
+            try
+                merge_and_report(file_list{i}, merge_groups, varargin{:});
+            catch MEp
+                fprintf('Error processing %s in parallel: %s\n', file_list{i}, MEp.message);
+            end
+        end
+    else
+        for i = 1:length(file_list)
+            merge_and_report(file_list{i}, merge_groups, varargin{:});
+        end
+    end
+
+    % we handled everything for numeric input
+    new_data = struct(); figs = []; df_metrics = []; SS = [];
+    return;
+elseif ischar(data) || isstring(data)
     filename = data;
     data = load(filename);
     fprintf('Loaded: %s\n', filename);
 else
     filename = '';
+end
+
+% Determine original file base name/path to drive saved filenames
+if ~isempty(filename)
+    [pathstr, name, ext] = fileparts(filename);
+    if isempty(pathstr), pathstr = pwd; end
+else
+    if isfield(data, 'filename') && ~isempty(data.filename)
+        [pathstr, name, ext] = fileparts(data.filename);
+        if isempty(pathstr), pathstr = pwd; end
+    else
+        pathstr = pwd; name = 'merged'; ext = '.mat';
+    end
 end
 
 % Initialize outputs
@@ -114,23 +189,120 @@ end
 % Compute metrics and plots if requested
 if p.Results.calc_metrics || p.Results.make_plots
     fprintf('Computing metrics...\n');
-    [df_metrics, SS, figs] = compute_cluster_metrics(new_data, ...
-        'make_plots', p.Results.make_plots, ...
-        'save_plots', p.Results.save_plots, ...
-        'calc_metrics', p.Results.calc_metrics);
+
+    % Choose output directory for saved figures/metrics
+    outdir = pathstr;
+    if ~isempty(p.Results.outdir)
+        outdir = p.Results.outdir;
+    end
+
+    % If running in "test" mode, compute metrics/plots using a temporary
+    % filename that includes the test suffix so saved figures/plots include it.
+    if p.Results.test
+        temp_data = new_data;
+        temp_data.filename = sprintf('%s%s', name, p.Results.test_suffix);
+        plot_params = struct('outdir', outdir, 'test', p.Results.test, 'test_suffix', p.Results.test_suffix, ...
+            'apply_report', p.Results.apply_report, 'backup_original', p.Results.backup_original, 'save_figs', p.Results.save_plots);
+        [df_metrics, SS, figs] = compute_cluster_metrics(temp_data, ...
+            'make_plots', p.Results.make_plots, ...
+            'save_plots', p.Results.save_plots, ...
+            'calc_metrics', p.Results.calc_metrics, ...
+            'plot_params', plot_params);
+
+        % Save the merged data as a test file next to the original
+        test_file = fullfile(outdir, sprintf('%s%s%s', name, p.Results.test_suffix, ext));
+        try
+            save(test_file, '-struct', 'new_data');
+            fprintf('Saved test merge file: %s\n', test_file);
+        catch ME
+            fprintf('Failed saving test merge file %s: %s\n', test_file, ME.message);
+        end
+
+        % Save metrics/SS for test
+        if p.Results.calc_metrics && ~isempty(df_metrics)
+            test_metrics_file = fullfile(outdir, sprintf('%s%s_metrics%s', name, p.Results.test_suffix, ext));
+            try
+                save(test_metrics_file, 'df_metrics', 'SS');
+                fprintf('Saved test metrics: %s\n', test_metrics_file);
+            catch ME2
+                fprintf('Failed saving test metrics %s: %s\n', test_metrics_file, ME2.message);
+            end
+        end
+
+    else
+        % Not test mode: compute metrics/plots using the final name
+        new_data.filename = name;
+        plot_params = struct('outdir', outdir, 'test', p.Results.test, 'test_suffix', p.Results.test_suffix, ...
+            'apply_report', p.Results.apply_report, 'backup_original', p.Results.backup_original, 'save_figs', p.Results.save_plots);
+        [df_metrics, SS, figs] = compute_cluster_metrics(new_data, ...
+            'make_plots', p.Results.make_plots, ...
+            'save_plots', p.Results.save_plots, ...
+            'calc_metrics', p.Results.calc_metrics, ...
+            'plot_params', plot_params);
+    end
 end
 
 % Save output if requested
-if ~isempty(p.Results.output_file)
-    save(p.Results.output_file, '-struct', 'new_data');
-    fprintf('Saved: %s\n', p.Results.output_file);
-    
-    % Save metrics separately if computed
-    if p.Results.calc_metrics && ~isempty(df_metrics)
-        [path, name, ext] = fileparts(p.Results.output_file);
-        metrics_file = fullfile(path, [name '_metrics' ext]);
-        save(metrics_file, 'df_metrics', 'SS');
-        fprintf('Saved metrics: %s\n', metrics_file);
+
+% If the user requested to "apply" the merge (accept the test merge), move
+% the test files into place (optionally backing up originals). This will
+% replace original .mat, metrics and any saved figure files that use the
+% filename prefix.
+if p.Results.apply_merge
+    % Determine target directory/base
+    target_dir = pathstr;
+    if ~isempty(p.Results.output_file)
+        [target_dir_tmp, ~, ~] = fileparts(p.Results.output_file);
+        if ~isempty(target_dir_tmp), target_dir = target_dir_tmp; end
+    end
+
+    % Find test files produced earlier
+    test_pattern = fullfile(outdir, [name p.Results.test_suffix '*']);
+    test_files = dir(test_pattern);
+
+    if isempty(test_files)
+        fprintf('No test files found to apply for "%s" (expected pattern %s)\n', name, test_pattern);
+    else
+        % Optionally create backup directory
+        if p.Results.backup_original
+            backup_dir = fullfile(target_dir, 'backup_originals');
+            if ~exist(backup_dir, 'dir')
+                mkdir(backup_dir);
+            end
+        end
+
+        for k = 1:length(test_files)
+            tf = test_files(k).name;
+            src = fullfile(outdir, tf);
+            dest_name = strrep(tf, p.Results.test_suffix, '');
+            dest = fullfile(target_dir, dest_name);
+
+            % If dest exists, handle backup or deletion
+            if exist(dest, 'file')
+                if p.Results.backup_original
+                    try
+                        movefile(dest, fullfile(backup_dir, dest_name));
+                        fprintf('Backed up original: %s -> %s\n', dest, backup_dir);
+                    catch
+                        fprintf('Warning: failed to back up %s\n', dest);
+                    end
+                else
+                    try
+                        delete(dest);
+                    catch
+                        % ignore
+                    end
+                end
+            end
+
+            % Move test file into place (rename by removing suffix)
+            try
+                movefile(src, dest);
+                fprintf('Applied: %s -> %s\n', src, dest);
+            catch ME3
+                fprintf('Failed to move %s -> %s: %s\n', src, dest, ME3.message);
+            end
+        end
     end
 end
 
