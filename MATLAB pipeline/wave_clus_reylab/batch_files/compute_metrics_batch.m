@@ -86,7 +86,7 @@ end
 function [metrics_table, SS] = process_single_file(filename, params)
 % PROCESS_SINGLE_FILE - Process one times file
     try
-        fprintf('Processing: %s\n', filename);
+        %fprintf('Processing: %s\n', filename);
         
         % Load data
         data = load(filename);
@@ -122,7 +122,7 @@ function [metrics_table, SS] = process_single_file(filename, params)
                 'exclude_cluster_0', params.exclude_cluster_0, ...
                 'n_neighbors', params.n_neighbors, ...
                 'bin_duration', params.bin_duration, ...
-                'make_plots', true, ...
+                'show_plots', false, ...
                 'save_plots',true);
         catch ME_cm
             fprintf('  ✗ compute_cluster_metrics failed for %s: %s\n', filename, ME_cm.message);
@@ -194,15 +194,15 @@ function [metrics_table, SS] = process_single_file(filename, params)
                         fprintf(' Failed to save figure %d for %s: %s\n', fig.Number, filename, saveFigErr.message);
                     end
                 end
-                fprintf('  Saved %d figure(s)\n', savedCount);
+               % fprintf('  Saved %d figure(s)\n', savedCount);
                 
-                fprintf('  Saved metrics%s for %s\n', suffix, filename);
+               % fprintf('  Saved metrics%s for %s\n', suffix, filename);
             catch ME3
                 fprintf('  Failed saving results for %s: %s\n', filename, ME3.message);
             end
         end
         
-        fprintf('Completed: %s (%d clusters)\n', filename, height(metrics_table));
+       % fprintf('Completed: %s (%d clusters)\n', filename, height(metrics_table));
         
     catch ME
         fprintf('Error processing %s: %s\n', filename, ME.message);
