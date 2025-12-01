@@ -6,7 +6,7 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
     addParameter(p, 'exclude_cluster_0', true, @islogical);
     addParameter(p, 'n_neighbors', 5, @isscalar);
     addParameter(p, 'bin_duration', 60000.0, @isscalar);
-    addParameter(p, 'make_plots', false, @islogical);
+    addParameter(p, 'show_plots', false, @islogical);
     addParameter(p, 'save_plots', false, @islogical);
     addParameter(p, 'plot_params', struct(), @isstruct);
     addParameter(p, 'n_jobs', 1, @isscalar); % not heavily used in MATLAB port
@@ -37,7 +37,8 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
         % Alternative for R2017a+ (more readable)
         % features = (features - feat_mean) ./ feat_std;
         
-        fprintf('DEBUG: Successfully Z-Score normalized %d features.\n', size(features, 2));
+        
+        %fprintf('DEBUG: Successfully Z-Score normalized %d features.\n', size(features, 2));
     end
 
     if ~isfield(data,'filename') || isempty(data.filename)
@@ -214,133 +215,185 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
         end
     end
 
-    % Generate plots if requested (delegate to make_cluster_report)
-    figs = [];
-            if p.Results.make_plots || p.Results.save_plots
-                % Ensure plot_params is a struct with expected fields
-                plot_params = p.Results.plot_params;
-                if isempty(plot_params) || ~isstruct(plot_params)
-                    plot_params = struct();
-                end
-
-                % Provide sensible defaults if not present
-                if ~isfield(plot_params, 'outdir') || isempty(plot_params.outdir)
-                    plot_params.outdir = '.';
-                end
-                if ~isfield(plot_params, 'test')
-                    plot_params.test = false;
-                end
-                if ~isfield(plot_params, 'test_suffix')
-                    plot_params.test_suffix = '_testMerge';
-                end
-                if ~isfield(plot_params, 'apply_report')
-                    plot_params.apply_report = false;
-                end
-                if ~isfield(plot_params, 'backup_original')
-                    plot_params.backup_original = false;
-                end
-                if ~isfield(plot_params, 'save_figs')
-                    % map compute_cluster_metrics 'save_plots' to make_cluster_report 'save_figs'
-                    plot_params.save_figs = p.Results.save_plots;
-                end
-
-                try
-                    figs = make_cluster_report(data, ...
-                        'calc_metrics', false, ...
-                        'metrics_df', df_metrics, ...
-                        'SS', SS, ...
-                        'cross_correlograms', cross_correlograms, ...
-                        'l1_distances', l1_matrix, ...
-                        'exclude_cluster_0', p.Results.exclude_cluster_0, ...
-                        'samplerate_hz', [], ...
-                        'clusters_per_page', 6, ...
-                        'bin_duration_ms', p.Results.bin_duration, ...
-                        'refractory_ms', 3.0, ...
-                        'n_neighbors', p.Results.n_neighbors, ...
-                        'max_waveforms_per_cluster', 1000, ...
-                        'show_figures', p.Results.make_plots, ...
-                        'test', plot_params.test, ...
-                        'apply_report', plot_params.apply_report, ...
-                        'backup_original', plot_params.backup_original, ...
-                        'test_suffix', plot_params.test_suffix, ...
-                        'outdir', plot_params.outdir, ...
-                        'save_figs', plot_params.save_figs);
-                catch ME_plot
-                    fprintf('Failed to generate cluster report: %s\n', ME_plot.message);
-                    figs = [];
-                end
-            end
-        plot_params = p.Results.plot_params;
-        plot_params.calc_metrics = false;
-        plot_params.metrics_df = df_metrics;
-        plot_params.SS = SS;
-        plot_params.cross_correlograms = cross_correlograms; 
-        % Ensure max_waveforms_per_cluster is defined
-        if isfield(plot_params, 'max_waveforms_per_cluster') && ~isempty(plot_params.max_waveforms_per_cluster)
-            max_w = plot_params.max_waveforms_per_cluster;
+    % Generate plots if requested (delegate to make_cluster_report). NOTE:
+    % We do NOT save plots here. Saving is centralized in compute_metrics_batch.
+    figs = {};
+    if p.Results.show_plots || p.Results.save_plots
+        % Only generate reports if we have both metrics and the silhouette
+        % matrix. make_cluster_report requires both when calc_metrics=false.
+        if isempty(df_metrics) || isempty(SS)
+            figs = {};
         else
-            max_w = 1000; % Default value
-        end
+            plot_params = p.Results.plot_params;
+            plot_params.calc_metrics = false;
+            plot_params.metrics_df = df_metrics;
+            plot_params.SS = SS;
 
-        try
-            % Determine samplerate_hz from several likely locations:
-            % Priority: plot_params.samplerate_hz -> data.samplerate_hz -> data.par.sr
-            % -> data.a.par.sr -> data.times.par.sr
-            samplerate_hz = [];
-            if isstruct(plot_params) && isfield(plot_params, 'samplerate_hz') && ...
-                    ~isempty(plot_params.samplerate_hz) && isnumeric(plot_params.samplerate_hz) && isscalar(plot_params.samplerate_hz)
-                samplerate_hz = plot_params.samplerate_hz;
-            elseif isfield(data, 'samplerate_hz') && ~isempty(data.samplerate_hz) && isnumeric(data.samplerate_hz) && isscalar(data.samplerate_hz)
-                samplerate_hz = data.samplerate_hz;
-            elseif isfield(data, 'par') && isstruct(data.par) && isfield(data.par, 'sr') && ...
-                    ~isempty(data.par.sr) && isnumeric(data.par.sr) && isscalar(data.par.sr)
-                samplerate_hz = data.par.sr;
-            elseif isfield(data, 'a') && isstruct(data.a) && isfield(data.a, 'par') && isfield(data.a.par, 'sr') && ...
-                    ~isempty(data.a.par.sr) && isnumeric(data.a.par.sr) && isscalar(data.a.par.sr)
-                samplerate_hz = data.a.par.sr;
-            elseif isfield(data, 'times') && isstruct(data.times) && isfield(data.times, 'par') && isfield(data.times.par, 'sr') && ...
-                    ~isempty(data.times.par.sr) && isnumeric(data.times.par.sr) && isscalar(data.times.par.sr)
-                samplerate_hz = data.times.par.sr;
+            % Ensure max_waveforms_per_cluster is defined
+            if isstruct(plot_params) && isfield(plot_params, 'max_waveforms_per_cluster') && ~isempty(plot_params.max_waveforms_per_cluster)
+                max_w = plot_params.max_waveforms_per_cluster;
             else
-                samplerate_hz = []; % fallback: use sample indices if unknown
+                max_w = 1000; % Default value
             end
 
-            % Defensive: ensure scalar numeric or empty
-            if ~(isempty(samplerate_hz) || (isnumeric(samplerate_hz) && isscalar(samplerate_hz)))
+            try
+                % Determine samplerate_hz from several likely locations:
                 samplerate_hz = [];
+                if isstruct(plot_params) && isfield(plot_params, 'samplerate_hz') && ...
+                        ~isempty(plot_params.samplerate_hz) && isnumeric(plot_params.samplerate_hz) && isscalar(plot_params.samplerate_hz)
+                    samplerate_hz = plot_params.samplerate_hz;
+                elseif isfield(data, 'samplerate_hz') && ~isempty(data.samplerate_hz) && isnumeric(data.samplerate_hz) && isscalar(data.samplerate_hz)
+                    samplerate_hz = data.samplerate_hz;
+                elseif isfield(data, 'par') && isstruct(data.par) && isfield(data.par, 'sr') && ...
+                        ~isempty(data.par.sr) && isnumeric(data.par.sr) && isscalar(data.par.sr)
+                    samplerate_hz = data.par.sr;
+                elseif isfield(data, 'a') && isstruct(data.a) && isfield(data.a, 'par') && isfield(data.a.par, 'sr') && ...
+                        ~isempty(data.a.par.sr) && isnumeric(data.a.par.sr) && isscalar(data.a.par.sr)
+                    samplerate_hz = data.a.par.sr;
+                elseif isfield(data, 'times') && isstruct(data.times) && isfield(data.times, 'par') && isfield(data.times.par, 'sr') && ...
+                        ~isempty(data.times.par.sr) && isnumeric(data.times.par.sr) && isscalar(data.times.par.sr)
+                    samplerate_hz = data.times.par.sr;
+                else
+                    samplerate_hz = []; % fallback: use sample indices if unknown
+                end
+
+                % Defensive: ensure scalar numeric or empty
+                if ~(isempty(samplerate_hz) || (isnumeric(samplerate_hz) && isscalar(samplerate_hz)))
+                    samplerate_hz = [];
+                end
+
+                % Determine if running on worker (do this before touching root visibility)
+                isWorker = false;
+                try
+                    isWorker = ~isempty(getCurrentTask());
+                catch
+                    isWorker = false;
+                end
+
+                try prevVis = get(0, 'DefaultFigureVisible'); catch, prevVis='on'; end
+                % Only force OFF globally if we are in non-interactive/save-only mode
+                % or if running on a worker. If the caller requested show_plots==true,
+                % do not change global defaults so figures can stay visible.
+                forceOff = (~p.Results.show_plots) || isWorker;
+                if forceOff
+                    set(0, 'DefaultFigureVisible', 'off');
+                    cleanupVis = onCleanup(@() set(0, 'DefaultFigureVisible', prevVis));
+                else
+                    cleanupVis = onCleanup(@() []); % no-op cleanup placeholder
+                end
+
+                % Create cleanup object in case make_cluster_report crashes
+                % Always pass show_plots through so that make_cluster_report
+                % itself creates figures with 'Visible','on' when requested.
+                figs = make_cluster_report( ...
+                    data, ...
+                    'calc_metrics', false, ...
+                    'metrics_df', df_metrics, ...
+                    'SS', SS, ...
+                    'exclude_cluster_0', p.Results.exclude_cluster_0, ...
+                    'samplerate_hz', samplerate_hz, ...
+                    'clusters_per_page', 6, ...
+                    'bin_duration_ms', p.Results.bin_duration, ...
+                    'refractory_ms', 3.0, ...
+                    'n_neighbors', p.Results.n_neighbors, ...
+                    'max_waveforms_per_cluster', max_w, ...
+                    'show_figures', p.Results.show_plots ...
+                );
+                % Do NOT forcibly hide returned figures when the caller asked to show them.
+                if ~isempty(figs) && ~iscell(figs)
+                    figs = {figs};
+                end
+            catch ME
+                warning('make_cluster_report failed: %s', ME.message);
+                figs = {};
             end
-
-            % Call make_cluster_report with explicit name/value args
-            figs = make_cluster_report( ...
-                data, ...
-                'calc_metrics', false, ...
-                'metrics_df', df_metrics, ...
-                'SS', SS, ...
-                'cross_correlograms', cross_correlograms, ...
-                'l1_distances',l1_matrix,...
-                'exclude_cluster_0', p.Results.exclude_cluster_0, ...
-                'samplerate_hz', samplerate_hz, ...
-                'clusters_per_page', 6, ...
-                'bin_duration_ms', p.Results.bin_duration, ...
-                'refractory_ms', 3.0, ...
-                'n_neighbors', p.Results.n_neighbors, ...
-                'max_waveforms_per_cluster', max_w, ...
-                'show_figures', p.Results.show_plots ...
-            );
-        catch ME
-            warning('make_cluster_report failed: %s', ME.message);
-            figs = [];
-        end
-
-        if p.Results.save_plots && ~isempty(figs)
-            save_plot_files(figs, data, plot_params);
         end
     end
+
+    % If running on a parallel worker, or if caller requested saving inside
+    % compute_cluster_metrics, save the generated figures here. Figures
+    % created on workers cannot be returned to the client, so workers must
+    % save them locally.
+    isWorker = false;
+    try
+        isWorker = ~isempty(getCurrentTask());
+    catch
+        isWorker = false;
+    end
+
+    if ~isempty(figs) && (p.Results.save_plots || isWorker)
+        % Determine output directory and base name from data (robust)
+        if isfield(data, 'fullpath') && ~isempty(data.fullpath)
+            out_dir = fileparts(data.fullpath);
+        else
+            out_dir = pwd;
+        end
+        if isfield(data, 'filename') && ~isempty(data.filename)
+            [~, base_name, ~] = fileparts(data.filename);
+        else
+            % allow plot_params override (passed by caller)
+            base_name = 'unknown_channel';
+            try
+                if isstruct(p.Results.plot_params) && isfield(p.Results.plot_params, 'base_name') && ~isempty(p.Results.plot_params.base_name)
+                    base_name = p.Results.plot_params.base_name;
+                end
+            catch
+            end
+        end
+
+        % 1) Filter to only valid figure handles and deduplicate them
+        valid_figs = {};
+        if ~iscell(figs)
+            figs = {figs};
+        end
+        seen = containers.Map('KeyType','double','ValueType','logical');
+        for k = 1:numel(figs)
+            f = figs{k};
+            if isgraphics(f, 'figure') && isvalid(f)
+                fh = double(f);
+                if ~isKey(seen, fh)
+                    seen(fh) = true;
+                    valid_figs{end+1} = f; %#ok<AGROW>
+                end
+            end
+        end
+
+        if isempty(valid_figs)
+            % nothing to save
+        else
+            try
+                sp = struct('out_dir', out_dir, 'base_name', base_name);
+                fprintf('  Saving %d figure(s) to %s\n', numel(valid_figs), out_dir);
+                save_plot_files(valid_figs, data, sp);
+            catch ME
+                warning('Failed to save plots inside compute_cluster_metrics: %s', ME.message);
+            end
+        end
+
+        % Close the figures only if the caller did NOT request to keep them shown
+        try
+            if ~p.Results.show_plots
+                close_figs_safe(valid_figs);
+            end
+        catch
+            % ignore
+        end
+
+        % If on a worker, do not attempt to return figure handles to client
+        if isWorker
+            figs = {};
+        else
+            figs = valid_figs; % return filtered handles to caller if interactive
+        end
+    end
+
 
 end
 
 function save_plot_files(figs, data, plot_params)
 % SAVE_PLOT_FILES - Save generated figures to files (robust to cell / empty inputs)
+% Each figure saved as <base_name>_plotsNNN_<timestamp>.png (NNN padded)
+
     if isempty(figs)
         return;
     end
@@ -361,22 +414,73 @@ function save_plot_files(figs, data, plot_params)
     end
 
     outdir = '.';
-    if isstruct(plot_params) && isfield(plot_params, 'outdir') && ~isempty(plot_params.outdir)
-        outdir = plot_params.outdir;
+    base_name = '';
+    if isstruct(plot_params)
+        if isfield(plot_params, 'out_dir') && ~isempty(plot_params.out_dir)
+            outdir = plot_params.out_dir;
+        elseif isfield(plot_params, 'outdir') && ~isempty(plot_params.outdir)
+            outdir = plot_params.outdir;
+        end
+        if isfield(plot_params, 'base_name') && ~isempty(plot_params.base_name)
+            base_name = plot_params.base_name;
+        end
+    end
+    if isempty(base_name)
+        [~, base_name, ~] = fileparts(data.filename);
     end
 
+    % Ensure output directory exists
+    try
+        if ~exist(outdir, 'dir')
+            mkdir(outdir);
+        end
+    catch
+        % ignore
+    end
+
+    % Filter and dedupe figure handles again (extra safety)
+    valid_figs = {};
+    seen = containers.Map('KeyType','double','ValueType','logical');
     for i = 1:numel(figs)
         f = figs{i};
         if isgraphics(f, 'figure') && isvalid(f)
-            try
-                fname = fullfile(outdir, sprintf('%s_plot_%03d.png', data.filename, i));
-                saveas(f, fname);
-            catch ME
-                warning('Failed to save figure %d: %s', i, ME.message);
+            fh = double(f);
+            if ~isKey(seen, fh)
+                seen(fh) = true;
+                valid_figs{end+1} = f; %#ok<AGROW>
             end
         end
     end
+
+    % Save each figure separately with sequential numbering
+    for i = 1:numel(valid_figs)
+        f = valid_figs{i};
+        try
+            % Build base filename with padded counter
+            seqstr = sprintf('%03d', i);
+            % Append timestamp to avoid any collision (use ISO-like compact)
+            fname = fullfile(outdir, sprintf('%s_plots%s.png', base_name, seqstr));
+
+            % Ensure the figure is rendered before exporting.
+            % Do not change visibility here — leave it as-is.
+            try
+                drawnow nocallbacks; % flush rendering so exportgraphics captures content
+            catch
+            end
+
+            if exist('exportgraphics', 'file') == 2
+                exportgraphics(f, fname, 'BackgroundColor', 'white');
+            else
+                saveas(f, fname);
+            end
+
+            fprintf('    Saved figure: %s\n', fname);
+        catch ME
+            warning('Failed to save figure %d: %s', i, ME.message);
+        end
+    end
 end
+
 
 function n = num_spikes(spike_times)
 % NUM_SPIKES - Calculate number of spikes

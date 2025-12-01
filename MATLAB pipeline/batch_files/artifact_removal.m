@@ -32,9 +32,14 @@ function artifact_removal(channels)
             SPK = load(sprintf('%s_spikes.mat', ch_lbl));
             
             % Load full spike set
-            spikes_all = SPK.spikes_all;
-            index_all  = SPK.index_all;
-            
+
+            if exist(SPK.spikes_all)
+                spikes_all = SPK.spikes_all;
+                index_all  = SPK.index_all;
+            else 
+                spikes_all = SPK.spikes;
+                index_all = SPK.index;
+            end
             % Load existing collision mask. mask_non_collision is TRUE for spikes that passed the initial filtering.
             if isfield(SPK,'mask_nonart')
                 mask_non_collision = SPK.mask_nonart;

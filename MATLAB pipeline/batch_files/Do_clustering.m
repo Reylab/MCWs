@@ -591,7 +591,8 @@
         feature_file = ['features_' data_handler.nick_name '.mat'];
         
         if ~exist(feature_file, 'file')
-            error('Features file not found: %s. Please run Do_features first.', feature_file);
+            warning('Features file not found: %s. Please run Do_features first.', feature_file);
+			return
         end
         
         % Load variables directly from the mat file
@@ -610,6 +611,14 @@
         naux = min(par.max_spk,size(spikes,1));
         par.inputs = size(inspk,2);
         
+        % extract number surrounded by underscores: _123_
+        filename_chNum = str2double(regexp(filename, '(?<=_)\d+(?=_)', 'match', 'once'));
+        
+        if size(inspk,2) == par.max_inputs
+            fprintf("channel %d, max inputs %d instead of %d calculated \n", ...
+                    filename_chNum, par.max_inputs, inputs);
+        end
+
 	    if par.permut == 'n'
             % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
             if size(spikes,1)> par.max_spk;
