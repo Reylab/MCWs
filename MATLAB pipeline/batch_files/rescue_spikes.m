@@ -51,12 +51,18 @@ function process_channel_rescue(ch)
             mask_non_collision = true(size(index_all));
         end
         
+        if isfield(SPK,'mask_taskspks')
+            mask_task = SPK.mask_taskspks;
+        else
+            mask_task = true(size(index_all));
+        end
+        
         
         par = SPK.par;
         index = SPK.index;
 
         % Find quarantined spikes: excluded by artifact, not by collision
-        mask_quar = ~mask_non_quarantine & mask_non_collision;
+        mask_quar = ~mask_non_quarantine & mask_non_collision & mask_task;
         if ~any(mask_quar)
             fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
             return;
