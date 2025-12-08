@@ -146,13 +146,10 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
         return
     end
 
-    % This calculates the wavelet coefficients
     [inspk, coeff] = wave_features(spikes, par);
     
-    % We construct the output filename
     outfile_name = ['features_' data_handler.nick_name '.mat'];
     
-    % We use a helper function to save because 'save' is tricky inside parfor
     par_saved = par; 
     save_helper(outfile_name, spikes, index, spikes_all, index_all, inspk, coeff, par_saved);
 

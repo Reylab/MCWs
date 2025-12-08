@@ -37,8 +37,21 @@ function process_channel_rescue(ch)
         SPK = load(fname_spk);
         spikes_all = SPK.spikes_all;
         index_all = SPK.index_all;
-        mask_non_quarantine = SPK.mask_non_quarantine;
-        mask_non_collision = SPK.mask_nonart;
+
+
+        if isfield(SPK,'mask_non_quarantine')
+            mask_non_quarantine = SPK.mask_non_quarantine;
+        else
+            mask_non_quarantine = false(size(index_all));
+        end
+
+        if isfield(SPK,'mask_nonart')
+            mask_non_collision = SPK.mask_nonart;
+        else
+            mask_non_collision = true(size(index_all));
+        end
+        
+        
         par = SPK.par;
         index = SPK.index;
 
@@ -58,16 +71,17 @@ function process_channel_rescue(ch)
             spikes = S.spikes;
             coeff = S.coeff;
             inspk_good = S.inspk;
-        else
-            error('No times file for channel %s', ch_lbl);
+            class_good_mask = cluster_class(:,1) ~= 0;
+            class_good = cluster_class(class_good_mask, 1);
+        else %if no times file, means unclustered/assume multiunit
+            spikes = SPK.spikes;
+            coeff = 1:64; % default to first 64 coeffs
+            inspk_good = local_wavelet_decomp(spikes);
+            class_good = ones(size(spikes,1),1);
         end
         % Use class_good as those with cluster_class ~= 0
-        class_good_mask = cluster_class(:,1) ~= 0;
-        class_good = cluster_class(class_good_mask, 1);
-        % Calculate Haar wavelet features for quarantined spikes
-        inspk_quar_full = local_wavelet_decomp(spikes_quar);
-        inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
-        % Use force_membership_wc to assign clusters to quarantined spikes
+
+          % Use force_membership_wc to assign clusters to quarantined spikes
         class_quar = force_membership_wc(spikes, class_good, spikes_quar, par);
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)
@@ -83,7 +97,8 @@ function process_channel_rescue(ch)
         spikes_rescued = spikes_quar(rescued_idx, :);
         index_rescued = index_quar(rescued_idx);
         class_rescued = class_quar(rescued_idx)';
-        inspk_rescued = inspk_quar(rescued_idx, :);
+        inspk_quar = local_wavelet_decomp(spikes_rescued);
+        inspk_rescued = inspk_quar(:,coeff);
         % Combine
         index_combined = [index; index_rescued];
         spikes_combined = [spikes; spikes_rescued];

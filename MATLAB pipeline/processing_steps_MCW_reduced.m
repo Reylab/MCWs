@@ -61,18 +61,10 @@ step_pic = 15;
 % Define the path where the codes emu repository is located
 [~,name] = system('hostname');
 if contains(name,'BEH-REYLAB'), dir_base = '/home/user/share/codes_emu'; 
-elseif contains(name,'TOWER-REYLAB') || contains(name,'RACK-REYLAB') || contains(name, 'ABTL')
-%     current_user = 'sofiad';  % replace with appropriate user name  
-    current_user = getenv('USER');    dir_base = sprintf('/home/%s/Documents/GitHub/codes_emu',current_user); 
-elseif contains(name,'NSRG-HUB-15446'), dir_base = 'D:\codes_emu'; % Hernan's desktop
-elseif contains(name,'NSRG-HUB-16167'), dir_base = 'D:\bcm_emu'; % Hernan's laptop
-elseif contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\codes_emu'; % aj desktop
-elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\codes_emu'; % aj desktop
 
-elseif contains(name,'DESKTOP-OO8FBF4'), dir_base = 'D:\BCM-EMU'; % Hernan's laptop home
-%elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\codes_emu'; % ABT-REYLAB
-elseif contains(name,'ABT-REYLAB') || contains(name,'NRSG-HUB-18687'), dir_base = 'C:\Users\smathew\OneDrive - mcw.edu\Rey lab\codes_emu'; % ABT-REYLAB
-elseif contains(name,'MCW-20880'), dir_base = 'C:\Users\de31182\Documents\GitHub\codes_emu'; %Dewan's laptop
+elseif contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
+
+
 end
 
 addpath(dir_base);
@@ -277,7 +269,7 @@ if par.micros
 
         %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
-        compute_metrics_batch('all','parallel',false,'quar',false);
+        compute_metrics_batch(channels,'parallel',true, 'save',true);
     end
         % can be used on single channels
         % [metrics_table, SS] = compute_cluster_metrics(data, ...

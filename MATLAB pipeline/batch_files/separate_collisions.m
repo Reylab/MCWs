@@ -114,12 +114,12 @@ for ibun = 1:length(bundles_to_explore)
 
         index = all_spktimes(~is_artifact & (which_chan==ch_id));
         mask_nonart = ismember(index_all,index);
-        spikes_coll_only = spikes_all(mask_nonart,:);
+        spikes = spikes_all(mask_nonart,:);
 
         % make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
         
         save(sprintf('%s_spikes.mat', ch_lbl), ...
-             "index", "spikes_coll_only", "index_all", "spikes_all", "par", "mask_nonart", "-append") 
+             "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", "-append") 
         fprintf("%d/%d artifact spikes in %s\n", ...
             numel(index_all)-numel(index), numel(index_all), ch_lbl);
     end

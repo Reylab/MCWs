@@ -4,8 +4,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     addParameter(p, 'calc_metrics', false, @islogical);
     addParameter(p, 'metrics_df', [], @(x) isempty(x) || istable(x));
     addParameter(p, 'SS', [], @(x) isempty(x) || isnumeric(x));
-     addParameter(p, 'cross_correlograms', [], @(x) isempty(x) || isstruct(x));
-    addParameter(p, 'l1_distances', [], @(x) isempty(x) || isnumeric(x));
     addParameter(p, 'exclude_cluster_0', true, @islogical);
     addParameter(p, 'samplerate_hz', [], @isscalar);
     addParameter(p, 'clusters_per_page', 6, @isscalar);
@@ -181,14 +179,47 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         fig_metrics = create_metrics_overview_page(df_metrics, SS, visstr, leicolors);
         figs{end+1} = fig_metrics;
     end
-    
-    % cross-correlogram page
-    if ~isempty(cross_correlograms)
-        fig_ccg = create_cross_correlogram_page(cross_correlograms, l1_distances, p.Results.show_figures, leicolors);
-        figs{end+1} = fig_ccg;
+
+    % --- Correlogram page(s) ---
+    % Build correlograms between each pair of clusters and put them on one page
+    try
+        % choose clusters to include (respect exclude_cluster_0)
+        if p.Results.exclude_cluster_0
+            cluster_list = unique_clusters(unique_clusters ~= 0);
+        else
+            cluster_list = unique_clusters;
+        end
+        Kc = numel(cluster_list);
+        if Kc >= 2
+            pairs = nchoosek(1:Kc,2);
+            npairs = size(pairs,1);
+            % layout: try square-ish grid
+            ncols = ceil(sqrt(npairs));
+            nrows = ceil(npairs / ncols);
+            fig_corr = figure('Visible', visstr, 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
+            for pi = 1:npairs
+                ax = subplot(nrows, ncols, pi);
+                a = cluster_list(pairs(pi,1));
+                b = cluster_list(pairs(pi,2));
+                times_a = spike_times_ms(cluster_ids == a);
+                times_b = spike_times_ms(cluster_ids == b);
+                if isempty(times_a) || isempty(times_b)
+                    axis(ax,'off'); continue;
+                end
+                [lags, counts] = compute_cross_correlogram(times_a, times_b, 1.0, 50.0); % bin=1ms, maxlag=50ms
+                bar(ax, lags, counts, 'FaceColor', [0.2 0.2 0.7], 'EdgeColor','none');
+                xlabel(ax,'Lag (ms)'); ylabel(ax,'Count');
+                title(ax, sprintf('C%d vs C%d', a, b), 'FontSize', 9);
+                box(ax,'off'); grid(ax,'on');
+            end
+            sgtitle(sprintf('Cross-correlograms (%d pairs)', npairs), 'FontSize', 14);
+            figs{end+1} = fig_corr;
+        end
+    catch ME_corr
+        warning('Failed to generate correlograms: %s', ME_corr.message);
     end
 
-    fprintf('Generated %d figure pages for cluster report\n', length(figs));
+    fprintf('Generated %d figure pages for cluster report %s\n', length(figs),data.filename);
 end
 
 function plot_isi_histogram(ax, spike_times, refractory_ms, line_freq, color)
@@ -504,7 +535,7 @@ function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_dura
     caxis(ax, [0, vmax]);
 
     set(ax, 'XColor', [0 0 0], 'YColor', [0 0 0], 'Box', 'off');
-    
+
     nx = min(6, time_pixels);
     xt_idx = unique(round(linspace(1, time_pixels, nx)));
     xt_idx = max(1, min(time_pixels, xt_idx));
@@ -525,79 +556,43 @@ function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_dura
     set(ax, 'Visible', 'on');
 end
 
-function fig = create_cross_correlogram_page(cross_correlograms, l1_distances, show_figures, leicolors)
-% CREATE_CROSS_CORRELOGRAM_PAGE - Create page with cross-correlograms and L1 distances
-    if show_figures
-        fig = figure('Visible', 'on', 'Units','normalized','Position',[0.1 0.1 0.9 0.8]);
-    else
-        fig = figure('Visible', 'off');
-    end
+% -----------------------
+% Helper: compute cross-correlogram between two spike-time lists (ms)
+function [lags_ms, counts] = compute_cross_correlogram(times1_ms, times2_ms, bin_ms, maxlag_ms)
+    if nargin < 3 || isempty(bin_ms), bin_ms = 1.0; end
+    if nargin < 4 || isempty(maxlag_ms), maxlag_ms = 50.0; end
+    % ensure column vectors and sorted
+    t1 = sort(times1_ms(:));
+    t2 = sort(times2_ms(:));
+    maxlag = double(maxlag_ms);
+    binw = double(bin_ms);
 
-    % Get unique clusters for colors
-    all_clusters = unique([[cross_correlograms.ref_cluster], [cross_correlograms.target_cluster]]);
-    
-    % Plot first 4 cross-correlograms (left side)
-    n_to_plot = min(4, length(cross_correlograms));
-    for i = 1:n_to_plot
-        subplot(2, 3, i);
-        ccg_data = cross_correlograms(i);
-        
-        % Get colors for the clusters
-        ref_color_idx = mod(find(all_clusters == ccg_data.ref_cluster, 1) - 1, size(leicolors, 1)) + 1;
-        target_color_idx = mod(find(all_clusters == ccg_data.target_cluster, 1) - 1, size(leicolors, 1)) + 1;
-        
-        ref_color = leicolors(ref_color_idx, :);
-        target_color = leicolors(target_color_idx, :);
-        
-        % Plot cross-correlogram
-        bar(ccg_data.bin_centers, ccg_data.ccg, 1, 'FaceColor', target_color, 'EdgeColor', 'none', 'FaceAlpha', 0.7);
-        hold on;
-        plot([0 0], ylim, 'k--', 'LineWidth', 1);
-        hold off;
-        
-        title(sprintf('C%d → C%d', ccg_data.ref_cluster, ccg_data.target_cluster));
-        xlabel('Time Lag (ms)');
-        ylabel('Rate (spikes/ref)');
-        grid on;
-        box off;
-    end
-
-    % Plot L1 distance matrix (right side - spans positions 5-6)
-    if ~isempty(l1_distances)
-        ax_dist = subplot(2, 3, [5, 6]);
-        
-        imagesc(l1_distances);
-        
-        % Set labels
-        cluster_labels = arrayfun(@(x) sprintf('C%d', x), all_clusters, 'UniformOutput', false);
-        set(ax_dist, 'XTick', 1:length(all_clusters), 'XTickLabel', cluster_labels);
-        set(ax_dist, 'YTick', 1:length(all_clusters), 'YTickLabel', cluster_labels);
-        xtickangle(ax_dist, 45);
-        
-        % Add colorbar and title
-        colorbar(ax_dist);
-        title('L1 Distance Matrix', 'FontSize', 12);
-        xlabel('Target Cluster');
-        ylabel('Reference Cluster');
-        
-        % Add distance values as text
-        for i = 1:size(l1_distances, 1)
-            for j = 1:size(l1_distances, 2)
-                if i ~= j && ~isnan(l1_distances(i,j))
-                    text(j, i, sprintf('%.2f', l1_distances(i,j)), ...
-                        'HorizontalAlignment', 'center', 'FontSize', 8, ...
-                        'Color', 'white', 'FontWeight', 'bold');
-                end
+    diffs = [];
+    % iterate over shorter list to limit work
+    if numel(t1) <= numel(t2)
+        for i = 1:numel(t1)
+            window_idx = find(t2 >= (t1(i)-maxlag) & t2 <= (t1(i)+maxlag));
+            if ~isempty(window_idx)
+                diffs = [diffs; (t2(window_idx) - t1(i))]; %#ok<AGROW>
             end
         end
-        
-        axis(ax_dist, 'image');
-        colormap(ax_dist, 'hot');
     else
-        subplot(2, 3, [5, 6]);
-        text(0.5, 0.5, 'No L1 distances computed', 'HorizontalAlignment', 'center', 'FontSize', 12);
-        axis off;
+        for i = 1:numel(t2)
+            window_idx = find(t1 >= (t2(i)-maxlag) & t1 <= (t2(i)+maxlag));
+            if ~isempty(window_idx)
+                diffs = [diffs; (t1(window_idx) - t2(i))]; %#ok<AGROW>
+            end
+        end
     end
 
-    sgtitle('Cross-Correlogram Analysis with L1 Distances', 'FontSize', 14, 'FontWeight', 'bold');
+    if isempty(diffs)
+        lags_ms = (-maxlag+binw/2):binw:(maxlag-binw/2);
+        counts = zeros(size(lags_ms));
+        return;
+    end
+
+    edges = -maxlag:binw:maxlag;
+    counts = histcounts(diffs, edges);
+    % center lags
+    lags_ms = edges(1:end-1) + binw/2;
 end

@@ -25,15 +25,13 @@ function artifact_removal(channels)
     for k = 1:num_channels_proc
         ch_info = NSx_proc(k);
         ch_lbl = ch_info.output_name;
-        
-        fprintf('  -> Processing channel %d of %d: %s\n', k, num_channels_proc, ch_lbl);
-        
+                
         try
             SPK = load(sprintf('%s_spikes.mat', ch_lbl));
             
             % Load full spike set
 
-            if exist(SPK.spikes_all)
+            if isfield(SPK,'spikes_all')
                 spikes_all = SPK.spikes_all;
                 index_all  = SPK.index_all;
             else 
@@ -42,8 +40,10 @@ function artifact_removal(channels)
             end
             % Load existing collision mask. mask_non_collision is TRUE for spikes that passed the initial filtering.
             if isfield(SPK,'mask_nonart')
+                mask_used = 2;
                 mask_non_collision = SPK.mask_nonart;
             else
+                mask_used = 1;
                 mask_non_collision = true(size(index_all));
                 warning('ArtifactRemoval:NoCollisionMask', 'No collision mask found for %s. Assuming all spikes are non-collision.', ch_lbl);
             end
@@ -78,13 +78,13 @@ function artifact_removal(channels)
             % Save the data, matching the required output variables plus the new masks
             save(sprintf('%s_spikes.mat', ch_lbl), ...
                  "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", ...
-                 "mask_non_quarantine", "mask_total_pass", "-append") 
+                 "mask_non_quarantine", "-append") 
             
             num_removed_this_step = sum(mask_non_collision) - sum(mask_total_pass);
             num_total_spikes = numel(index_all);
             
-            fprintf('  -> Removed %d spikes by quarantine. Total remaining: %d/%d (%.2f%%)\n', ...
-                num_removed_this_step, sum(mask_total_pass), num_total_spikes, sum(mask_total_pass)/num_total_spikes*100);
+            fprintf('ch.%d of %d: %s. Masks used (%d): quarantined %d spikes. Remaining: %d/%d (%.2f%%)\n', ...
+                k, num_channels_proc, ch_lbl, mask_used, num_removed_this_step, sum(mask_total_pass), num_total_spikes, sum(mask_total_pass)/num_total_spikes*100);
 
         catch ME
             fprintf('  -> FAILED to process channel %s: %s\n', ch_lbl, ME.message);

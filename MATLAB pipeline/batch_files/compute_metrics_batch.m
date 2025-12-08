@@ -257,7 +257,7 @@ function [metrics_table, SS] = process_single_file(filename, params)
                         outname = sprintf('%s_quar_metrics.mat', base_name);
                     end
                     save(fullfile(out_dir, outname), 'metrics_table', 'SS');
-                    fprintf('  Saved metrics to %s\n', fullfile(out_dir, outname));
+                    %fprintf('  Saved metrics to %s\n', fullfile(out_dir, outname));
                 catch ME
                     warning('Failed to save metrics for %s: %s', filename, ME.message);
                 end
