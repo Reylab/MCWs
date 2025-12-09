@@ -59,6 +59,9 @@ step_pic = 15;
 
 %%
 % Define the path where the MCWs repository is located
+% copy this directory path according to your computer
+% have it mapped to MCWs repository/clone location
+
 [~,name] = system('hostname');
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 
