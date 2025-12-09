@@ -466,8 +466,6 @@ function fraction_missing = amplitude_cutoff(waveforms, num_histogram_bins, hist
     fraction_missing = min(fraction_missing, 0.5);
 end
 function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, target_cluster)
-    % ... (Initial checks and splitting are correct) ...
-    
     target_mask = (labels == target_cluster);
     pcs_for_this = features(target_mask, :);
     pcs_for_other = features(~target_mask, :);
@@ -478,76 +476,67 @@ function [isolation_distance, l_ratio] = mahalanobis_metrics(features, labels, t
     if n_self < 2 || n_other < 1
         isolation_distance = NaN;
         l_ratio = NaN;
-       % fprintf('DEBUG C%d: Too few spikes. n_self=%d, n_other=%d\n', target_cluster, n_self, n_other);
         return;
     end
     
     mean_val = mean(pcs_for_this, 1);
-    dof = size(pcs_for_this, 2); % #features
+    dof = size(pcs_for_this, 2);
     
-    % --- Robust Covariance Calculation and Regularization ---
     try
         cov_matrix = cov(pcs_for_this);
         
-        % CRITICAL FIX: Diagonal Loading 
-        min_variance_threshold = 1e-6; % Must be > 0.
+        % --- STRONGER Tikhonov regularization ---
+        % Use 10% of mean variance (100× larger than before)
+        lambda = 0.1 * trace(cov_matrix) / size(cov_matrix, 1);
+        cov_matrix_reg = cov_matrix + lambda * eye(size(cov_matrix, 1));
         
-        diag_cov = diag(cov_matrix);
+        cond_before = cond(cov_matrix);
+        cond_after = cond(cov_matrix_reg);
         
-        % PRINT 1: Check the minimum variance before regularization
-       % fprintf('DEBUG C%d: Min variance before regularization: %e\n', target_cluster, min(diag_cov));
-
-        small_variance_mask = (diag_cov < min_variance_threshold);
+       % fprintf('DEBUG C%d: Tikhonov λ=%e (10%% of mean var). Cond: %e → %e\n', ...
+           % target_cluster, lambda, cond_before, cond_after);
         
-        if any(small_variance_mask)
-             % Add the threshold to all small-variance dimensions
-             % Note: This is a simplified way to apply diagonal loading.
-             cov_matrix(small_variance_mask, small_variance_mask) = ...
-                 cov_matrix(small_variance_mask, small_variance_mask) + ...
-                 min_variance_threshold * eye(sum(small_variance_mask));
-           %  fprintf('DEBUG C%d: Applied diagonal loading to %d features.\n', target_cluster, sum(small_variance_mask));
+        % Safety check: if still poorly conditioned, increase λ further
+        if cond_after > 100
+            lambda = 0.5 * trace(cov_matrix) / size(cov_matrix, 1); % use 50%
+            cov_matrix_reg = cov_matrix + lambda * eye(size(cov_matrix, 1));
+            %fprintf('DEBUG C%d: Increased λ to %e. New cond: %e\n', ...
+           %     target_cluster, lambda, cond(cov_matrix_reg));
         end
-
-        VI = pinv(cov_matrix);
         
-        % PRINT 2: Check the condition number of the final matrix
-        cond_num = cond(cov_matrix);
-        %fprintf('DEBUG C%d: Condition Number (cond()): %e\n', target_cluster, cond_num);
-
+        VI = pinv(cov_matrix_reg);
     catch ME
-        % PRINT 3: Report crash during matrix inversion
-     %   fprintf('DEBUG C%d: CRASH in pinv/cov. Error: %s\n', target_cluster, ME.message);
-        isolation_distance = NaN;
-        l_ratio = NaN;
+        %fprintf('DEBUG C%d: CRASH in pinv/cov. Error: %s\n', target_cluster, ME.message);
+        isolation_distance = NaN; l_ratio = NaN;
         return;
     end
     
-    % --- Metric Calculation ---
-
-    % Calculate Mahalanobis DISTANCE (D) to *other* spikes
-    mahal_other_dist = pdist2(mean_val, pcs_for_other, 'mahalanobis', VI);
+    % --- Manual Mahalanobis distance ---
+    try
+        diff_other = bsxfun(@minus, pcs_for_other, mean_val);
+        delta2_other = sum((diff_other * VI) .* diff_other, 2);
+        delta2_other(delta2_other < 0) = 0;
+    catch ME
+        %fprintf('DEBUG C%d: CRASH computing Mahalanobis distances. Error: %s\n', target_cluster, ME.message);
+        isolation_distance = NaN; l_ratio = NaN;
+        return;
+    end
     
-    % Convert to SQUARED Mahalanobis Distance (delta^2)
-    delta2_other = mahal_other_dist.^2;
-
     delta2_other_sorted = sort(delta2_other);
-    
     n = min(n_self, n_other);
     
-    % L-ratio: sum over OTHER, divided by size of THIS cluster
+    % L-ratio
     p_values = chi2cdf(delta2_other, dof, 'upper');
     l_ratio = sum(p_values) / double(n_self);
     
-    % Isolation distance: n-th element of the sorted SQUARED distances
+    % Isolation distance
     if n >= 1
         isolation_distance = delta2_other_sorted(n);
     else
         isolation_distance = NaN;
     end
     
-    % PRINT 4: Report calculated metrics
-   % fprintf('DEBUG C%d: FINAL ID: %e | FINAL L_ratio: %e\n', target_cluster, isolation_distance, l_ratio);
-
+    %fprintf('DEBUG C%d: FINAL ID: %e | FINAL L_ratio: %e\n', target_cluster, isolation_distance, l_ratio);
 end
 
 function dprime = d_prime_lda(features, cluster_labels, target_cluster)

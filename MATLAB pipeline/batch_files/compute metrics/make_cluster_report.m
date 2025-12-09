@@ -176,7 +176,18 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
 
     % Metrics overview page
     if ~isempty(df_metrics) && ~isempty(SS)
-        fig_metrics = create_metrics_overview_page(df_metrics, SS, visstr, leicolors);
+        % Compute mean waveforms per cluster present in df_metrics and pass
+        cluster_list_for_metrics = double(df_metrics.cluster_id(:));
+        mean_wfs = NaN(numel(cluster_list_for_metrics), size(waveforms,2));
+        for kk = 1:numel(cluster_list_for_metrics)
+            cid = cluster_list_for_metrics(kk);
+            Wc = waveforms(cluster_ids == cid, :);
+            if ~isempty(Wc)
+                mean_wfs(kk, :) = mean(Wc, 1);
+            end
+        end
+
+        fig_metrics = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_wfs, cluster_list_for_metrics);
         figs{end+1} = fig_metrics;
     end
 
@@ -280,29 +291,56 @@ end
 % Replace plot_cluster_metrics_summary to be axes-aware
 function plot_cluster_metrics_summary(ax, df_metrics, cluster_id, color)
 % PLOT_CLUSTER_METRICS_SUMMARY - Display key metrics for cluster into provided axes
-    if nargin < 1 || isempty(ax) || ~isgraphics(ax,'axes')
-        ax = gca;
+    
+    % Find the row for this cluster
+    row_idx = find(df_metrics.cluster_id == cluster_id, 1);
+    
+    if isempty(row_idx)
+        % Cluster not in metrics table
+        text(ax, 0.5, 0.5, sprintf('No metrics for C%d', cluster_id), ...
+            'HorizontalAlignment', 'center', 'FontSize', 10, 'Color', [0.5 0.5 0.5]);
+        axis(ax, 'off');
+        return;
     end
-    if isempty(df_metrics)
-        axis(ax,'off'); return;
-    end
-
-    cluster_metrics = df_metrics(df_metrics.cluster_id == cluster_id, :);
-    if isempty(cluster_metrics) || height(cluster_metrics) ~= 1
-        axis(ax,'off'); return;
-    end
-
-    % Draw text using Parent=ax to avoid changing gca
-    text(0.1, 0.8, sprintf('SNR: %.1f', cluster_metrics.snr), 'FontSize', 9, 'Parent', ax);
-    text(0.1, 0.6, sprintf('Isolation: %.1f', cluster_metrics.isolation_distance), 'FontSize', 9, 'Parent', ax);
-    text(0.1, 0.4, sprintf('L-ratio: %.3f', cluster_metrics.l_ratio), 'FontSize', 9, 'Parent', ax);
-    if ismember('silhouette_score', df_metrics.Properties.VariableNames)
-        text(0.1, 0.2, sprintf('Silhouette: %.2f', cluster_metrics.silhouette_score), 'FontSize', 9, 'Parent', ax);
-    end
+    
+    m = df_metrics(row_idx, :);
+    
+    % Build metrics text, replacing NaN/Inf with '--'
+    metrics_text = {
+        sprintf('Cluster %d', cluster_id), ...
+        sprintf('N spikes: %d', m.num_spikes), ...
+        sprintf('FR: %.2f Hz', m.firing_rate), ...
+        sprintf('SNR: %s', format_metric(m.snr)), ...
+        sprintf('Presence: %s', format_metric(m.presence_ratio)), ...
+        sprintf('Amp cutoff: %s', format_metric(m.amplitude_cutoff)), ...
+        sprintf('ISI viol: %s', format_metric(m.isi_violation_rate)), ...
+        sprintf('ISO dist: %s', format_metric(m.isolation_distance)), ...
+        sprintf('L-ratio: %s', format_metric(m.l_ratio)), ...
+        sprintf('d'': %s', format_metric(m.d_prime)), ...
+        sprintf('NN hit: %s', format_metric(m.nn_hit_rate)), ...
+        sprintf('Silhouette: %s', format_metric(m.silhouette_score))
+    };
+    
+    % Display as text in axes
+    text(ax, 0.05, 0.95, strjoin(metrics_text, '\n'), ...
+        'VerticalAlignment', 'top', 'FontSize', 8, ...
+        'FontName', 'FixedWidth', 'Color', color);
+    
     axis(ax, 'off');
 end
 
-function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors)
+function str = format_metric(val)
+    % Helper to format metric values (handle NaN/Inf gracefully)
+    if isnan(val) || isinf(val)
+        str = '--';
+    elseif abs(val) < 0.01 && val ~= 0
+        str = sprintf('%.2e', val);
+    else
+        str = sprintf('%.3f', val);
+    end
+end
+
+function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids)
     % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
     figM = figure('Visible', visstr, 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
 
@@ -340,6 +378,14 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors)
                 h = bar(ax, (1:num_bars), y, 'FaceColor', 'flat', 'BarWidth', 0.9);
                 h.CData = bar_colors_rep; 
 
+                metric_name_lower = lower(metrics_cols{idx});
+                if contains(metric_name_lower, 'isolation') || contains(metric_name_lower, 'l_ratio') || contains(metric_name_lower, 'lratio')
+                    set(ax, 'YScale', 'log');
+                    ylabel(ax, [metrics_cols{idx} ' (log)']);
+                else
+                    ylabel(ax, metrics_cols{idx});
+                end
+
                 if r == n_rows
                     xticks(ax, 1:num_bars);
                     xticklabels(ax, arrayfun(@(x)sprintf('c%d', df_metrics.cluster_id(x)), 1:num_bars, 'UniformOutput',false));
@@ -347,7 +393,6 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors)
                 else
                     set(ax, 'XTick', []);
                 end
-                ylabel(ax, metrics_cols{idx});
                 title(ax, metrics_cols{idx}, 'Interpreter', 'none');
                 grid(ax, 'on');
                 box(ax, 'off');
@@ -365,37 +410,70 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors)
     sil_slot = n_metrics + 1;
     if sil_slot <= n_rows * cols_per_row
         ax_sil = axes_handles(ceil(sil_slot/cols_per_row), mod(sil_slot-1, cols_per_row) + 1);
-        if isempty(SS)
-            text(0.5,0.5,'No silhouette matrix', 'HorizontalAlignment','center','Parent', ax_sil);
-            axis(ax_sil,'off');
-        else
-            S = SS;
-            for i = 1:size(S, 1)
-                for j = 1:size(S, 2)
-                    if isnan(S(i, j)) && ~isnan(S(j, i))
-                        S(i, j) = S(j, i);
+        if nargin >= 6 && ~isempty(mean_waveforms)
+            ids = mean_waveform_cluster_ids(:)';
+            M = mean_waveforms;
+            nC = size(M,1);
+            labels = {};
+            dists = [];
+            for i = 1:(nC-1)
+                for j = (i+1):nC
+                    mi = M(i,:);
+                    mj = M(j,:);
+                    if any(isnan(mi)) || any(isnan(mj))
+                        continue;
                     end
+                    labels{end+1} = sprintf('C%d-C%d', ids(i), ids(j));
+                    dists(end+1) = sum(abs(mi - mj));
                 end
             end
-            S(1:size(S,1)+1:end) = NaN; 
-            mask_upper_tri = triu(true(size(S)), 1); 
-            S(mask_upper_tri) = NaN; 
-            
-            cluster_labels = arrayfun(@(x)sprintf('c%d', x), df_metrics.cluster_id, 'UniformOutput', false);
 
-            imagesc(ax_sil, S, [-1 1]);
-            colormap(ax_sil, 'parula');
-            cb = colorbar(ax_sil);
-            cb.Label.String = 'Silhouette Score';
+            if isempty(dists)
+                text(0.5,0.5,'No L1 distances', 'HorizontalAlignment','center','Parent', ax_sil);
+                axis(ax_sil,'off');
+            else
+                bar(ax_sil, dists, 'FaceColor', [0.2 0.2 0.7]);
+                ax_sil.XTick = 1:numel(dists);
+                ax_sil.XTickLabel = labels;
+                xtickangle(ax_sil, 90);
+                ylabel(ax_sil, 'L1 distance (sum |A-B|)');
+                title(ax_sil, 'Pairwise L1 distances between mean waveforms');
+                grid(ax_sil, 'on');
+                box(ax_sil, 'off');
+            end
+        else
+            if isempty(SS)
+                text(0.5,0.5,'No silhouette matrix', 'HorizontalAlignment','center','Parent', ax_sil);
+                axis(ax_sil,'off');
+            else
+                S = SS;
+                for i = 1:size(S, 1)
+                    for j = 1:size(S, 2)
+                        if isnan(S(i, j)) && ~isnan(S(j, i))
+                            S(i, j) = S(j, i);
+                        end
+                    end
+                end
+                S(1:size(S,1)+1:end) = NaN; 
+                mask_upper_tri = triu(true(size(S)), 1); 
+                S(mask_upper_tri) = NaN; 
+                
+                cluster_labels = arrayfun(@(x)sprintf('c%d', x), df_metrics.cluster_id, 'UniformOutput', false);
 
-            ax_sil.XTick = 1:size(S,2);
-            ax_sil.YTick = 1:size(S,1);
-            ax_sil.XTickLabel = cluster_labels;
-            ax_sil.YTickLabel = cluster_labels;
-            xtickangle(ax_sil, 90);
-            title(ax_sil, 'Silhouette Score Heatmap');
-            axis(ax_sil, 'equal', 'tight'); 
-            box(ax_sil, 'off');
+                imagesc(ax_sil, S, [-1 1]);
+                colormap(ax_sil, 'parula');
+                cb = colorbar(ax_sil);
+                cb.Label.String = 'Silhouette Score';
+
+                ax_sil.XTick = 1:size(S,2);
+                ax_sil.YTick = 1:size(S,1);
+                ax_sil.XTickLabel = cluster_labels;
+                ax_sil.YTickLabel = cluster_labels;
+                xtickangle(ax_sil, 90);
+                title(ax_sil, 'Silhouette Score Heatmap');
+                axis(ax_sil, 'equal', 'tight'); 
+                box(ax_sil, 'off');
+            end
         end
     end
 

@@ -58,11 +58,9 @@ step_pic = 15;
 
 
 %%
-% Define the path where the codes emu repository is located
+% Define the path where the MCWs repository is located
 [~,name] = system('hostname');
-if contains(name,'BEH-REYLAB'), dir_base = '/home/user/share/codes_emu'; 
-
-elseif contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
+if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 
 
 end
