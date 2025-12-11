@@ -64,7 +64,7 @@ step_pic = 15;
 
 [~,name] = system('hostname');
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
-
+elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
 
 end
 
@@ -244,7 +244,8 @@ if par.micros
     end
     disp('spike detection DONE.')
 
-    
+    %% 
+
     %% collision and quarantine within probes
     disp('separate_collisions BEGIN..')
     separate_collisions(channels)
