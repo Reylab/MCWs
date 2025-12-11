@@ -98,7 +98,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
 
                 % presence KDE (row2)
                 ax2 = subplot(3, ncols, ncols+1);
-                cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax2, 100, 'inferno');
+                cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax2, 100, 'inferno');
 
                 % SNR bar (row3)
                 ax3 = subplot(3, ncols, 2*ncols+1);
@@ -501,6 +501,16 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
     end
 
     [n, T] = size(W);
+    
+    % CHANGE 1: Add max waveforms limit
+    max_waveforms = 5000;
+    if n > max_waveforms
+        rng(42, 'twister');
+        subsample_idx = randperm(n, max_waveforms);
+        W = W(subsample_idx, :);
+        n = max_waveforms;
+    end
+    
     x_min = 0; x_max = T-1;
     y_min = min(W(:)); y_max = max(W(:));
     
@@ -511,7 +521,8 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
     x_edges = linspace(x_min, x_max, p.Results.w+1);
     y_edges = linspace(y_min, y_max, p.Results.h+1);
 
-    interpolation_factor = 200; 
+    % CHANGE 2: Reduce interpolation factor
+    interpolation_factor = 10;  % was 200
     Ti = max(2, min(T * interpolation_factor, p.Results.w));
     
     x_orig = 0:(T-1);
@@ -567,7 +578,7 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
 end
 
 % Helper: cluster activity KDE matrix (per-cluster rows)
-function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax, time_pixels, cmapname)
+function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax, time_pixels, cmapname)
     if nargin < 4 || isempty(ax), ax = gca; end
     if nargin < 5 || isempty(time_pixels), time_pixels = 100; end
     if nargin < 6, cmapname = 'inferno'; end
@@ -634,7 +645,6 @@ function cluster_activity_kde_ax_mat(spike_times_ms, cluster_ids, recording_dura
     set(ax, 'Visible', 'on');
 end
 
-% -----------------------
 % Helper: compute cross-correlogram between two spike-time lists (ms)
 function [lags_ms, counts] = compute_cross_correlogram(times1_ms, times2_ms, bin_ms, maxlag_ms)
     if nargin < 3 || isempty(bin_ms), bin_ms = 1.0; end
@@ -651,14 +661,14 @@ function [lags_ms, counts] = compute_cross_correlogram(times1_ms, times2_ms, bin
         for i = 1:numel(t1)
             window_idx = find(t2 >= (t1(i)-maxlag) & t2 <= (t1(i)+maxlag));
             if ~isempty(window_idx)
-                diffs = [diffs; (t2(window_idx) - t1(i))]; %#ok<AGROW>
+                diffs = [diffs; (t2(window_idx) - t1(i))]; 
             end
         end
     else
         for i = 1:numel(t2)
             window_idx = find(t1 >= (t2(i)-maxlag) & t1 <= (t2(i)+maxlag));
             if ~isempty(window_idx)
-                diffs = [diffs; (t1(window_idx) - t2(i))]; %#ok<AGROW>
+                diffs = [diffs; (t1(window_idx) - t2(i))]; 
             end
         end
     end

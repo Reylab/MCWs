@@ -13,7 +13,7 @@ function [all_metrics, all_SS] = compute_metrics_batch(file_pattern, varargin)
 %   'parallel', true/false (default: true)
 %   'n_workers', N (default: auto-detect)
 %   'save', true/false (default: false)        
-%   'quar', true/false (default: false)     run clustering with quarantined spikes added
+%   'rescue', true/false (default: false)     save to 'metrics rescue/' instead of 'metrics/'
 %
 % Output:
 %   all_metrics - struct array with metrics for each file
@@ -28,7 +28,7 @@ addParameter(p, 'parallel', true, @islogical);
 addParameter(p, 'n_workers', 0, @isscalar); % 0 = auto-detect
 addParameter(p, 'save', true, @islogical);  % save metrics and SS to .mat when true
 addParameter(p, 'show_plots', false, @islogical);  % show plots during processing
-addParameter(p, 'quar', false, @islogical);  % run metrics with quarantined spikes added & clustered
+addParameter(p, 'rescue', false, @islogical);  % save to 'metrics rescue/' folder if true
 parse(p, varargin{:});
 
 % Get file list
@@ -94,10 +94,7 @@ end
 
 fprintf('Found %d files to process\n', length(file_list));
 
-% Prevent figure pop-ups during batch processing by turning off the default
-% figure visibility. Restore the previous value on function exit using
-% onCleanup. This ensures even helper functions that call `figure()` without
-% visibility args won't show UI windows.
+% Prevent figure pop-ups during batch processing
 try
     prevFigVis = get(groot, 'DefaultFigureVisible');
 catch
@@ -106,8 +103,6 @@ end
 set(groot, 'DefaultFigureVisible', 'off');
 cleanupFigVis = onCleanup(@() set(groot, 'DefaultFigureVisible', prevFigVis));
 
-% Also set the legacy root (0) DefaultFigureVisible for code that uses
-% the older root handle API. Restore on exit as well.
 try
     prevFigVis0 = get(0, 'DefaultFigureVisible');
 catch
@@ -125,21 +120,16 @@ if p.Results.parallel
     if p.Results.n_workers > 0
         n_workers = p.Results.n_workers;
     else
-        n_workers = feature('numcores'); % Use all available cores
+        n_workers = feature('numcores');
     end
     
     if isempty(gcp('nocreate'))
         parpool(n_workers);
     end
-    % Ensure worker sessions also create invisible figures by default to avoid
-    % pop-ups when plotting on workers. Use pctRunOnAll to set the root
-    % DefaultFigureVisible on each worker.
     try
         pctRunOnAll('try; set(groot, "DefaultFigureVisible", ''off''); end');
-        % Also set the legacy root (0) DefaultFigureVisible on workers
         pctRunOnAll('try; set(0, "DefaultFigureVisible", ''off''); end');
     catch
-        % pctRunOnAll may not be available in some environments; ignore if so.
     end
     fprintf('Using parallel processing with %d workers\n', n_workers);
 end
@@ -167,20 +157,15 @@ function [metrics_table, SS] = process_single_file(filename, params)
     try
         prev_vis = get(0, 'DefaultFigureVisible');
         set(0, 'DefaultFigureVisible', 'off');
-        % Restore visibility when this function finishes (or errors)
         clean_worker_vis = onCleanup(@() set(0, 'DefaultFigureVisible', prev_vis));
     catch
-        % Fallback for older MATLAB versions
     end
 
     try
-        %fprintf('Processing: %s\n', filename);
-        
         % Load data
         data = load(filename);
         
-        % add filename/path fields to the loaded struct so downstream code that
-        % expects these fields doesn't error (prevents "Unrecognized field name 'filename'")
+        % add filename/path fields
         [fullpath, name, ext] = fileparts(filename);
         if isempty(fullpath)
             fullpath = pwd;
@@ -188,86 +173,68 @@ function [metrics_table, SS] = process_single_file(filename, params)
         data.filename = name;
         data.fullpath = fullfile(fullpath, [name ext]);
         
-        % Extract channel info from filename (supports names like
-        % times_mProbe_raw_ch12 or times_mProbe_raw_12 and names with spaces)
+        % Extract channel info
         name_clean = regexprep(name, '^times[_\-]*', '', 'ignorecase');
         channel_id = NaN;
         tok = regexp(name_clean, '[cC][hH](\d+)', 'tokens', 'once');
         if isempty(tok)
-            tok = regexp(name_clean, '[_\s](\d+)$', 'tokens', 'once'); % trailing _NN or space NN
+            tok = regexp(name_clean, '[_\s](\d+)$', 'tokens', 'once');
         end
         if isempty(tok)
-            tok = regexp(name_clean, '(\d+)', 'tokens', 'once'); % fallback: any digits
+            tok = regexp(name_clean, '(\d+)', 'tokens', 'once');
         end
         if ~isempty(tok)
             channel_id = str2double(tok{1});
         end
         
-        % Compute metrics (single run). Catch errors locally so we don't call
-        % reporting functions without metrics.
+        % Determine output directory based on rescue parameter
+        if params.rescue
+            metrics_dir = fullfile(fullpath, 'metrics rescue');
+        else
+            metrics_dir = fullfile(fullpath, 'metrics');
+        end
+        
+        if ~exist(metrics_dir, 'dir')
+            mkdir(metrics_dir);
+        end
+        
+        % Compute metrics
         try
-            % Call compute_cluster_metrics. Request invisible figures and ask
-            % the function to save plots when 'params.save' is true. This keeps
-            % saving centralized inside compute_cluster_metrics and avoids
-            % pop-ups or duplicate saves.
             [metrics_table, SS, figs] = compute_cluster_metrics(data, ...
                 'exclude_cluster_0', params.exclude_cluster_0, ...
                 'n_neighbors', params.n_neighbors, ...
                 'bin_duration', params.bin_duration, ...
                 'show_plots', params.show_plots, ...
                 'save_plots', params.save, ...
-                'plot_params', struct('base_name', name_clean)); % pass basename for consistent naming
-
+                'plot_params', struct('base_name', name_clean, 'outdir', metrics_dir));
 
         catch ME_cm
             fprintf('  ✗ compute_cluster_metrics failed for %s: %s\n', filename, ME_cm.message);
-            % Print full stack to help locate "Too many output arguments" source
             try
                 fprintf('%s\n', getReport(ME_cm, 'extended'));
             catch
-                % fallback
                 disp(ME_cm);
             end
-             metrics_table = table();
-             SS = [];
+            metrics_table = table();
+            SS = [];
             figs = {};
         end
         
-        % Add filename and channel info to metrics table if it's non-empty
+        % Add filename and channel info to metrics table
         if istable(metrics_table) && height(metrics_table) > 0
             metrics_table.filename = repmat({filename}, height(metrics_table), 1);
             metrics_table.channel_id = repmat(channel_id, height(metrics_table), 1);
         end
         
-            % Save metrics centrally (single place). If quarantine flag is set,
-            % append '_quar' to the filename.
-            % Determine output directory and base name
-            out_dir = pwd;
-            if isfield(data, 'fullpath') && ~isempty(data.fullpath)
-                out_dir = fileparts(data.fullpath);
+        % Save metrics to appropriate directory
+        if params.save
+            try
+                outname = sprintf('%s_metrics.mat', name_clean);
+                save(fullfile(metrics_dir, outname), 'metrics_table', 'SS');
+            catch ME
+                warning('Failed to save metrics for %s: %s', filename, ME.message);
             end
-            base_name = name; % from fileparts above
-
-            % Save metrics centrally (single place). If quarantine flag is set,
-            % append '_quar' to the filename.
-            if params.save
-                try
-                    outname = sprintf('%s_metrics.mat', base_name);
-                    if params.quar
-                        outname = sprintf('%s_quar_metrics.mat', base_name);
-                    end
-                    save(fullfile(out_dir, outname), 'metrics_table', 'SS');
-                    %fprintf('  Saved metrics to %s\n', fullfile(out_dir, outname));
-                catch ME
-                    warning('Failed to save metrics for %s: %s', filename, ME.message);
-                end
-            end
-
-            % Plots (if any) are saved inside compute_cluster_metrics when
-            % 'save_plots' is true. Do not re-save them here to avoid
-            % duplicate files.
-        
-       % fprintf('Completed: %s (%d clusters)\n', filename, height(metrics_table));
+        end
         
     catch ME
         fprintf('Error processing %s: %s\n', filename, ME.message);

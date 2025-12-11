@@ -270,8 +270,8 @@ if par.micros
 
         %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
-        compute_metrics_batch(channels,'parallel',true, 'save',true);
     end
+    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',false);
         % can be used on single channels
         % [metrics_table, SS] = compute_cluster_metrics(data, ...
         %     'exclude_cluster_0', params.exclude_cluster_0, ...
@@ -281,9 +281,9 @@ if par.micros
         %     'save_plots',true);        
 
         % % and if you want to merge clusters use this function
-        % [new_data, ~, metrics, SS] = merge_and_report('times_CH123.mat', [1, 2, 3], ...
-        %         'calc_metrics', true, ...
-        %         'make_plots', false);
+       % [new_data, figs, df_metrics, SS] = merge_and_report(data, [2, 3], 'test', true, 'overwrite', false,'show_figs', true, 'rescue',false);
+
+
  %% to see former metric plotting        
         %        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
@@ -293,9 +293,11 @@ if par.micros
     rescue_spikes(channels,'parallel',true);
 
     %fix need something to separate this ones quar
-    compute_metrics_batch('all','quar',true);
+    compute_metrics_batch('all','rescue',true);
             
-    
+
+
+% Should backup originals to backup_originals/, then overwrite times_mLTP02 raw_258.mat
 
     end
 end

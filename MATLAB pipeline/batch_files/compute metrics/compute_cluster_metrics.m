@@ -143,6 +143,10 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
             feat_valid = features;
             labels_valid = cluster_ids;
         end
+        
+        fprintf('DEBUG %s: Before silhouette - unique_clusters=%d, exclude_0=%d, unique_after_filter=%d\n', ...
+            data.filename, numel(unique_clusters), p.Results.exclude_cluster_0, numel(unique(labels_valid)));
+        
         try
             [scores, SS] = silhouette_score(feat_valid, labels_valid, 'return_matrix', true);
             % Map scores back into df_metrics (order: metric_clusters)
@@ -162,7 +166,6 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
                 df_metrics.silhouette_score = sc;
             end
 
-            % --- NEW: remap SS matrix to match df_metrics.cluster_id order ---
             % Build SS_mapped with rows/cols in the same order as df_metrics.cluster_id
             if ~isempty(SS) && ~isempty(df_metrics)
                 uniq = unique(labels_valid); % order used by SS
@@ -183,46 +186,50 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
                 end
                 SS = SS_mapped;
             end
-            % --- end remap ---
-        catch
+        catch ME
+            fprintf('ERROR %s: silhouette_score CRASHED in TRY block. Error: %s\n', data.filename, ME.message);
+            fprintf('  Stack: %s (line %d)\n', ME.stack(1).name, ME.stack(1).line);
             SS = []; 
             if ~isempty(df_metrics)
                 df_metrics.silhouette_score = NaN(height(df_metrics),1);
             end
         end
     else
+        fprintf('DEBUG %s: SS set to [] in ELSE - only 1 unique cluster (unique_clusters=%d)\n', ...
+            data.filename, numel(unique_clusters));
         SS = [];
         if ~isempty(df_metrics)
             df_metrics.silhouette_score = NaN(height(df_metrics),1);
         end
     end
 
-    % Generate plots if requested (delegate to make_cluster_report). NOTE:
-    % We do NOT save plots here. Saving is centralized in compute_metrics_batch.
-
-    % call reporting if requested
+    % Generate plots if requested
     figs = {};
-    if p.Results.show_plots
-        % Create cluster report (invisible by default)
-        [figs, df_metrics, SS] = make_cluster_report(data, ...
-            'calc_metrics', false, ...
-            'metrics_df', df_metrics, ...
-            'SS', SS, ...
-            'exclude_cluster_0', p.Results.exclude_cluster_0, ...
-            'show_figures', true);
-    else
-        % still produce figures but invisible if downstream wants to save them
-        [figs, df_metrics, SS] = make_cluster_report(data, ...
-            'calc_metrics', false, ...
-            'metrics_df', df_metrics, ...
-            'SS', SS, ...
-            'exclude_cluster_0', p.Results.exclude_cluster_0, ...
-            'show_figures', false);
+    
+    % Generate report if: (1) we want to show plots, OR (2) we want to save them
+    % Even if df_metrics is empty, we might want to document that fact
+    if p.Results.show_plots || p.Results.save_plots
+        if isempty(df_metrics) || height(df_metrics) == 0
+            fprintf('Warning: No metrics computed for %s (skipping report)\n', data.filename);
+            return;  % Exit early
+        end
+        
+        % Check if SS is empty before calling make_cluster_report
+        if isempty(SS)
+            fprintf('WARNING %s: SS is empty, skipping make_cluster_report (likely only 1-2 clusters after filtering)\n', data.filename);
+            return;
+        end
+        
+        [figs, ~, ~] = make_cluster_report(data, ...
+                'calc_metrics', false, ...
+                'metrics_df', df_metrics, ...
+                'SS', SS, ...
+                'exclude_cluster_0', p.Results.exclude_cluster_0, ...
+                'show_figures', p.Results.show_plots);
     end
 
-    % Save plots if requested. plot_params may contain base_name, outdir,
-    % and optional test/test_suffix/backups forwarded from higher-level calls.
-    if p.Results.save_plots
+    % Save plots if requested
+    if p.Results.save_plots && ~isempty(figs)
         try
             save_plot_files(figs, data, p.Results.plot_params);
         catch ME
