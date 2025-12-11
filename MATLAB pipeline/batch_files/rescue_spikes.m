@@ -73,6 +73,16 @@ function process_channel_rescue(ch)
         % Load times file and get clustering info
         if exist(fname_times, 'file')
             S = load(fname_times);
+            
+            % SAVE PRE-RESCUE BACKUP (only if not already saved)
+            if ~isfield(S, 'spikes_pre_rescue')
+                spikes_pre_rescue = S.spikes;
+                index_pre_rescue = S.index;
+                cluster_class_pre_rescue = S.cluster_class;
+                save(fname_times, 'spikes_pre_rescue', 'index_pre_rescue', ...
+                     'cluster_class_pre_rescue', '-append');
+            end
+            
             cluster_class = S.cluster_class;
             spikes = S.spikes;
             coeff = S.coeff;
