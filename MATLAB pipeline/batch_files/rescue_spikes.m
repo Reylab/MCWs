@@ -77,7 +77,7 @@ function process_channel_rescue(ch)
             % SAVE PRE-RESCUE BACKUP (only if not already saved)
             if ~isfield(S, 'spikes_pre_rescue')
                 spikes_pre_rescue = S.spikes;
-                index_pre_rescue = S.index;
+                index_pre_rescue = index;
                 cluster_class_pre_rescue = S.cluster_class;
                 save(fname_times, 'spikes_pre_rescue', 'index_pre_rescue', ...
                      'cluster_class_pre_rescue', '-append');
@@ -92,7 +92,7 @@ function process_channel_rescue(ch)
         else %if no times file, means unclustered/assume multiunit
             spikes = SPK.spikes;
             coeff = 1:64; % default to first 64 coeffs
-            inspk_good = local_wavelet_decomp(spikes);
+            inspk_good = local_wavelet_decomp(spikes,par.scales);
             class_good = ones(size(spikes,1),1);
         end
         % Use class_good as those with cluster_class ~= 0
@@ -113,8 +113,8 @@ function process_channel_rescue(ch)
         spikes_rescued = spikes_quar(rescued_idx, :);
         index_rescued = index_quar(rescued_idx);
         class_rescued = class_quar(rescued_idx)';
-        inspk_quar = local_wavelet_decomp(spikes_rescued);
-        inspk_rescued = inspk_quar(:,coeff);
+        inspk_all_coeff = local_wavelet_decomp(spikes_rescued,par.scales);
+        inspk_rescued = inspk_all_coeff(:,coeff);
         % Combine
         index_combined = [index; index_rescued];
         spikes_combined = [spikes; spikes_rescued];
@@ -172,15 +172,41 @@ function ch_lbl = get_channel_label(ch)
      end
  end
 
-% --- Local Haar wavelet decomposition function (copied from gmm_1channel/wave_features) ---
-function inspk = local_wavelet_decomp(spikes)
+
+function inspk = local_wavelet_decomp(spikes, scales)
     % Computes Haar wavelet coefficients for each spike
     nspk = size(spikes,1);
-    L = size(spikes,2);
-    inspk = zeros(nspk, L);
-    for i = 1:nspk
-        % Use MATLAB's wavedec for Haar decomposition
-        [C,~] = wavedec(spikes(i,:), 4, 'haar');
-        inspk(i,1:length(C)) = C;
+  
+    cc=zeros(nspk,ls);
+    ls = size(spikes,2);
+
+    try
+        spikes_l = reshape(spikes',numel(spikes),1);
+        if exist('wavedec')
+            [c_l,l_wc] = wavedec(spikes_l,scales,'haar');
+        else
+            [c_l,l_wc] = fix_wavedec(spikes_l,scales);
+        end
+        wv_c = [0;l_wc(1:end-1)];
+        nc = wv_c/nspk;
+        wccum = cumsum(wv_c);
+        nccum = cumsum(nc);
+        for cf = 2:length(nc)
+            cc(:,nccum(cf-1)+1:nccum(cf)) = reshape(c_l(wccum(cf-1)+1:wccum(cf)),nc(cf),nspk)';
+        end
+    catch
+        if exist('wavedec')                             % Looks for Wavelets Toolbox
+            for i=1:nspk                                % Wavelet decomposition
+                [c,l] = wavedec(spikes(i,:),scales,'haar');
+                cc(i,1:ls) = c(1:ls);
+            end
+        else
+            for i=1:nspk                                % Replaces Wavelets Toolbox, if not available
+                [c,l] = fix_wavedec(spikes(i,:),scales);
+                cc(i,1:ls) = c(1:ls);
+            end
+        end
+        
     end
+    inspk = cc;
 end
