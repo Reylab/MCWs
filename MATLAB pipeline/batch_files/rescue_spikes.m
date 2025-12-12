@@ -105,8 +105,8 @@ function process_channel_rescue(ch)
         else
             fprintf('  Channel %s: Rescued %d spikes.\n', ch_lbl, numel(rescued_idx));
             for i = 1:numel(rescued_idx)
-                fprintf('    Rescued spike at index %d (global index %d) assigned to cluster %d\n', ...
-                    rescued_idx(i), index_quar(rescued_idx(i)), class_quar(rescued_idx(i)));
+               % fprintf('    Rescued spike at index %d (global index %d) assigned to cluster %d\n', ...
+               %     rescued_idx(i), index_quar(rescued_idx(i)), class_quar(rescued_idx(i)));
             end
         end
         % Merge rescued spikes with original clustered spikes
