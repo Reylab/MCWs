@@ -8,32 +8,90 @@ function rescue_spikes(channels, varargin)
 
 % Parse optional arguments
 parallel = false;
+restore = false;
 for v = 1:2:length(varargin)
     if strcmp(varargin{v}, 'parallel')
         parallel = varargin{v+1};
+    elseif strcmp(varargin{v}, 'restore')
+        restore = varargin{v+1};
     end
 end
 
-fprintf('Starting rescue_spikes on %d channels...\n', length(channels));
+if restore
+    fprintf('Starting rescue_spikes RESTORE on %d channels...\n', length(channels));
+else
+    fprintf('Starting rescue_spikes on %d channels...\n', length(channels));
+end
 
 if parallel
     parfor kk = 1:length(channels)
-        process_channel_rescue(channels(kk));
+        process_channel_rescue(channels(kk), restore);
     end
 else
     for kk = 1:length(channels)
-        process_channel_rescue(channels(kk));
+        process_channel_rescue(channels(kk), restore);
     end
 end
 
 fprintf('rescue_spikes DONE.\n');
 end
 
-function process_channel_rescue(ch)
+function process_channel_rescue(ch, restore)
     try
         ch_lbl = get_channel_label(ch); % Helper to get output_name or label
         fname_spk = sprintf('%s_spikes.mat', ch_lbl);
         fname_times = sprintf('times_%s.mat', ch_lbl);
+        
+        if restore
+            if exist(fname_spk, 'file')
+                vars_spk = load(fname_spk, 'rescue_mask', 'index_all', 'spikes', 'index');
+                if isfield(vars_spk, 'rescue_mask') && any(vars_spk.rescue_mask)
+                    % 1. Restore Spikes File
+                    rescued_timestamps = vars_spk.index_all(vars_spk.rescue_mask);
+                    to_remove_spk = ismember(vars_spk.index, rescued_timestamps);
+                    
+                    if any(to_remove_spk)
+                        vars_spk.spikes(to_remove_spk, :) = [];
+                        vars_spk.index(to_remove_spk) = [];
+                        vars_spk.rescue_mask = [];
+                        save(fname_spk, '-struct', 'vars_spk', 'spikes', 'index', 'rescue_mask', '-append');
+                        fprintf('  Channel %s: Restored spikes file.\n', ch_lbl);
+                    end
+                    
+                    % 2. Restore Times File
+                    if exist(fname_times, 'file')
+                        vars_times = load(fname_times);
+                        % Use cluster_class(:,2) for timestamps to be safe
+                        if isfield(vars_times, 'cluster_class')
+                            ts = vars_times.cluster_class(:,2);
+                            to_remove_times = ismember(ts, rescued_timestamps);
+                            
+                            if any(to_remove_times)
+                                vars_times.cluster_class(to_remove_times, :) = [];
+                                vars_times.spikes(to_remove_times, :) = [];
+                                if isfield(vars_times, 'inspk'), vars_times.inspk(to_remove_times, :) = []; end
+                                if isfield(vars_times, 'index'), vars_times.index(to_remove_times) = []; end
+                                
+                                % Clean up rescue artifacts
+                                fields_to_remove = {'spikes_quarantined', 'index_quarantined', 'class_quarantined', 'class_quar', 'index_quar', 'rescued_idx'};
+                                for f = 1:length(fields_to_remove)
+                                    if isfield(vars_times, fields_to_remove{f})
+                                        vars_times = rmfield(vars_times, fields_to_remove{f});
+                                    end
+                                end
+                                
+                                save(fname_times, '-struct', 'vars_times');
+                                fprintf('  Channel %s: Restored times file.\n', ch_lbl);
+                            end
+                        end
+                    end
+                else
+                    fprintf('  Channel %s: No rescue mask found to restore.\n', ch_lbl);
+                end
+            end
+            return;
+        end
+
         SPK = load(fname_spk);
         spikes_all = SPK.spikes_all;
         index_all = SPK.index_all;
@@ -60,6 +118,7 @@ function process_channel_rescue(ch)
         
         par = SPK.par;
         index = SPK.index;
+        spikes = SPK.spikes;
 
         % Find quarantined spikes: excluded by artifact, not by collision
         mask_quar = ~mask_non_quarantine & mask_non_collision & mask_task;
@@ -74,26 +133,36 @@ function process_channel_rescue(ch)
         if exist(fname_times, 'file')
             S = load(fname_times);
             
-            % SAVE PRE-RESCUE BACKUP (only if not already saved)
             if ~isfield(S, 'spikes_pre_rescue')
                 spikes_pre_rescue = S.spikes;
                 index_pre_rescue = index;
                 cluster_class_pre_rescue = S.cluster_class;
                 save(fname_times, 'spikes_pre_rescue', 'index_pre_rescue', ...
                      'cluster_class_pre_rescue', '-append');
+            else
+                fprintf("spikes already rescued on Channel %d\n",ch);
+                return
             end
             
             cluster_class = S.cluster_class;
-            spikes = S.spikes;
-            coeff = S.coeff;
+            if isfield(S, 'coeff')
+                coeff = S.coeff;
+            else
+                coeff = 1:64; % Fallback if coeff missing
+            end
             inspk_good = S.inspk;
             class_good_mask = cluster_class(:,1) ~= 0;
             class_good = cluster_class(class_good_mask, 1);
+
+        % elseif size(spikes,1) < 64
+        %     fprintf("Channel %d: not enough spikes\n",ch);
+        %     return
         else %if no times file, means unclustered/assume multiunit
             spikes = SPK.spikes;
             coeff = 1:64; % default to first 64 coeffs
             inspk_good = local_wavelet_decomp(spikes,par.scales);
             class_good = ones(size(spikes,1),1);
+            cluster_class = class_good;
         end
         % Use class_good as those with cluster_class ~= 0
 
@@ -116,11 +185,14 @@ function process_channel_rescue(ch)
         inspk_all_coeff = local_wavelet_decomp(spikes_rescued,par.scales);
         inspk_rescued = inspk_all_coeff(:,coeff);
         % Combine
-        index_combined = [index; index_rescued];
+        index_combined = [index, index_rescued];
         spikes_combined = [spikes; spikes_rescued];
         class_combined = [cluster_class(:,1); class_rescued];
         inspk_combined = [inspk_good; inspk_rescued];
-        cluster_class_combined = [class_combined, index_combined];
+
+        cluster_class_combined = zeros(length(class_combined),2);
+        cluster_class_combined(:,1) = class_combined;
+        cluster_class_combined(:,2) = index_combined;
         % Sort by index
         [index_sorted, sort_idx] = sort(index_combined);
         spikes_sorted = spikes_combined(sort_idx, :);
@@ -136,9 +208,23 @@ function process_channel_rescue(ch)
         spikes_quarantined = spikes_quar;
         index_quarantined = index_quar;
         class_quarantined = class_quar;
-        save(fname_times, 'spikes', 'index', 'inspk', 'cluster_class', 'spikes_quarantined', 'index_quarantined', 'class_quarantined', '-append');
+
+        rescue_mask = false(size(index_all));
+        quar_indices_all = find(mask_quar);
+        rescue_mask(quar_indices_all(rescued_idx)) = true;
+        
+        if exist(fname_times, 'file')
+            save(fname_times, 'spikes', 'inspk', 'cluster_class','rescue_mask', '-append');
+        else
+            save(fname_times, 'spikes', 'inspk', 'cluster_class', 'rescue_mask','par');
+        end
         % Also save rescue info in spikes file
         save(fname_times, 'class_quar', 'index_quar', 'rescued_idx', '-append');
+        
+        % Create and save rescue_mask to spikes file
+
+        save(fname_spk, 'spikes','index','rescue_mask', '-append');
+        
     catch ME
         fprintf('  Channel %d: Error - %s\n', ch, ME.message);
     end
@@ -176,9 +262,8 @@ function ch_lbl = get_channel_label(ch)
 function inspk = local_wavelet_decomp(spikes, scales)
     % Computes Haar wavelet coefficients for each spike
     nspk = size(spikes,1);
-  
-    cc=zeros(nspk,ls);
     ls = size(spikes,2);
+    cc=zeros(nspk,ls);
 
     try
         spikes_l = reshape(spikes',numel(spikes),1);
