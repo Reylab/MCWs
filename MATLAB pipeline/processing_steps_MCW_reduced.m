@@ -68,7 +68,7 @@ elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\M
 
 end
 
-addpath(dir_base);
+addpath(genpath(dir_base));
 % custompath = reylab_custompath({'wave_clus_reylab','NPMK','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
 custompath = reylab_custompath({'wave_clus_reylab','NPMK-master_Gemini','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
 
@@ -294,7 +294,7 @@ if par.micros
     rescue_spikes(channels,'parallel',true);
 
     %fix need something to separate this ones quar
-    compute_metrics_batch('all','rescue',true);
+    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',true);
             
 
 
