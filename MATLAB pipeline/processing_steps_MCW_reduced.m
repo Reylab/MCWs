@@ -291,7 +291,7 @@ if par.micros
 
     %% reintroduce quarantined spikes
     % see if they match any templates
-    rescue_spikes(channels,'parallel',true);
+    rescue_spikes(channels,'parallel',true);%,'restore',true);
 
     %fix need something to separate this ones quar
     compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',true);
