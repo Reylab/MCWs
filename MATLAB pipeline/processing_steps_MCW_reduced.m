@@ -58,24 +58,17 @@ step_pic = 15;
 
 
 %%
-% Define the path where the codes emu repository is located
-[~,name] = system('hostname');
-if contains(name,'BEH-REYLAB'), dir_base = '/home/user/share/codes_emu'; 
-elseif contains(name,'TOWER-REYLAB') || contains(name,'RACK-REYLAB') || contains(name, 'ABTL')
-%     current_user = 'sofiad';  % replace with appropriate user name  
-    current_user = getenv('USER');    dir_base = sprintf('/home/%s/Documents/GitHub/codes_emu',current_user); 
-elseif contains(name,'NSRG-HUB-15446'), dir_base = 'D:\codes_emu'; % Hernan's desktop
-elseif contains(name,'NSRG-HUB-16167'), dir_base = 'D:\bcm_emu'; % Hernan's laptop
-elseif contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\codes_emu'; % aj desktop
-elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\codes_emu'; % aj desktop
+% Define the path where the MCWs repository is located
+% copy this directory path according to your computer
+% have it mapped to MCWs repository/clone location
 
-elseif contains(name,'DESKTOP-OO8FBF4'), dir_base = 'D:\BCM-EMU'; % Hernan's laptop home
-%elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\codes_emu'; % ABT-REYLAB
-elseif contains(name,'ABT-REYLAB') || contains(name,'NRSG-HUB-18687'), dir_base = 'C:\Users\smathew\OneDrive - mcw.edu\Rey lab\codes_emu'; % ABT-REYLAB
-elseif contains(name,'MCW-20880'), dir_base = 'C:\Users\de31182\Documents\GitHub\codes_emu'; %Dewan's laptop
+[~,name] = system('hostname');
+if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
+elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
+
 end
 
-addpath(dir_base);
+addpath(genpath(dir_base));
 % custompath = reylab_custompath({'wave_clus_reylab','NPMK','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
 custompath = reylab_custompath({'wave_clus_reylab','NPMK-master_Gemini','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
 
@@ -251,7 +244,8 @@ if par.micros
     end
     disp('spike detection DONE.')
 
-    
+    %% 
+
     %% collision and quarantine within probes
     disp('separate_collisions BEGIN..')
     separate_collisions(channels)
@@ -270,14 +264,15 @@ if par.micros
         param.max_std_templates = 3;
         param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
         
+        Do_features(channels, 'parallel', true, 'par', param);
         Do_clustering(channels, 'parallel', true, 'make_times', true, ...
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
 
         %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
-        compute_metrics_batch('all','parallel',false,'quar',false);
     end
+    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',false);
         % can be used on single channels
         % [metrics_table, SS] = compute_cluster_metrics(data, ...
         %     'exclude_cluster_0', params.exclude_cluster_0, ...
@@ -287,21 +282,23 @@ if par.micros
         %     'save_plots',true);        
 
         % % and if you want to merge clusters use this function
-        % [new_data, ~, metrics, SS] = merge_and_report('times_CH123.mat', [1, 2, 3], ...
-        %         'calc_metrics', true, ...
-        %         'make_plots', false);
+       % [new_data, figs, df_metrics, SS] = merge_and_report(data, [2, 3], 'test', true, 'overwrite', false,'show_figs', true, 'rescue',false);
+
+
  %% to see former metric plotting        
         %        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
 
     %% reintroduce quarantined spikes
     % see if they match any templates
-    rescue_spikes(channels,'parallel',true);
+    rescue_spikes(channels,'parallel',true);%,'restore',true);
 
     %fix need something to separate this ones quar
-    compute_metrics_batch('all','quar',true);
+    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',true);
             
-    
+
+
+% Should backup originals to backup_originals/, then overwrite times_mLTP02 raw_258.mat
 
     end
 end
