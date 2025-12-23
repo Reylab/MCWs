@@ -61,9 +61,9 @@ par.interpolation = 'y';             % interpolation with cubic splines (default
 par.min_inputs = 10;         % number of inputs to the clustering
 par.max_inputs = 0.75;       % number of inputs to the clustering. if < 1 it will the that proportion of the maximum.
 par.scales = 4;                        % number of scales for the wavelet decomposition
-%par.features = 'wav';                % type of feature ('wav' or 'pca')
+par.features = 'wav';                % type of feature ('wav' or 'pca')
 %par.features = 'pca'
-par.features = 'gmm';
+%par.features = 'gmm';
 
 
 % FORCE MEMBERSHIP PARAMETERS

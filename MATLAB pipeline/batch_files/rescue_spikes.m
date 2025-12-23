@@ -175,12 +175,7 @@ function process_channel_rescue(ch, restore)
                 coeff = 1:64; % Fallback if coeff missing
             end
             inspk_good = S.inspk;
-            class_good_mask = cluster_class(:,1) ~= 0;
-            class_good = cluster_class(class_good_mask, 1);
 
-        % elseif size(spikes,1) < 64
-        %     fprintf("Channel %d: not enough spikes\n",ch);
-        %     return
         else %if no times file, means unclustered/assume multiunit
             % Uncomment the following lines to skip rescue for unclustered channels:
             % fprintf('  Channel %s: Skipping - no times file (unclustered).\n', ch_lbl);
@@ -188,34 +183,35 @@ function process_channel_rescue(ch, restore)
             
             spikes = SPK.spikes;
             coeff = 1:64; % default to first 64 coeffs
-            inspk_good = local_wavelet_decomp(spikes,par.scales);
+            inspk_good = local_wavelet_decomp(spikes);
             class_good = ones(size(spikes,1),1);
-            cluster_class = class_good;
+            cluster_class = [class_good, index(:)];
         end
         % Use class_good as those with cluster_class ~= 0
-
-          % Use force_membership_wc to assign clusters to quarantined spikes
-        class_quar = force_membership_wc(spikes, class_good, spikes_quar, par);
+        class_good_mask = cluster_class(:,1) ~= 0;
+        class_good = cluster_class(class_good_mask, 1);
+        inspk_good_classified = inspk_good(class_good_mask, :);
+        spikes_good_classified = spikes(class_good_mask, :);
+        % Calculate Haar wavelet features for quarantined spikes
+        inspk_quar_full = local_wavelet_decomp(spikes_quar);
+        inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
+        % Use force_membership_wc to assign clusters to quarantined spikes
+        class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)
             fprintf('  Channel %s: No spikes rescued.\n', ch_lbl);
         else
             fprintf('  Channel %s: Rescued %d spikes.\n', ch_lbl, numel(rescued_idx));
-            for i = 1:numel(rescued_idx)
-               % fprintf('    Rescued spike at index %d (global index %d) assigned to cluster %d\n', ...
-               %     rescued_idx(i), index_quar(rescued_idx(i)), class_quar(rescued_idx(i)));
-            end
         end
         % Merge rescued spikes with original clustered spikes
         spikes_rescued = spikes_quar(rescued_idx, :);
         index_rescued = index_quar(rescued_idx);
         class_rescued = class_quar(rescued_idx)';
-        inspk_all_coeff = local_wavelet_decomp(spikes_rescued,par.scales);
-        inspk_rescued = inspk_all_coeff(:,coeff);
-        % Combine
-        index_combined = [index, index_rescued];
+        inspk_rescued = inspk_quar(rescued_idx, :);
+        % Combine (force column vectors for index since some files save as row)
+        index_combined = [index(:); index_rescued(:)];
         spikes_combined = [spikes; spikes_rescued];
-        class_combined = [cluster_class(:,1); class_rescued];
+        class_combined = [cluster_class(:,1); class_rescued(:)];
         inspk_combined = [inspk_good; inspk_rescued];
 
         cluster_class_combined = zeros(length(class_combined),2);
@@ -287,39 +283,39 @@ function ch_lbl = get_channel_label(ch)
  end
 
 
-function inspk = local_wavelet_decomp(spikes, scales)
+function inspk = local_wavelet_decomp(spikes)
     % Computes Haar wavelet coefficients for each spike
+    % Do it like wave_features: use wavedec if available, else fix_wavedec
     nspk = size(spikes,1);
-    ls = size(spikes,2);
-    cc=zeros(nspk,ls);
-
+    L = size(spikes,2);
+    scales = 4; % match typical default used elsewhere
+    cc = zeros(nspk, L);
     try
-        spikes_l = reshape(spikes',numel(spikes),1);
-        if exist('wavedec')
-            [c_l,l_wc] = wavedec(spikes_l,scales,'haar');
+        spikes_l = reshape(spikes', numel(spikes), 1);
+        if exist('wavedec', 'file')
+            [c_l, l_wc] = wavedec(spikes_l, scales, 'haar');
         else
-            [c_l,l_wc] = fix_wavedec(spikes_l,scales);
+            [c_l, l_wc] = fix_wavedec(spikes_l, scales);
         end
-        wv_c = [0;l_wc(1:end-1)];
-        nc = wv_c/nspk;
+        wv_c = [0; l_wc(1:end-1)];
+        nc = wv_c / nspk;
         wccum = cumsum(wv_c);
         nccum = cumsum(nc);
         for cf = 2:length(nc)
-            cc(:,nccum(cf-1)+1:nccum(cf)) = reshape(c_l(wccum(cf-1)+1:wccum(cf)),nc(cf),nspk)';
+            cc(:, nccum(cf-1)+1:nccum(cf)) = reshape(c_l(wccum(cf-1)+1:wccum(cf)), nc(cf), nspk)';
         end
     catch
-        if exist('wavedec')                             % Looks for Wavelets Toolbox
-            for i=1:nspk                                % Wavelet decomposition
-                [c,l] = wavedec(spikes(i,:),scales,'haar');
-                cc(i,1:ls) = c(1:ls);
+        if exist('wavedec', 'file')
+            for i = 1:nspk
+                [c, ~] = wavedec(spikes(i,:), scales, 'haar');
+                cc(i, 1:L) = c(1:L);
             end
         else
-            for i=1:nspk                                % Replaces Wavelets Toolbox, if not available
-                [c,l] = fix_wavedec(spikes(i,:),scales);
-                cc(i,1:ls) = c(1:ls);
+            for i = 1:nspk
+                [c, ~] = fix_wavedec(spikes(i,:), scales);
+                cc(i, 1:L) = c(1:L);
             end
         end
-        
     end
     inspk = cc;
 end
