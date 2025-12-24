@@ -66,7 +66,7 @@ The current implementation expects:
 
 - Neural data in **NC5 `int16`** format, and  
 - A corresponding `NSx.mat` file containing all metadata required to read the data  
-  (e.g., sampling rate, channel map, recording duration, etc.). See "Sample_of_NSx.mat" for an exemplary file.
+  (e.g., sampling rate, channel map, recording duration, etc.). See ["Sample_of_NSx.mat"](https://github.com/Reylab/MCWs/blob/main/Sample_of_NSx.mat) for an exemplary file.
 
 If your recordings are in a **different format**, you will need to:
 
