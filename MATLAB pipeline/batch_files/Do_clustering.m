@@ -1,4 +1,4 @@
-    function Do_clustering(input, varargin)
+function Do_clustering(input, varargin)
     
     % PROGRAM Do_clustering.
     % Does clustering on all files in Files.txt
@@ -582,170 +582,190 @@
     %         par.max_inputs = par.max_inputs * par.channels;
     %     end
     
-        par.fname_in = ['tmp_data_wc' num2str(fnum)];                       % temporary filename used as input for SPC
-        par.fname = ['data_' data_handler.nick_name];
-        par.nick_name = data_handler.nick_name;
-        par.fnamespc = ['data_wc' num2str(fnum)];
-    
-        % LOAD PRE-CALCULATED FEATURES
-        feature_file = ['features_' data_handler.nick_name '.mat'];
-        
-        if ~exist(feature_file, 'file')
-            warning('Features file not found: %s. Please run Do_features first.', feature_file);
-			return
-        end
-        
-        % Load variables directly from the mat file
-        feat = load(feature_file);
-        
-        spikes = feat.spikes;
-        index = feat.index;
-        inspk = feat.inspk;
-        coeff = feat.coeff;
-        
-        % Handle optional fields that might not exist in all files
-        if isfield(feat, 'spikes_all'), spikes_all = feat.spikes_all; else, spikes_all = []; end
-        if isfield(feat, 'index_all'), index_all = feat.index_all; else, index_all = []; end
-    
-        nspk = size(spikes,1);
-        naux = min(par.max_spk,size(spikes,1));
-        par.inputs = size(inspk,2);
-        
-        % extract number surrounded by underscores: _123_
-        filename_chNum = str2double(regexp(filename, '(?<=_)\d+(?=_)', 'match', 'once'));
-        
-        if size(inspk,2) == par.max_inputs
-            fprintf("channel %d, max inputs %d instead of %d calculated \n", ...
-                    filename_chNum, par.max_inputs, inputs);
-        end
+    par.fname_in = ['tmp_data_wc' num2str(fnum)];                       % temporary filename used as input for SPC
+    par.fname = ['data_' data_handler.nick_name];
+    par.nick_name = data_handler.nick_name;
+    par.fnamespc = ['data_wc' num2str(fnum)];
 
-	    if par.permut == 'n'
-            % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
-            if size(spikes,1)> par.max_spk;
-                % take first 'par.max_spk' spikes as an input for SPC
-                inspk_aux = inspk(1:naux,:);
-            else
-                inspk_aux = inspk;
-            end
-	    else
-            % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
-            if size(spikes,1)> par.max_spk;
-                % random selection of spikes for SPC
-                ipermut = randperm(length(inspk));
-                ipermut(naux+1:end) = [];
-                inspk_aux = inspk(ipermut,:);
-            else
-                ipermut = randperm(size(inspk,1));
-                inspk_aux = inspk(ipermut,:);
-            end
-	    end
-        %INTERACTION WITH SPC
-        save(par.fname_in,'inspk_aux','-ascii');
-        try
-            [clu, tree] = run_cluster(par,true);
-		    if exist([par.fnamespc '.dg_01.lab'],'file')
-			    movefile([par.fnamespc '.dg_01.lab'], [par.fname '.dg_01.lab'], 'f');
-			    movefile([par.fnamespc '.dg_01'], [par.fname '.dg_01'], 'f');
-		    end
-        catch
-            warning('MyComponent:ERROR_SPC', 'Error in SPC');
-            return
-        end
+    % LOAD PRE-CALCULATED FEATURES
+    feature_file = ['features_' data_handler.nick_name '.mat'];
     
-        [clust_num temp auto_sort] = find_temp(tree,clu,par);
-    
-        if par.permut == 'y'
-            clu_aux = zeros(size(clu,1),2 + size(spikes,1)) -1;  %when update classes from clu, not selected elements go to cluster 0
-            clu_aux(:,ipermut+2) = clu(:,(1:length(ipermut))+2);
-            clu_aux(:,1:2) = clu(:,1:2);
-            clu = clu_aux;
-            clear clu_aux
-        end
-    
-        classes = zeros(1,size(clu,2)-2);
-        for c =1: length(clust_num)
-            aux = clu(temp(c),3:end) +1 == clust_num(c);
-            classes(aux) = c;
-        end
-    
-        if par.permut == 'n'
-            classes = [classes zeros(1,max(size(spikes,1)-par.max_spk,0))];
-        end
-    
-        Temp = [];
-        % Classes should be consecutive numbers
-        classes_names = nonzeros(sort(unique(classes)));
-        for i= 1:length(classes_names)
-           c = classes_names(i);
-           if c~= i
-               classes(classes == c) = i;
-           end
-           Temp(i) = temp(i);
-        end
-    
-        % IF TEMPLATE MATCHING WAS DONE, THEN FORCE
-        if (size(spikes,1)> par.max_spk || ...
-                (par.force_auto))
-            f_in  = spikes(classes~=0,:);
-            f_out = spikes(classes==0,:);
-            class_in = classes(classes~=0);
-            class_out = force_membership_wc(f_in, class_in, f_out, par);
-            forced = classes==0;
-            classes(classes==0) = class_out;
-            forced(classes==0) = 0;
-        else
-            forced = zeros(1, size(spikes,1));
-        end
-    
-        gui_status = struct();
-        gui_status.current_temp =  max(temp);
-        gui_status.auto_sort_info = auto_sort;
-        gui_status.original_classes = zeros(size(classes));
-    
-        for i=1:max(classes)
-            gui_status.original_classes(classes==i) = clust_num(i);
-        end
-    
-        current_par = par;
-        par = struct;
-        par = update_parameters(par, current_par, 'relevant');
-        par = update_parameters(par,current_par,'batch_plot');
-    
-        par.sorting_date = datestr(now);
-        cluster_class = zeros(nspk,2);
-        cluster_class(:,2)= index';
-        cluster_class(:,1)= classes';
-        vars = {'cluster_class','coeff','par','inspk','forced','Temp','gui_status'};
-    %     if exist('index_all','var')
-        if ~isempty(index_all)
-            cluster_class_withcollision = zeros(numel(index_all),2);
-            cluster_class_withcollision(:,2)=index_all';
-            no_coll = ismember(cluster_class_withcollision(:,2),index);
-            cluster_class_withcollision(no_coll,1)=classes';
-            max_class = max(classes)+1;
-            cluster_class_withcollision(~no_coll,1)=max_class;
-             vars = {'cluster_class', 'cluster_class_withcollision','coeff','par','inspk','forced','Temp','gui_status'};
-        end
-        %%
-        
-        if exist('ipermut','var')
-            vars{end+1} = 'ipermut';
-        end
-        if save_spikes
-            vars{end+1} = 'spikes';
-        else
-            spikes_file = filename;
-            vars{end+1} = 'spikes_file';
-        end
-        
-        try
-          save(['times_' data_handler.nick_name],vars{:});
-        catch
-          save(['times_' data_handler.nick_name],vars{:},'-v7.3');
-        end
-    
-    
+    if ~exist(feature_file, 'file')
+        warning('Features file not found: %s. Please run Do_features first.', feature_file);
+        return
     end
+    
+    % Load variables directly from the mat file
+    feat = load(feature_file);
+    
+    spikes = feat.spikes;
+    index = feat.index;
+    inspk = feat.inspk;
+    coeff = feat.coeff;
+    
+    % Handle optional fields that might not exist in all files
+    if isfield(feat, 'spikes_all')
+        spikes_all = feat.spikes_all;
+    else
+        spikes_all = [];
+    end
+    if isfield(feat, 'index_all')
+        index_all = feat.index_all;
+    else
+        index_all = [];
+    end
+
+    % LOAD SPIKES
+    nspk = size(spikes,1);
+    naux = min(par.max_spk,size(spikes,1));
+
+    if nspk < min_spikes4SPC
+        warning('MyComponent:noValidInput', 'Not enough spikes in the file');
+        return
+    end
+
+    par.inputs = size(inspk,2);
+    
+    % extract number surrounded by underscores: _123_
+    filename_chNum = str2double(regexp(filename, '(?<=_)\d+(?=_)', 'match', 'once'));
+    
+    if size(inspk,2) == par.max_inputs
+        fprintf("channel %d, max inputs %d instead of %d calculated \n", ...
+                filename_chNum, par.max_inputs, par.inputs);
+    end
+    
+    % Debug: Check parameters and data sizes
+    fprintf('Processing %s: %d spikes, %d features, max_spk=%d\n', ...
+            filename, nspk, par.inputs, par.max_spk);
+
+    if par.permut == 'n'
+        % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
+        if size(spikes,1)> par.max_spk;
+            % take first 'par.max_spk' spikes as an input for SPC
+            inspk_aux = inspk(1:naux,:);
+        else
+            inspk_aux = inspk;
+        end
+    else
+        % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
+        if size(spikes,1)> par.max_spk;
+            % random selection of spikes for SPC
+            ipermut = randperm(length(inspk));
+            ipermut(naux+1:end) = [];
+            inspk_aux = inspk(ipermut,:);
+        else
+            ipermut = randperm(size(inspk,1));
+            inspk_aux = inspk(ipermut,:);
+        end
+    end
+    %INTERACTION WITH SPC
+    save(par.fname_in,'inspk_aux','-ascii');
+    try
+        [clu, tree] = run_cluster(par,true);
+        if exist([par.fnamespc '.dg_01.lab'],'file')
+            movefile([par.fnamespc '.dg_01.lab'], [par.fname '.dg_01.lab'], 'f');
+            movefile([par.fnamespc '.dg_01'], [par.fname '.dg_01'], 'f');
+        end
+    catch ME
+        warning('MyComponent:ERROR_SPC', 'Error in SPC for %s: %s', filename, ME.message);
+        fprintf('Error details: %s\n', getReport(ME));
+        return
+    end
+
+    [clust_num temp auto_sort] = find_temp(tree,clu,par);
+
+    if par.permut == 'y'
+        clu_aux = zeros(size(clu,1),2 + size(spikes,1)) -1;  %when update classes from clu, not selected elements go to cluster 0
+        clu_aux(:,ipermut+2) = clu(:,(1:length(ipermut))+2);
+        clu_aux(:,1:2) = clu(:,1:2);
+        clu = clu_aux;
+        clear clu_aux
+    end
+
+    classes = zeros(1,size(clu,2)-2);
+    for c =1: length(clust_num)
+        aux = clu(temp(c),3:end) +1 == clust_num(c);
+        classes(aux) = c;
+    end
+
+    if par.permut == 'n'
+        classes = [classes zeros(1,max(size(spikes,1)-par.max_spk,0))];
+    end
+
+    Temp = [];
+    % Classes should be consecutive numbers
+    classes_names = nonzeros(sort(unique(classes)));
+    for i= 1:length(classes_names)
+       c = classes_names(i);
+       if c~= i
+           classes(classes == c) = i;
+       end
+       Temp(i) = temp(i);
+    end
+
+    % IF TEMPLATE MATCHING WAS DONE, THEN FORCE
+    if (size(spikes,1)> par.max_spk || ...
+            (par.force_auto))
+        f_in  = spikes(classes~=0,:);
+        f_out = spikes(classes==0,:);
+        class_in = classes(classes~=0);
+        class_out = force_membership_wc(f_in, class_in, f_out, par);
+        forced = classes==0;
+        classes(classes==0) = class_out;
+        forced(classes==0) = 0;
+    else
+        forced = zeros(1, size(spikes,1));
+    end
+
+    gui_status = struct();
+    gui_status.current_temp =  max(temp);
+    gui_status.auto_sort_info = auto_sort;
+    gui_status.original_classes = zeros(size(classes));
+
+    for i=1:max(classes)
+        gui_status.original_classes(classes==i) = clust_num(i);
+    end
+
+    current_par = par;
+    par = struct;
+    par = update_parameters(par, current_par, 'relevant');
+    par = update_parameters(par,current_par,'batch_plot');
+
+    par.sorting_date = datestr(now);
+    cluster_class = zeros(nspk,2);
+    cluster_class(:,2)= index';
+    cluster_class(:,1)= classes';
+    vars = {'cluster_class','coeff','par','inspk','forced','Temp','gui_status'};
+%     if exist('index_all','var')
+    if ~isempty(index_all)
+        cluster_class_withcollision = zeros(numel(index_all),2);
+        cluster_class_withcollision(:,2)=index_all';
+        no_coll = ismember(cluster_class_withcollision(:,2),index);
+        cluster_class_withcollision(no_coll,1)=classes';
+        max_class = max(classes)+1;
+        cluster_class_withcollision(~no_coll,1)=max_class;
+         vars = {'cluster_class', 'cluster_class_withcollision','coeff','par','inspk','forced','Temp','gui_status'};
+    end
+    %%
+    
+    if exist('ipermut','var')
+        vars{end+1} = 'ipermut';
+    end
+    if save_spikes
+        vars{end+1} = 'spikes';
+    else
+        spikes_file = filename;
+        vars{end+1} = 'spikes_file';
+    end
+    
+    try
+      save(['times_' data_handler.nick_name],vars{:});
+    catch
+      save(['times_' data_handler.nick_name],vars{:},'-v7.3');
+    end
+
+
+end
     
     function counter = count_new_times(initial_date, filenames)
     counter = 0;
