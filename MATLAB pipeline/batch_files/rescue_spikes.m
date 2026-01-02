@@ -146,6 +146,14 @@ function process_channel_rescue(ch, restore)
 
         % Find quarantined spikes: excluded by artifact, not by collision
         mask_quar = ~mask_non_quarantine & mask_non_collision & mask_task;
+       % mask_quar = ~mask_task;
+        % mask_quar variations. we can do different resuces using 
+        % quar spikes, collsions, tasks only
+        % quar coll, quar task, quar coll task
+        % task coll rescue only 
+        % these change depending on which masks used because clustering can be done on 
+        % any set of spikes.
+
         if ~any(mask_quar)
             fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
             return;

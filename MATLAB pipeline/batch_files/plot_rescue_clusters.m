@@ -1,34 +1,68 @@
-function plot_rescue_clusters(channel_id, varargin)
+function plot_rescue_clusters(varargin)
 % PLOT_RESCUE_CLUSTERS Visualize cluster rescue process showing pre-rescue, rescued, and post-rescue states
 %
-% Inputs:
-%   channel_id  - Channel identifier or channel label
-%   varargin    - Optional name-value pairs:
-%                 'MaxSpikes' - Maximum number of spikes to plot per cluster (default: 2000)
-%                 'SamplingRate' - Sampling rate in Hz (for time axis in ms)
-%                 'SaveFigure' - If true, saves figure to file (default: false)
+% Name-Value Inputs:
+%   'channels'     - Channel number(s) (e.g., 1 or [1, 2, 5] or 1:10) [REQUIRED]
+%   'MaxSpikes'    - Maximum number of spikes to plot per cluster (default: 2000)
+%   'SamplingRate' - Sampling rate in Hz (for time axis in ms)
+%   'SaveFigure'   - If true, saves figure to file (default: false)
+%   'ShowFigure'   - If true, displays figure (default: true)
+%   'OutputSuffix' - String to append to folder name (default: '')
+%                    Saves to: rescue_clusters<suffix>/
 %
 % Output:
-%   Creates a figure with 3 rows x N columns showing:
+%   Creates a figure per channel with 3 rows x N columns showing:
 %   Row 1: All clusters (pre-rescue, excluding quarantined spikes)
 %   Row 2: Rescued spikes added to each cluster (or not-rescued for cluster 0)
 %   Row 3: Final clusters (post-rescue, with rescued spikes integrated)
 %   Cluster 0 (noise) is plotted on the rightmost column
 %
 % Example:
-%   plot_rescue_clusters(1)
-%   plot_rescue_clusters(1, 'MaxSpikes', 1500, 'SamplingRate', 30000)
+%   plot_rescue_clusters('channels', 1)
+%   plot_rescue_clusters('channels', 1:10, 'SaveFigure', true, 'ShowFigure', false)
+%   plot_rescue_clusters('channels', [1 2 5], 'SaveFigure', true, 'OutputSuffix', '_v2')
 
 % Parse optional inputs
 p = inputParser;
+addParameter(p, 'channels', [], @isnumeric);
 addParameter(p, 'MaxSpikes', 2000, @isnumeric);
 addParameter(p, 'SamplingRate', [], @isnumeric);
 addParameter(p, 'SaveFigure', false, @islogical);
+addParameter(p, 'ShowFigure', true, @islogical);
+addParameter(p, 'OutputSuffix', '', @ischar);
 parse(p, varargin{:});
 
+channel_nums = p.Results.channels;
 max_spikes = p.Results.MaxSpikes;
 fs = p.Results.SamplingRate;
 save_fig = p.Results.SaveFigure;
+show_fig = p.Results.ShowFigure;
+output_suffix = p.Results.OutputSuffix;
+
+% Validate required inputs
+if isempty(channel_nums)
+    error('Must specify ''channels'' parameter');
+end
+
+% Set visibility
+if show_fig
+    vis_str = 'on';
+else
+    vis_str = 'off';
+end
+
+% Process each channel
+for ch_idx = 1:length(channel_nums)
+    channel_id = channel_nums(ch_idx);
+    process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix);
+end
+
+fprintf('Done processing %d channels.\n', length(channel_nums));
+
+end % end main function
+
+%% Helper function for single channel processing
+function process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix)
 
 % Get channel label
 ch_lbl = get_channel_label(channel_id);
@@ -38,7 +72,8 @@ fname_times = sprintf('times_%s.mat', ch_lbl);
 fname_spk = sprintf('%s_spikes.mat', ch_lbl);
 
 if ~exist(fname_times, 'file')
-    error('Times file not found for channel %s. Channel may not be clustered.', ch_lbl);
+    warning('Times file not found for channel %s. Skipping...', ch_lbl);
+    return;
 end
 
 % Load clustering data
@@ -47,7 +82,8 @@ S_spk = load(fname_spk);
 
 % Check if rescue has been performed
 if ~isfield(S_times, 'rescue_mask') || isempty(S_times.rescue_mask)
-    error('Rescue has not been performed on channel %s.', ch_lbl);
+    warning('Rescue has not been performed on channel %s. Skipping...', ch_lbl);
+    return;
 end
 
 % Extract data
@@ -86,23 +122,47 @@ else
     x_label = 'Sample';
 end
 
-% Create figure
-fig = figure('Name', sprintf('Channel %s Cluster Rescue Visualization', ch_lbl), ...
-             'NumberTitle', 'off', ...
-             'Position', [50, 50, 300*num_clusters, 900]);
+% Cluster colors (from make_cluster_report.m) - index 1 = cluster 0 (black)
+leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; ...
+             0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; ...
+             0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
 
-% Color settings
-color_pre = [0, 0, 1, 0.3];        % Blue with transparency
-color_rescued = [0, 1, 0, 0.3];    % Green with transparency  
-color_not_rescued = [1, 0, 0, 0.3]; % Red with transparency
-color_post = [0, 0.5, 0.5, 0.3];   % Teal with transparency
+% Pagination: max 6 clusters per page (5 non-zero + cluster 0)
+max_clusters_per_page = 6;
+num_pages = ceil(num_clusters / max_clusters_per_page);
 
-% Process each cluster
-for ic = 1:num_clusters
-    clust_id = cluster_ids(ic);
+for page = 1:num_pages
+    % Get clusters for this page
+    idx_start = (page - 1) * max_clusters_per_page + 1;
+    idx_end = min(page * max_clusters_per_page, num_clusters);
+    page_cluster_ids = cluster_ids(idx_start:idx_end);
+    num_clusters_page = length(page_cluster_ids);
+    
+    % Create figure (dark figure background, white plot backgrounds)
+    if num_pages > 1
+        fig_title = sprintf('Channel %s Cluster Rescue Visualization (Page %d/%d)', ch_lbl, page, num_pages);
+    else
+        fig_title = sprintf('Channel %s Cluster Rescue Visualization', ch_lbl);
+    end
+    fig = figure('Name', fig_title, ...
+                 'NumberTitle', 'off', ...
+                 'Visible', vis_str, ...
+                 'Color', [0.15 0.15 0.15], ...
+                 'Position', [50, 50, 300*num_clusters_page, 900]);
+    set(fig, 'InvertHardcopy', 'off');  % Preserve colors when saving
+
+    % Process each cluster on this page
+    for ic = 1:num_clusters_page
+        clust_id = page_cluster_ids(ic);
+    
+    % Get color for this cluster (cluster 0 -> index 1, cluster 1 -> index 2, etc.)
+    color_idx = mod(clust_id, size(leicolors, 1)) + 1;
+    cluster_color = leicolors(color_idx, :);
+    cluster_color_alpha = [cluster_color, 0.3];  % Add transparency
     
     % Row 1: Pre-rescue spikes (all spikes originally in this cluster)
-    subplot(3, num_clusters, ic);
+    subplot(3, num_clusters_page, ic);
+    set(gca, 'Color', 'w');  % White plot background
     mask_pre = cluster_class_pre(:,1) == clust_id;
     spikes_clust_pre = spikes_pre(mask_pre, :);
     
@@ -114,25 +174,22 @@ for ic = 1:num_clusters
     
     if ~isempty(spikes_clust_pre)
         hold on;
-        for i = 1:size(spikes_clust_pre, 1)
-            plot(time_vec, spikes_clust_pre(i, :), 'Color', color_pre, 'LineWidth', 0.5);
-        end
+        % Plot all waveforms at once (transpose so each column is a waveform)
+        h = plot(time_vec, spikes_clust_pre', 'LineWidth', 0.5);
+        set(h, 'Color', cluster_color_alpha);
+        plot(time_vec, mean(spikes_clust_pre, 1), 'Color', cluster_color, 'LineWidth', 2.4);
         hold off;
     end
     
-    if clust_id == 0
-        title(sprintf('Cluster %d (Noise)\nPre-rescue: n=%d', clust_id, sum(mask_pre)), ...
-              'FontWeight', 'bold', 'Color', [0.5, 0.5, 0.5]);
-    else
-        title(sprintf('Cluster %d\nPre-rescue: n=%d', clust_id, sum(mask_pre)), ...
-              'FontWeight', 'bold');
-    end
+    title(sprintf('Cluster %d\nPre-rescue: n=%d', clust_id, sum(mask_pre)), ...
+          'FontWeight', 'bold', 'Color', cluster_color);
     ylabel('Amplitude');
     grid on;
     box on;
     
     % Row 2: Rescued spikes for this cluster (or not-rescued for cluster 0)
-    subplot(3, num_clusters, ic + num_clusters);
+    subplot(3, num_clusters_page, ic + num_clusters_page);
+    set(gca, 'Color', 'w');  % White plot background
     
     if clust_id == 0
         % For cluster 0, show spikes that were NOT rescued
@@ -148,13 +205,16 @@ for ic = 1:num_clusters
         
         if ~isempty(spikes_not_rescued)
             hold on;
-            for i = 1:size(spikes_not_rescued, 1)
-                plot(time_vec, spikes_not_rescued(i, :), 'Color', color_not_rescued, 'LineWidth', 0.5);
+            % Plot all waveforms at once
+            h = plot(time_vec, spikes_not_rescued', 'LineWidth', 0.5);
+            set(h, 'Color', cluster_color_alpha);
+            if size(spikes_not_rescued, 1) > 0
+                plot(time_vec, mean(spikes_not_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
             end
             hold off;
         end
-        title(sprintf('Not Rescued\n(Added to noise): n=%d', sum(mask_quar)), ...
-              'FontWeight', 'bold', 'Color', 'r');
+        title(sprintf('Not Rescued\n(Stayed out): n=%d', sum(mask_quar)), ...
+              'FontWeight', 'bold', 'Color', cluster_color);
     else
         % For other clusters, show rescued spikes
         mask_post = cluster_class(:,1) == clust_id;
@@ -176,20 +236,22 @@ for ic = 1:num_clusters
         
         if ~isempty(spikes_rescued)
             hold on;
-            for i = 1:size(spikes_rescued, 1)
-                plot(time_vec, spikes_rescued(i, :), 'Color', color_rescued, 'LineWidth', 0.5);
-            end
+            % Plot all waveforms at once
+            h = plot(time_vec, spikes_rescued', 'LineWidth', 0.5);
+            set(h, 'Color', cluster_color_alpha);
+            plot(time_vec, mean(spikes_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
             hold off;
         end
         title(sprintf('Rescued Spikes: n=%d', sum(mask_rescued)), ...
-              'FontWeight', 'bold', 'Color', [0, 0.6, 0]);
+              'FontWeight', 'bold', 'Color', cluster_color);
     end
     ylabel('Amplitude');
     grid on;
     box on;
     
     % Row 3: Post-rescue spikes (final cluster state)
-    subplot(3, num_clusters, ic + 2*num_clusters);
+    subplot(3, num_clusters_page, ic + 2*num_clusters_page);
+    set(gca, 'Color', 'w');  % White plot background
     mask_post = cluster_class(:,1) == clust_id;
     spikes_clust_post = spikes_post(mask_post, :);
     
@@ -201,36 +263,56 @@ for ic = 1:num_clusters
     
     if ~isempty(spikes_clust_post)
         hold on;
-        for i = 1:size(spikes_clust_post, 1)
-            plot(time_vec, spikes_clust_post(i, :), 'Color', color_post, 'LineWidth', 0.5);
-        end
+        % Plot all waveforms at once
+        h = plot(time_vec, spikes_clust_post', 'LineWidth', 0.5);
+        set(h, 'Color', cluster_color_alpha);
+        plot(time_vec, mean(spikes_clust_post, 1), 'Color', cluster_color, 'LineWidth', 2.4);
         hold off;
     end
     
-    if clust_id == 0
-        title(sprintf('Post-rescue\n(New cluster 0): n=%d', sum(mask_post)), ...
-              'FontWeight', 'bold', 'Color', [0.5, 0.5, 0.5]);
-    else
-        title(sprintf('Post-rescue: n=%d', sum(mask_post)), ...
-              'FontWeight', 'bold');
-    end
+    title(sprintf('Post-rescue: n=%d', sum(mask_post)), ...
+          'FontWeight', 'bold', 'Color', cluster_color);
     xlabel(x_label);
     ylabel('Amplitude');
     grid on;
     box on;
-end
+    end  % end cluster loop
 
-% Add overall title
-sgtitle(sprintf('Channel %s - Cluster Rescue Visualization', ch_lbl), ...
-        'FontSize', 16, 'FontWeight', 'bold');
+    % Add overall title
+    if num_pages > 1
+        sgtitle(sprintf('Channel %s - Cluster Rescue (Page %d/%d)', ch_lbl, page, num_pages), ...
+                'FontSize', 16, 'FontWeight', 'bold', 'Color', 'w');
+    else
+        sgtitle(sprintf('Channel %s - Cluster Rescue Visualization', ch_lbl), ...
+                'FontSize', 16, 'FontWeight', 'bold', 'Color', 'w');
+    end
 
-% Save figure if requested
-if save_fig
-    saveas(fig, sprintf('%s_rescue_clusters.png', ch_lbl));
-    fprintf('Figure saved: %s_rescue_clusters.png\n', ch_lbl);
-end
+    % Save figure if requested
+    if save_fig
+        % Create output folder
+        save_folder = sprintf('rescue_clusters%s', output_suffix);
+        if ~exist(save_folder, 'dir')
+            mkdir(save_folder);
+        end
+        if num_pages > 1
+            save_name = fullfile(save_folder, sprintf('%s_page%d.png', ch_lbl, page));
+        else
+            save_name = fullfile(save_folder, sprintf('%s.png', ch_lbl));
+        end
+        
+        % Force render and save
+        drawnow;
+        exportgraphics(fig, save_name, 'Resolution', 150);
+        fprintf('Figure saved: %s\n', save_name);
+    end
 
-end
+    % Close if not showing
+    if ~show_fig
+        close(fig);
+    end
+end  % end page loop
+
+end % end helper function
 
 function ch_lbl = get_channel_label(channel_id)
 % Helper function to get channel label
