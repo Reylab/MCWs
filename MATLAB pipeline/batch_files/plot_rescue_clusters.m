@@ -103,15 +103,13 @@ else
     spikes_pre = spikes_post;
 end
 
-% Get unique clusters and sort (cluster 0 should be on the right)
+% Get unique clusters and sort (cluster 0 should be on the right of page 1)
 unique_clusters = unique(cluster_class_pre(:,1));
-cluster_ids = unique_clusters(unique_clusters ~= 0);  % Non-noise clusters
-cluster_ids = sort(cluster_ids);
-if ismember(0, unique_clusters)
-    cluster_ids = [cluster_ids; 0];  % Add cluster 0 at the end
-end
+non_zero_clusters = unique_clusters(unique_clusters ~= 0);  % Non-noise clusters
+non_zero_clusters = sort(non_zero_clusters);
+has_cluster_0 = ismember(0, unique_clusters);
 
-num_clusters = length(cluster_ids);
+num_clusters = length(non_zero_clusters) + has_cluster_0;
 
 % Create time vector if not provided
 if ~isempty(fs)
@@ -127,28 +125,50 @@ leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; ...
              0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; ...
              0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
 
-% Pagination: max 6 clusters per page (5 non-zero + cluster 0)
-max_clusters_per_page = 6;
-num_pages = ceil(num_clusters / max_clusters_per_page);
+% Pagination: max 6 clusters per page
+% Page 1: up to 5 non-zero clusters + cluster 0 (if exists)
+% Page 2+: remaining non-zero clusters (6 per page)
+max_nonzero_page1 = 5;  % Reserve 1 spot for cluster 0 on page 1
+max_clusters_later = 6;
+
+num_nonzero = length(non_zero_clusters);
+if num_nonzero <= max_nonzero_page1
+    num_pages = 1;
+else
+    remaining = num_nonzero - max_nonzero_page1;
+    num_pages = 1 + ceil(remaining / max_clusters_later);
+end
 
 for page = 1:num_pages
     % Get clusters for this page
-    idx_start = (page - 1) * max_clusters_per_page + 1;
-    idx_end = min(page * max_clusters_per_page, num_clusters);
-    page_cluster_ids = cluster_ids(idx_start:idx_end);
+    if page == 1
+        % Page 1: first 5 non-zero clusters + cluster 0
+        idx_end = min(max_nonzero_page1, num_nonzero);
+        page_cluster_ids = non_zero_clusters(1:idx_end);
+        if has_cluster_0
+            page_cluster_ids = [page_cluster_ids; 0];  % Add cluster 0 at end
+        end
+    else
+        % Pages 2+: next batch of non-zero clusters
+        idx_start = max_nonzero_page1 + (page - 2) * max_clusters_later + 1;
+        idx_end = min(idx_start + max_clusters_later - 1, num_nonzero);
+        page_cluster_ids = non_zero_clusters(idx_start:idx_end);
+    end
     num_clusters_page = length(page_cluster_ids);
     
-    % Create figure (dark figure background, white plot backgrounds)
+    % Create figure (lighter gray background, white plot backgrounds)
     if num_pages > 1
         fig_title = sprintf('Channel %s Cluster Rescue Visualization (Page %d/%d)', ch_lbl, page, num_pages);
     else
         fig_title = sprintf('Channel %s Cluster Rescue Visualization', ch_lbl);
     end
+    % Minimum width to avoid clipping title
+    fig_width = max(300*num_clusters_page, 600);
     fig = figure('Name', fig_title, ...
                  'NumberTitle', 'off', ...
                  'Visible', vis_str, ...
-                 'Color', [0.15 0.15 0.15], ...
-                 'Position', [50, 50, 300*num_clusters_page, 900]);
+                 'Color', [0.3 0.3 0.3], ...
+                 'Position', [50, 50, fig_width, 900]);
     set(fig, 'InvertHardcopy', 'off');  % Preserve colors when saving
 
     % Process each cluster on this page
