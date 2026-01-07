@@ -44,13 +44,13 @@ function process_channel_rescue(ch, restore)
         
         if restore
             if exist(fname_spk, 'file')
-                vars_spk = load(fname_spk, 'rescue_mask', 'index_all', 'spikes', 'index');
+                vars_spk = load(fname_spk);
                 
                 % Check if rescue_mask exists and has rescued spikes
                 has_rescued_spikes = isfield(vars_spk, 'rescue_mask') && ~isempty(vars_spk.rescue_mask) && any(vars_spk.rescue_mask);
                 
                 if has_rescued_spikes
-                    % 1. Restore Spikes File
+                    % 1. Restore Spikes File - remove rescued timestamps from index
                     rescued_timestamps = vars_spk.index_all(vars_spk.rescue_mask);
                     to_remove_spk = ismember(vars_spk.index, rescued_timestamps);
                     
@@ -58,60 +58,51 @@ function process_channel_rescue(ch, restore)
                         vars_spk.spikes(to_remove_spk, :) = [];
                         vars_spk.index(to_remove_spk) = [];
                     end
-                    vars_spk.rescue_mask = [];
-                    save(fname_spk, '-struct', 'vars_spk', 'spikes', 'index', 'rescue_mask', '-append');
-                    fprintf('  Channel %s: Restored spikes file.\n', ch_lbl);
+                    vars_spk.rescue_mask = false(size(vars_spk.index_all));
+                    save(fname_spk, '-struct', 'vars_spk');
+                    fprintf('  Channel %s: Restored spikes file (removed %d rescued spikes).\n', ch_lbl, sum(to_remove_spk));
                 end
                 
-                % 2. Always clean up times file if it has rescue artifacts
+                % 2. Restore times file from backup
                 if exist(fname_times, 'file')
                     vars_times = load(fname_times);
                     
-                    % Remove rescued spikes from times file if we had any
-                    if has_rescued_spikes && isfield(vars_times, 'cluster_class')
-                        ts = vars_times.cluster_class(:,2);
-                        to_remove_times = ismember(ts, rescued_timestamps);
-                        
-                        if any(to_remove_times)
-                            vars_times.cluster_class(to_remove_times, :) = [];
-                            vars_times.spikes(to_remove_times, :) = [];
-                            if isfield(vars_times, 'inspk'), vars_times.inspk(to_remove_times, :) = []; end
-                            if isfield(vars_times, 'index'), vars_times.index(to_remove_times) = []; end
+                    % Restore from backup if it exists
+                    if isfield(vars_times, 'spikes_pre_rescue')
+                        vars_times.spikes = vars_times.spikes_pre_rescue;
+                        vars_times.cluster_class = vars_times.cluster_class_pre_rescue;
+                        if isfield(vars_times, 'index_pre_rescue')
+                            vars_times.index = vars_times.index_pre_rescue;
                         end
+                        if isfield(vars_times, 'inspk') && isfield(vars_times, 'spikes_pre_rescue')
+                            % Recalculate inspk size to match restored spikes
+                            vars_times.inspk = vars_times.inspk(1:size(vars_times.spikes_pre_rescue,1), :);
+                        end
+                        fprintf('  Channel %s: Restored times file from backup.\n', ch_lbl);
                     end
                     
-                    % Clean up rescue artifacts (always do this)
+                    % Clean up rescue artifacts
                     fields_to_remove = {'spikes_quarantined', 'index_quarantined', 'class_quarantined', ...
                         'class_quar', 'index_quar', 'rescued_idx', 'spikes_pre_rescue', 'index_pre_rescue', ...
                         'cluster_class_pre_rescue', 'rescue_mask'};
-                    modified = false;
                     for f = 1:length(fields_to_remove)
                         if isfield(vars_times, fields_to_remove{f})
                             vars_times = rmfield(vars_times, fields_to_remove{f});
-                            modified = true;
                         end
                     end
                     
-                    if modified || (has_rescued_spikes && any(to_remove_times))
-                        save(fname_times, '-struct', 'vars_times');
-                        fprintf('  Channel %s: Restored times file.\n', ch_lbl);
-                    end
+                    save(fname_times, '-struct', 'vars_times');
                 end
                 
                 if ~has_rescued_spikes
-                    % Still check if times file needs cleanup even without rescue_mask
                     if exist(fname_times, 'file')
-                        vars_times = load(fname_times);
-                        if isfield(vars_times, 'spikes_pre_rescue')
-                            fprintf('  Channel %s: No rescue mask but times file has artifacts - cleaning.\n', ch_lbl);
-                            % Already handled above
-                        else
-                            fprintf('  Channel %s: No rescue mask found to restore.\n', ch_lbl);
-                        end
+                        fprintf('  Channel %s: No rescue mask found, but cleaned up times file.\n', ch_lbl);
                     else
                         fprintf('  Channel %s: No rescue mask found to restore.\n', ch_lbl);
                     end
                 end
+            else
+                fprintf('  Channel %s: Spikes file not found.\n', ch_lbl);
             end
             return;
         end
@@ -144,16 +135,24 @@ function process_channel_rescue(ch, restore)
         index = SPK.index;
         spikes = SPK.spikes;
 
-        % Find quarantined spikes: excluded by artifact, not by collision
-        mask_quar = ~mask_non_quarantine & mask_non_collision & mask_task;
-       % mask_quar = ~mask_task;
-        % mask_quar variations. we can do different resuces using 
-        % quar spikes, collsions, tasks only
-        % quar coll, quar task, quar coll task
-        % task coll rescue only 
-        % these change depending on which masks used because clustering can be done on 
-        % any set of spikes.
+        % Debug: Show mask sizes
+        fprintf('  Channel %s - Mask sizes: Quarantine=%d, Collision=%d, Task-excluded=%d\n', ...
+            ch_lbl, sum(~mask_non_quarantine), sum(~mask_non_collision), sum(~mask_task));
 
+        % Build rescue mask - select which spikes to attempt rescue on
+       
+        % SINGLE MASK OPTIONS (all spikes from one category):
+        % mask_quar = ~mask_non_quarantine;     % Only quarantine
+       % mask_quar = ~mask_non_collision;      % Only collision
+         %mask_quar = ~mask_task;               % Only task-excluded
+        
+        % COMBINED MASK OPTIONS (use OR to combine - no duplicates):
+      %   mask_quar = ~mask_non_quarantine | ~mask_non_collision;                % Quarantine + collision
+       %  mask_quar = ~mask_non_quarantine | ~mask_task;                         % Quarantine + task-excluded
+         mask_quar = ~mask_non_collision | ~mask_task;                          % Collision + task-excluded
+       % mask_quar = ~mask_non_quarantine | ~mask_non_collision | ~mask_task;     % All three combined
+
+        fprintf('  Channel %s - Quarantine pool size: %d spikes\n', ch_lbl, sum(mask_quar));
         if ~any(mask_quar)
             fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
             return;

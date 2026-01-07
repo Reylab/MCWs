@@ -65,7 +65,7 @@ step_pic = 15;
 [~,name] = system('hostname');
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
-
+elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\MCWs'; % aj desktop
 end
 
 addpath(genpath(dir_base));

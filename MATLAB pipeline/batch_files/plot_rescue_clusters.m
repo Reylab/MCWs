@@ -156,7 +156,7 @@ for page = 1:num_pages
     end
     num_clusters_page = length(page_cluster_ids);
     
-    % Create figure (lighter gray background, white plot backgrounds)
+    % Create figure (white background)
     if num_pages > 1
         fig_title = sprintf('Channel %s Cluster Rescue Visualization (Page %d/%d)', ch_lbl, page, num_pages);
     else
@@ -167,7 +167,7 @@ for page = 1:num_pages
     fig = figure('Name', fig_title, ...
                  'NumberTitle', 'off', ...
                  'Visible', vis_str, ...
-                 'Color', [0.3 0.3 0.3], ...
+                 'Color', 'w', ...
                  'Position', [50, 50, fig_width, 900]);
     set(fig, 'InvertHardcopy', 'off');  % Preserve colors when saving
 
@@ -202,7 +202,7 @@ for page = 1:num_pages
     end
     
     title(sprintf('Cluster %d\nPre-rescue: n=%d', clust_id, sum(mask_pre)), ...
-          'FontWeight', 'bold', 'Color', cluster_color);
+          'FontWeight', 'bold');
     ylabel('Amplitude');
     grid on;
     box on;
@@ -234,7 +234,7 @@ for page = 1:num_pages
             hold off;
         end
         title(sprintf('Not Rescued\n(Stayed out): n=%d', sum(mask_quar)), ...
-              'FontWeight', 'bold', 'Color', cluster_color);
+              'FontWeight', 'bold');
     else
         % For other clusters, show rescued spikes
         mask_post = cluster_class(:,1) == clust_id;
@@ -263,7 +263,7 @@ for page = 1:num_pages
             hold off;
         end
         title(sprintf('Rescued Spikes: n=%d', sum(mask_rescued)), ...
-              'FontWeight', 'bold', 'Color', cluster_color);
+              'FontWeight', 'bold');
     end
     ylabel('Amplitude');
     grid on;
@@ -291,7 +291,7 @@ for page = 1:num_pages
     end
     
     title(sprintf('Post-rescue: n=%d', sum(mask_post)), ...
-          'FontWeight', 'bold', 'Color', cluster_color);
+          'FontWeight', 'bold');
     xlabel(x_label);
     ylabel('Amplitude');
     grid on;
@@ -301,10 +301,10 @@ for page = 1:num_pages
     % Add overall title
     if num_pages > 1
         sgtitle(sprintf('Channel %s - Cluster Rescue (Page %d/%d)', ch_lbl, page, num_pages), ...
-                'FontSize', 16, 'FontWeight', 'bold', 'Color', 'w');
+                'FontSize', 16, 'FontWeight', 'bold');
     else
         sgtitle(sprintf('Channel %s - Cluster Rescue Visualization', ch_lbl), ...
-                'FontSize', 16, 'FontWeight', 'bold', 'Color', 'w');
+                'FontSize', 16, 'FontWeight', 'bold');
     end
 
     % Save figure if requested
