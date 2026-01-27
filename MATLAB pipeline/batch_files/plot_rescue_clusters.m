@@ -86,30 +86,58 @@ if ~isfield(S_times, 'rescue_mask') || isempty(S_times.rescue_mask)
     return;
 end
 
-% Extract data
-cluster_class = S_times.cluster_class;  % [cluster_id, timestamp]
-spikes_post = S_times.spikes;
-rescue_mask = S_times.rescue_mask;
+% All masks and rescue_mask index into spikes_all/index_all
 index_all = S_spk.index_all;
 spikes_all = S_spk.spikes_all;
+rescue_mask = S_times.rescue_mask;  % indexes into spikes_all
 
-% Get pre-rescue data
-if isfield(S_times, 'cluster_class_pre_rescue')
-    cluster_class_pre = S_times.cluster_class_pre_rescue;
-    spikes_pre = S_times.spikes_pre_rescue;
+% Load masks from spikes file
+if isfield(S_spk, 'mask_non_quarantine')
+    mask_quarantine = ~S_spk.mask_non_quarantine;
 else
-    warning('Pre-rescue data not found. Using current data as baseline.');
-    cluster_class_pre = cluster_class;
-    spikes_pre = spikes_post;
+    mask_quarantine = false(size(index_all));
 end
 
-% Get unique clusters and sort (cluster 0 should be on the right of page 1)
-unique_clusters = unique(cluster_class_pre(:,1));
-non_zero_clusters = unique_clusters(unique_clusters ~= 0);  % Non-noise clusters
-non_zero_clusters = sort(non_zero_clusters);
-has_cluster_0 = ismember(0, unique_clusters);
+if isfield(S_spk, 'mask_nonart')
+    mask_collision = ~S_spk.mask_nonart;
+else
+    mask_collision = false(size(index_all));
+end
 
-num_clusters = length(non_zero_clusters) + has_cluster_0;
+if isfield(S_spk, 'mask_taskspks')
+    mask_task_excluded = ~S_spk.mask_taskspks;
+else
+    mask_task_excluded = false(size(index_all));
+end
+
+% Mask counts
+n_quar = sum(mask_quarantine);
+n_coll = sum(mask_collision);
+n_task = sum(mask_task_excluded);
+
+% Current times file has combined data (original good + rescued)
+cluster_class = S_times.cluster_class;  % [cluster_id, timestamp]
+spikes_combined = S_times.spikes;
+
+% Timestamps of rescued spikes
+rescued_timestamps = index_all(rescue_mask);
+
+% Figure out which rows in cluster_class are rescued vs original
+% cluster_class(:,2) contains the timestamp for each spike
+mask_is_rescued = ismember(cluster_class(:,2), rescued_timestamps);
+
+% Counts
+num_total = size(cluster_class, 1);
+num_rescued = sum(mask_is_rescued);
+num_original = sum(~mask_is_rescued);
+
+fprintf('  Channel %s: Original=%d, Rescued=%d, Total=%d\n', ...
+    ch_lbl, num_original, num_rescued, num_total);
+
+% Get unique clusters (cluster 0 on the right)
+unique_clusters = unique(cluster_class(:,1));
+non_zero_clusters = sort(unique_clusters(unique_clusters ~= 0));
+has_cluster_0 = ismember(0, unique_clusters);
 
 % Create time vector if not provided
 if ~isempty(fs)
@@ -170,16 +198,6 @@ for page = 1:num_pages
                  'Color', 'w', ...
                  'Position', [50, 50, fig_width, 900]);
     set(fig, 'InvertHardcopy', 'off');  % Preserve colors when saving
-
-    % Calculate total quarantined spikes (spikes not in any cluster pre-rescue)
-    total_spikes_all = length(index_all);
-    total_spikes_pre_clustered = size(cluster_class_pre, 1);
-    num_quarantined_pre = total_spikes_all - total_spikes_pre_clustered;
-    
-    % Calculate rescued and remaining quarantined
-    total_rescued = sum(rescue_mask);
-    total_spikes_post_clustered = size(cluster_class, 1);
-    num_quarantined_post = total_spikes_all - total_spikes_post_clustered;
     
     % Process each cluster on this page
     for ic = 1:num_clusters_page
@@ -190,42 +208,64 @@ for page = 1:num_pages
     cluster_color = leicolors(color_idx, :);
     cluster_color_alpha = [cluster_color, 0.3];  % Add transparency
     
-    % Row 1: Pre-rescue spikes (all spikes originally in this cluster)
+    % Mask for this cluster in the combined data
+    mask_this_clust = cluster_class(:,1) == clust_id;
+    
+    % Within this cluster, separate original vs rescued using mask_is_rescued
+    mask_original_clust = mask_this_clust & ~mask_is_rescued;
+    mask_rescued_clust = mask_this_clust & mask_is_rescued;
+    
+    n_original_clust = sum(mask_original_clust);
+    n_rescued_clust = sum(mask_rescued_clust);
+    n_total_clust = sum(mask_this_clust);
+    
+    % Row 1: Original spikes in this cluster (before rescue was added)
     subplot(3, num_clusters_page, ic);
-    set(gca, 'Color', 'w');  % White plot background
-    mask_pre = cluster_class_pre(:,1) == clust_id;
-    spikes_clust_pre = spikes_pre(mask_pre, :);
+    set(gca, 'Color', 'w');
+    spikes_original_clust = spikes_combined(mask_original_clust, :);
     
     % Subsample if needed
-    if size(spikes_clust_pre, 1) > max_spikes
-        idx_subsample = round(linspace(1, size(spikes_clust_pre, 1), max_spikes));
-        spikes_clust_pre = spikes_clust_pre(idx_subsample, :);
+    if size(spikes_original_clust, 1) > max_spikes
+        idx_subsample = round(linspace(1, size(spikes_original_clust, 1), max_spikes));
+        spikes_original_clust = spikes_original_clust(idx_subsample, :);
     end
     
-    if ~isempty(spikes_clust_pre)
+    if ~isempty(spikes_original_clust)
         hold on;
-        % Plot all waveforms at once (transpose so each column is a waveform)
-        h = plot(time_vec, spikes_clust_pre', 'LineWidth', 0.5);
+        h = plot(time_vec, spikes_original_clust', 'LineWidth', 0.5);
         set(h, 'Color', cluster_color_alpha);
-        plot(time_vec, mean(spikes_clust_pre, 1), 'Color', cluster_color, 'LineWidth', 2.4);
+        plot(time_vec, mean(spikes_original_clust, 1), 'Color', cluster_color, 'LineWidth', 2.4);
         hold off;
     end
     
-    title(sprintf('Cluster %d\nPre-rescue: %d (%d quarantined)', clust_id, sum(mask_pre), num_quarantined_pre), ...
+    pct_of_clust = 100 * n_original_clust / max(n_total_clust, 1);
+    title(sprintf('Cluster %d\nOriginal: n=%d (%.0f%% of clust)', clust_id, n_original_clust, pct_of_clust), ...
           'FontWeight', 'bold');
     ylabel('Amplitude');
     grid on;
     box on;
     
-    % Row 2: Rescued spikes for this cluster (or not-rescued for cluster 0)
+    % Row 2: Rescued spikes assigned to this cluster
     subplot(3, num_clusters_page, ic + num_clusters_page);
-    set(gca, 'Color', 'w');  % White plot background
+    set(gca, 'Color', 'w');
     
     if clust_id == 0
-        % For cluster 0, show spikes that were NOT rescued
-        rescued_timestamps = index_all(rescue_mask);
-        mask_quar = ~ismember(index_all, cluster_class_pre(:,2)) & ~ismember(index_all, rescued_timestamps);
-        spikes_not_rescued = spikes_all(mask_quar, :);
+        % For cluster 0, show quarantined spikes that were NOT rescued
+        if isfield(S_times, 'class_quar')
+            class_quar = S_times.class_quar;
+            n_not_rescued = sum(class_quar == 0);
+            if isfield(S_times, 'index_quar')
+                index_quar = S_times.index_quar;
+                not_rescued_timestamps = index_quar(class_quar == 0);
+                mask_not_rescued_all = ismember(index_all, not_rescued_timestamps);
+                spikes_not_rescued = spikes_all(mask_not_rescued_all, :);
+            else
+                spikes_not_rescued = [];
+            end
+        else
+            n_not_rescued = 0;
+            spikes_not_rescued = [];
+        end
         
         % Subsample if needed
         if size(spikes_not_rescued, 1) > max_spikes
@@ -235,72 +275,62 @@ for page = 1:num_pages
         
         if ~isempty(spikes_not_rescued)
             hold on;
-            % Plot all waveforms at once
             h = plot(time_vec, spikes_not_rescued', 'LineWidth', 0.5);
             set(h, 'Color', cluster_color_alpha);
-            if size(spikes_not_rescued, 1) > 0
-                plot(time_vec, mean(spikes_not_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
-            end
+            plot(time_vec, mean(spikes_not_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
             hold off;
         end
-        title(sprintf('Not Rescued\n(Stayed out): n=%d', sum(mask_quar)), ...
-              'FontWeight', 'bold');
+        total_quar = n_not_rescued + num_rescued;
+        pct_not_rescued = 100 * n_not_rescued / max(total_quar, 1);
+        title(sprintf('Not Rescued\nn=%d (%.0f%% of quar)', n_not_rescued, pct_not_rescued), 'FontWeight', 'bold');
     else
-        % For other clusters, show rescued spikes
-        mask_post = cluster_class(:,1) == clust_id;
-        timestamps_post = cluster_class(mask_post, 2);
-        
-        % Find which of these are rescued spikes
-        rescued_timestamps = index_all(rescue_mask);
-        mask_rescued = ismember(timestamps_post, rescued_timestamps);
-        
-        % Get the actual spike waveforms
-        spikes_clust_post = spikes_post(mask_post, :);
-        spikes_rescued = spikes_clust_post(mask_rescued, :);
+        % Show rescued spikes assigned to this cluster
+        spikes_rescued_clust = spikes_combined(mask_rescued_clust, :);
         
         % Subsample if needed
-        if size(spikes_rescued, 1) > max_spikes
-            idx_subsample = round(linspace(1, size(spikes_rescued, 1), max_spikes));
-            spikes_rescued = spikes_rescued(idx_subsample, :);
+        if size(spikes_rescued_clust, 1) > max_spikes
+            idx_subsample = round(linspace(1, size(spikes_rescued_clust, 1), max_spikes));
+            spikes_rescued_clust = spikes_rescued_clust(idx_subsample, :);
         end
         
-        if ~isempty(spikes_rescued)
+        if ~isempty(spikes_rescued_clust)
             hold on;
-            % Plot all waveforms at once
-            h = plot(time_vec, spikes_rescued', 'LineWidth', 0.5);
+            h = plot(time_vec, spikes_rescued_clust', 'LineWidth', 0.5);
             set(h, 'Color', cluster_color_alpha);
-            plot(time_vec, mean(spikes_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
+            plot(time_vec, mean(spikes_rescued_clust, 1), 'Color', cluster_color, 'LineWidth', 2.4);
             hold off;
         end
-        title(sprintf('Rescued: %d (of %d total)', sum(mask_rescued), total_rescued), ...
+        pct_of_rescued = 100 * n_rescued_clust / max(num_rescued, 1);
+        title(sprintf('Rescued: n=%d\n(%.0f%% of %d rescued)', n_rescued_clust, pct_of_rescued, num_rescued), ...
               'FontWeight', 'bold');
     end
     ylabel('Amplitude');
     grid on;
     box on;
     
-    % Row 3: Post-rescue spikes (final cluster state)
+    % Row 3: Combined (original + rescued)
     subplot(3, num_clusters_page, ic + 2*num_clusters_page);
-    set(gca, 'Color', 'w');  % White plot background
-    mask_post = cluster_class(:,1) == clust_id;
-    spikes_clust_post = spikes_post(mask_post, :);
+    set(gca, 'Color', 'w');
+    spikes_total_clust = spikes_combined(mask_this_clust, :);
     
     % Subsample if needed
-    if size(spikes_clust_post, 1) > max_spikes
-        idx_subsample = round(linspace(1, size(spikes_clust_post, 1), max_spikes));
-        spikes_clust_post = spikes_clust_post(idx_subsample, :);
+    if size(spikes_total_clust, 1) > max_spikes
+        idx_subsample = round(linspace(1, size(spikes_total_clust, 1), max_spikes));
+        spikes_total_clust = spikes_total_clust(idx_subsample, :);
     end
     
-    if ~isempty(spikes_clust_post)
+    if ~isempty(spikes_total_clust)
         hold on;
-        % Plot all waveforms at once
-        h = plot(time_vec, spikes_clust_post', 'LineWidth', 0.5);
+        h = plot(time_vec, spikes_total_clust', 'LineWidth', 0.5);
         set(h, 'Color', cluster_color_alpha);
-        plot(time_vec, mean(spikes_clust_post, 1), 'Color', cluster_color, 'LineWidth', 2.4);
+        plot(time_vec, mean(spikes_total_clust, 1), 'Color', cluster_color, 'LineWidth', 2.4);
         hold off;
     end
     
-    title(sprintf('Post-rescue: %d (%d quarantined)', sum(mask_post), num_quarantined_post), ...
+    pct_of_total = 100 * n_total_clust / max(num_total, 1);
+    pct_rescued_in_clust = 100 * n_rescued_clust / max(n_total_clust, 1);
+    title(sprintf('Combined: n=%d (%.0f%% of total)\n%d+%d (%.0f%% rescued)', ...
+          n_total_clust, pct_of_total, n_original_clust, n_rescued_clust, pct_rescued_in_clust), ...
           'FontWeight', 'bold');
     xlabel(x_label);
     ylabel('Amplitude');
@@ -308,14 +338,26 @@ for page = 1:num_pages
     box on;
     end  % end cluster loop
 
-    % Add overall title
-    if num_pages > 1
-        sgtitle(sprintf('Channel %s - Cluster Rescue (Page %d/%d)', ch_lbl, page, num_pages), ...
-                'FontSize', 16, 'FontWeight', 'bold');
+    % Build rescue pool description (which masks are being rescued)
+    rescue_masks_used = {};
+    if n_quar > 0, rescue_masks_used{end+1} = 'QC'; end
+    if n_coll > 0, rescue_masks_used{end+1} = 'Coll'; end
+    if n_task > 0, rescue_masks_used{end+1} = 'Task'; end
+    if isempty(rescue_masks_used)
+        rescue_str = 'None';
     else
-        sgtitle(sprintf('Channel %s - Cluster Rescue Visualization', ch_lbl), ...
-                'FontSize', 16, 'FontWeight', 'bold');
+        rescue_str = strjoin(rescue_masks_used, '+');
     end
+
+    % Add overall title with mask info (three lines, no interpreter for underscores)
+    if num_pages > 1
+        title_line1 = sprintf('Channel %s (Page %d/%d)', ch_lbl, page, num_pages);
+    else
+        title_line1 = sprintf('Channel %s', ch_lbl);
+    end
+    title_line2 = sprintf('Excluded: QC=%d, Coll=%d, Task=%d', n_quar, n_coll, n_task);
+    title_line3 = sprintf('Rescuing: %s', rescue_str);
+    sgtitle({title_line1, title_line2, title_line3}, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
 
     % Save figure if requested
     if save_fig

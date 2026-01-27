@@ -29,7 +29,7 @@ p = inputParser;
 addParameter(p, 'channels', [], @isnumeric);
 addParameter(p, 'mask', '', @ischar);
 addParameter(p, 'spike_dir', pwd, @ischar);
-addParameter(p, 'show_figures', true, @islogical);
+addParameter(p, 'show_figures', false, @islogical);
 addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'max_spikes', 2000, @isnumeric);
 parse(p, varargin{:});
@@ -161,17 +161,30 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     color_removed = [1, 0, 0, 0.15];        % Red  
     color_kept = [0, 0, 1, 0.15];           % Blue
     
-    % --- Subplot 1: All spikes ---
+    % --- Subplot 1: All spikes (stratified to keep some masked visible) ---
     ax1 = subplot(3, 1, 1);
     set(ax1, 'Color', 'w');  % White plot background
     hold(ax1, 'on');
-    % Subsample if needed
+
     if num_total > max_spikes
-        idx_all = randperm(num_total, max_spikes);
-        plot(ax1, tvec, spikes(idx_all, :)', 'Color', color_all, 'LineWidth', 0.8);
+        n_all = max_spikes;
+        masked_quota = min(num_removed, max(1, round(n_all * num_removed / num_total)));
+        kept_quota = min(num_kept, n_all - masked_quota);
+        if kept_quota + masked_quota < n_all
+            extra = n_all - kept_quota - masked_quota;
+            masked_quota = min(num_removed, masked_quota + extra);
+        end
+
+        idx_masked_pool = find(~mask);
+        idx_kept_pool = find(mask);
+        idx_masked = idx_masked_pool(randperm(num_removed, masked_quota));
+        idx_kept = idx_kept_pool(randperm(num_kept, kept_quota));
+        idx_all = [idx_kept idx_masked];
     else
-        plot(ax1, tvec, spikes', 'Color', color_all, 'LineWidth', 0.8);
+        idx_all = 1:num_total;
     end
+
+    plot(ax1, tvec, spikes(idx_all, :), 'Color', color_all, 'LineWidth', 0.8);
     plot(ax1, tvec, mean(spikes, 1), 'k', 'LineWidth', 2.4);
     hold(ax1, 'off');
 
@@ -235,7 +248,7 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     
     % Overall title
     sgtitle(sprintf('%s - %s', channel_id, mask_name), ...
-            'FontSize', 14, 'FontWeight', 'bold', 'Color', 'k');
+            'FontSize', 14, 'FontWeight', 'bold', 'Color', 'k', 'Interpreter', 'none');
     
     % Force figure to render before saving
     drawnow;

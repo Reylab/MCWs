@@ -1,4 +1,4 @@
-function rescue_spikes(channels, varargin)
+function rescue_spikes(varargin)
 % rescue_spikes - Attempts to reclassify quarantined spikes using template matching
 % Inputs:
 %   channels - vector of channel IDs
@@ -7,15 +7,17 @@ function rescue_spikes(channels, varargin)
 %   rescue_spikes(channels, 'parallel', true)
 
 % Parse optional arguments
-parallel = false;
-restore = false;
-for v = 1:2:length(varargin)
-    if strcmp(varargin{v}, 'parallel')
-        parallel = varargin{v+1};
-    elseif strcmp(varargin{v}, 'restore')
-        restore = varargin{v+1};
-    end
-end
+p = inputParser;
+
+addParameter(p,'channels',[],@isnumeric);
+addParameter(p, 'parallel', false, @islogical);
+addParameter(p, 'restore', false, @islogical);
+
+parse(p, varargin{:});
+
+channels = p.Results.channels;
+parallel = p.Results.parallel;
+restore = p.Results.restore;
 
 if restore
     fprintf('Starting rescue_spikes RESTORE on %d channels...\n', length(channels));
@@ -111,48 +113,49 @@ function process_channel_rescue(ch, restore)
         spikes_all = SPK.spikes_all;
         index_all = SPK.index_all;
 
-
+        % Load masks - use loaded names, compute quarantine directly
         if isfield(SPK,'mask_non_quarantine')
-            mask_non_quarantine = SPK.mask_non_quarantine;
+            mask_quarantine = ~SPK.mask_non_quarantine;
         else
-            mask_non_quarantine = false(size(index_all));
+            mask_quarantine = false(size(index_all));  % No QC mask -> no quarantine
         end
 
         if isfield(SPK,'mask_nonart')
             mask_non_collision = SPK.mask_nonart;
         else
-            mask_non_collision = true(size(index_all));
+            mask_non_collision = true(size(index_all));  % No collision mask -> all pass
         end
         
         if isfield(SPK,'mask_taskspks')
             mask_task = SPK.mask_taskspks;
         else
-            mask_task = true(size(index_all));
+            mask_task = true(size(index_all));  % No task mask -> all pass
         end
-        
         
         par = SPK.par;
         index = SPK.index;
         spikes = SPK.spikes;
 
-        % Debug: Show mask sizes
-        fprintf('  Channel %s - Mask sizes: Quarantine=%d, Collision=%d, Task-excluded=%d\n', ...
-            ch_lbl, sum(~mask_non_quarantine), sum(~mask_non_collision), sum(~mask_task));
-
-        % Build rescue mask - select which spikes to attempt rescue on
-       
-        % SINGLE MASK OPTIONS (all spikes from one category):
-        % mask_quar = ~mask_non_quarantine;     % Only quarantine
-       % mask_quar = ~mask_non_collision;      % Only collision
-         %mask_quar = ~mask_task;               % Only task-excluded
+        % Debug: Show complete mask breakdown
+        total_spikes = numel(index_all);
+        num_good_spikes = numel(index);  % Spikes that passed all filters
         
-        % COMBINED MASK OPTIONS (use OR to combine - no duplicates):
-      %   mask_quar = ~mask_non_quarantine | ~mask_non_collision;                % Quarantine + collision
-       %  mask_quar = ~mask_non_quarantine | ~mask_task;                         % Quarantine + task-excluded
-         mask_quar = ~mask_non_collision | ~mask_task;                          % Collision + task-excluded
-       % mask_quar = ~mask_non_quarantine | ~mask_non_collision | ~mask_task;     % All three combined
+        % Show totals and overlaps (use ~ to get excluded spikes)
+        fprintf('  Channel %s - Total spikes: %d, Good (passed all): %d\n', ...
+            ch_lbl, total_spikes, num_good_spikes);
+        fprintf('  Channel %s - Excluded counts: QC=%d, Collision=%d, Task=%d\n', ...
+            ch_lbl, sum(mask_quarantine), sum(~mask_non_collision), sum(~mask_task));
+        fprintf('  Channel %s - Overlaps: QC&Coll=%d, QC&Task=%d, Coll&Task=%d, All3=%d\n', ...
+            ch_lbl, sum(mask_quarantine & ~mask_non_collision), ...
+            sum(mask_quarantine & ~mask_task), ...
+            sum(~mask_non_collision & ~mask_task), ...
+            sum(mask_quarantine & ~mask_non_collision & ~mask_task));
 
-        fprintf('  Channel %s - Quarantine pool size: %d spikes\n', ch_lbl, sum(mask_quar));
+        % Build rescue pool - spikes excluded by any mask
+        % ~mask_non_quarantine = QC-failed, ~mask_non_collision = collision, ~mask_task = task-excluded
+        mask_quar = mask_quarantine | ~mask_non_collision | ~mask_task;
+
+        fprintf('  Channel %s - Rescue pool size: %d spikes\n', ch_lbl, sum(mask_quar));
         if ~any(mask_quar)
             fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
             return;
@@ -193,6 +196,8 @@ function process_channel_rescue(ch, restore)
             inspk_good = local_wavelet_decomp(spikes);
             class_good = ones(size(spikes,1),1);
             cluster_class = [class_good, index(:)];
+            
+   
         end
         % Use class_good as those with cluster_class ~= 0
         class_good_mask = cluster_class(:,1) ~= 0;
@@ -204,6 +209,8 @@ function process_channel_rescue(ch, restore)
         inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
         % Use force_membership_wc to assign clusters to quarantined spikes
         class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
+        
+        
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)
             fprintf('  Channel %s: No spikes rescued.\n', ch_lbl);
