@@ -171,6 +171,16 @@ for page = 1:num_pages
                  'Position', [50, 50, fig_width, 900]);
     set(fig, 'InvertHardcopy', 'off');  % Preserve colors when saving
 
+    % Calculate total quarantined spikes (spikes not in any cluster pre-rescue)
+    total_spikes_all = length(index_all);
+    total_spikes_pre_clustered = size(cluster_class_pre, 1);
+    num_quarantined_pre = total_spikes_all - total_spikes_pre_clustered;
+    
+    % Calculate rescued and remaining quarantined
+    total_rescued = sum(rescue_mask);
+    total_spikes_post_clustered = size(cluster_class, 1);
+    num_quarantined_post = total_spikes_all - total_spikes_post_clustered;
+    
     % Process each cluster on this page
     for ic = 1:num_clusters_page
         clust_id = page_cluster_ids(ic);
@@ -201,7 +211,7 @@ for page = 1:num_pages
         hold off;
     end
     
-    title(sprintf('Cluster %d\nPre-rescue: n=%d', clust_id, sum(mask_pre)), ...
+    title(sprintf('Cluster %d\nPre-rescue: %d (%d quarantined)', clust_id, sum(mask_pre), num_quarantined_pre), ...
           'FontWeight', 'bold');
     ylabel('Amplitude');
     grid on;
@@ -262,7 +272,7 @@ for page = 1:num_pages
             plot(time_vec, mean(spikes_rescued, 1), 'Color', cluster_color, 'LineWidth', 2.4);
             hold off;
         end
-        title(sprintf('Rescued Spikes: n=%d', sum(mask_rescued)), ...
+        title(sprintf('Rescued: %d (of %d total)', sum(mask_rescued), total_rescued), ...
               'FontWeight', 'bold');
     end
     ylabel('Amplitude');
@@ -290,7 +300,7 @@ for page = 1:num_pages
         hold off;
     end
     
-    title(sprintf('Post-rescue: n=%d', sum(mask_post)), ...
+    title(sprintf('Post-rescue: %d (%d quarantined)', sum(mask_post), num_quarantined_post), ...
           'FontWeight', 'bold');
     xlabel(x_label);
     ylabel('Amplitude');

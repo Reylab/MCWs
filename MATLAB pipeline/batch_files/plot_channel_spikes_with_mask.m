@@ -143,11 +143,17 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     num_removed = sum(~mask);
     num_kept = sum(mask);
     
-    % Create figure (vertical layout: taller than wide, dark figure background)
+    % Compute global y-limits from all spikes for consistent scaling
+    y_min = min(spikes(:));
+    y_max = max(spikes(:));
+    y_margin = 0.05 * (y_max - y_min);  % 5% margin
+    y_limits = [y_min - y_margin, y_max + y_margin];
+    
+    % Create figure (vertical layout: taller than wide, white figure background)
     fig = figure('Name', sprintf('Channel %s - Mask Visualization', num2str(channel_id)), ...
            'NumberTitle', 'off', ...
            'Visible', vis_str, ...
-           'Color', [0.15 0.15 0.15], ...
+           'Color', 'w', ...
            'Position', [100, 100, 600, 900]);
     
     % Colors with transparency (like make_cluster_report)
@@ -169,8 +175,8 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     plot(ax1, tvec, mean(spikes, 1), 'k', 'LineWidth', 2.4);
     hold(ax1, 'off');
 
-    title(ax1, sprintf('All Spikes (n=%d)', num_total), 'FontWeight', 'bold');
-
+    title(ax1, sprintf('All Spikes: %d (100%%)', num_total), 'FontWeight', 'bold');
+    ylim(ax1, y_limits);  % Fixed scale
     xlabel(ax1, 'Samples'); ylabel(ax1, 'Amplitude');
     grid(ax1, 'on'); box(ax1, 'off');
     set(ax1, 'GridAlpha', 0.25, 'LineWidth', 0.8);
@@ -190,12 +196,13 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
         end
         plot(ax2, tvec, mean(removed_spikes, 1), 'k', 'LineWidth', 2.4);
         hold(ax2, 'off');
-        title(ax2, sprintf('Removed (n=%d)', num_removed), 'FontWeight', 'bold', 'Color', 'r');
+        title(ax2, sprintf('Masked: %d (%.1f%%)', num_removed, 100*num_removed/num_total), 'FontWeight', 'bold', 'Color', 'r');
 
     else
-        title(ax2, 'Removed (n=0)', 'FontWeight', 'bold', 'Color', 'r');
+        title(ax2, sprintf('Masked: 0 (0.0%%)'), 'FontWeight', 'bold', 'Color', 'r');
         text(ax2, 0.5, 0.5, 'None removed', 'Units', 'normalized', 'HorizontalAlignment', 'center');
     end
+    ylim(ax2, y_limits);  % Fixed scale
     xlabel(ax2, 'Samples'); ylabel(ax2, 'Amplitude');
     grid(ax2, 'on'); box(ax2, 'off');
     set(ax2, 'GridAlpha', 0.25, 'LineWidth', 0.8);
@@ -215,19 +222,20 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
         end
         plot(ax3, tvec, mean(kept_spikes, 1), 'k', 'LineWidth', 2.4);
         hold(ax3, 'off');
-        title(ax3, sprintf('Kept (n=%d)', num_kept), 'FontWeight', 'bold', 'Color', 'b');
+        title(ax3, sprintf('Remaining: %d (%.1f%%)', num_kept, 100*num_kept/num_total), 'FontWeight', 'bold', 'Color', 'b');
 
     else
-        title(ax3, 'Kept (n=0)', 'FontWeight', 'bold', 'Color', 'b');
+        title(ax3, sprintf('Remaining: 0 (0.0%%)'), 'FontWeight', 'bold', 'Color', 'b');
         text(ax3, 0.5, 0.5, 'None kept', 'Units', 'normalized', 'HorizontalAlignment', 'center');
     end
+    ylim(ax3, y_limits);  % Fixed scale
     xlabel(ax3, 'Samples'); ylabel(ax3, 'Amplitude');
     grid(ax3, 'on'); box(ax3, 'off');
     set(ax3, 'GridAlpha', 0.25, 'LineWidth', 0.8);
     
-    % Overall title (white text for dark background)
+    % Overall title
     sgtitle(sprintf('%s - %s', channel_id, mask_name), ...
-            'FontSize', 14, 'FontWeight', 'bold', 'Color', 'w');
+            'FontSize', 14, 'FontWeight', 'bold', 'Color', 'k');
     
     % Force figure to render before saving
     drawnow;
