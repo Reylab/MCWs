@@ -1,41 +1,36 @@
-function index = nearest_neighbor(x,vectors,maxdist,varargin)
-% function index = nearest_neigbor(x,vectors,maxdist,pointdist*,pointlimit*,k*)
-% x is a row vector
-% pointdist (optional) - vector of standard deviations
-% pointlimit (optional) - upper bound on number of points outside pointdist
-% k (optional) - number of points used for nearest neighbor
+function index = nearest_neighbor(x, vectors, maxdist, varargin)
+    % Use the parser to avoid the varargin index confusion
+    p = inputParser;
+    addOptional(p, 'pointdist', []);
+    addOptional(p, 'pointlimit', Inf);
+    addOptional(p, 'k', 1); 
+    addOptional(p, 'weights', ones(size(vectors)));
+    parse(p, varargin{:});
 
-% Find the distance to all neighbors. Consider only those neighbors where
-% the point falls in the radius of possibility for that point. Find the
-% nearest possible neighbor.
-% Return 0 if there is no possible nearest neighbor.
+    % Distance logic
+    diffs_sq = (ones(size(vectors,1),1)*x - vectors).^2;
+    % Weights applied here
+    distances = sqrt(sum(diffs_sq .* p.Results.weights, 2)');
 
-distances = sqrt(sum((ones(size(vectors,1),1)*x - vectors).^2,2)');
-conforming = find(distances < maxdist);
-if( length(varargin) > 0 )
-    pointdist = varargin{1};
-    if( length(varargin) > 1 )
-        pointlimit = varargin{2};
-    else
-        pointlimit = Inf;
-    end
-    pointwise_conforming = [];
-    for i=1:size(vectors,1),
-        if( sum( abs(x-vectors(i,:)) > pointdist(i,:) ) < pointlimit )  % number of deviations from pointdist allowed.
-            pointwise_conforming = [pointwise_conforming i];
+    conforming = find(distances < maxdist);
+
+    % Pointwise logic
+    if ~isempty(p.Results.pointdist)
+        pw_conforming = [];
+        for i = 1:size(vectors,1)
+            if (sum(abs(x - vectors(i,:)) > p.Results.pointdist(i,:)) < p.Results.pointlimit)
+                pw_conforming = [pw_conforming i];
+            end
         end
+        conforming = intersect(conforming, pw_conforming);
     end
-    conforming = intersect(conforming, pointwise_conforming);
-end
-if( length( conforming ) == 0 )
-    index = 0;
-else
-    if( length(varargin) > 2 )
-        k = varargin{3};
-        [y i] = sort(distances(conforming)); % k-nearest neighbors
-        i = i(1:min(length(i),k));
+
+    if isempty(conforming)
+        index = 0;
     else
-        [y i] = min(distances(conforming));   
+        [~, sorted_idx] = sort(distances(conforming));
+        % This line ensures we only get ONE index for 'center' mode
+        % because k defaults to 1
+        index = conforming(sorted_idx(1:min(length(sorted_idx), p.Results.k)));
     end
-    index = conforming(i);
 end

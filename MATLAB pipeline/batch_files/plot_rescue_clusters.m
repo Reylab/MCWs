@@ -30,6 +30,7 @@ addParameter(p, 'SamplingRate', [], @isnumeric);
 addParameter(p, 'SaveFigure', false, @islogical);
 addParameter(p, 'ShowFigure', true, @islogical);
 addParameter(p, 'OutputSuffix', '', @ischar);
+addParameter(p, 'IncludeTask', false, @islogical);  % Set to true to include task spikes in rescue
 parse(p, varargin{:});
 
 channel_nums = p.Results.channels;
@@ -38,6 +39,7 @@ fs = p.Results.SamplingRate;
 save_fig = p.Results.SaveFigure;
 show_fig = p.Results.ShowFigure;
 output_suffix = p.Results.OutputSuffix;
+include_task = p.Results.IncludeTask;
 
 % Validate required inputs
 if isempty(channel_nums)
@@ -54,7 +56,7 @@ end
 % Process each channel
 for ch_idx = 1:length(channel_nums)
     channel_id = channel_nums(ch_idx);
-    process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix);
+    process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix, include_task);
 end
 
 fprintf('Done processing %d channels.\n', length(channel_nums));
@@ -62,7 +64,7 @@ fprintf('Done processing %d channels.\n', length(channel_nums));
 end % end main function
 
 %% Helper function for single channel processing
-function process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix)
+function process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix, include_task)
 
 % Get channel label
 ch_lbl = get_channel_label(channel_id);
@@ -113,7 +115,11 @@ end
 % Mask counts
 n_quar = sum(mask_quarantine);
 n_coll = sum(mask_collision);
-n_task = sum(mask_task_excluded);
+if include_task
+    n_task = sum(mask_task_excluded);
+else
+    n_task = 0;  % Don't count task spikes in rescue pool
+end
 
 % Current times file has combined data (original good + rescued)
 cluster_class = S_times.cluster_class;  % [cluster_id, timestamp]
