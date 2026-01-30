@@ -1,11 +1,15 @@
-function class_out = force_membership_wc(f_in, class_in, f_out, par)
+function class_out = force_membership_wc(f_in, class_in, f_out, par,varargin)
 % ... (original comments) ...
 %                    o par.spike_type     - 'pos' or 'neg' (default 'neg')
 %                    o par.peak_weight    - scaling factor for peak width (default 1)
 
 % Set defaults for new weight parameters
+p = inputParser;
+addParameter(p, 'peak_weight', 1, @(x) isnumeric(x) && isscalar(x) && x > 0);
+parse(p, varargin{:});
+peak_weight = p.Results.peak_weight;
 if ~isfield(par, 'spike_type'), par.spike_type = 'neg'; end
-if ~isfield(par, 'peak_weight'), par.peak_weight = 3; end
+if ~isfield(par, 'peak_weight'), par.peak_weight = peak_weight; end
 
 nspk = size(f_out,1);
 class_out = zeros(1,size(f_out,1));

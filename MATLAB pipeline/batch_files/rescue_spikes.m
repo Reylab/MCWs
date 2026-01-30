@@ -12,12 +12,14 @@ p = inputParser;
 addParameter(p,'channels',[],@isnumeric);
 addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'restore', false, @islogical);
+addParameter(p, 'peak_weight', 1, @(x) isnumeric(x) && isscalar(x) && x > 0);
 
 parse(p, varargin{:});
 
 channels = p.Results.channels;
 parallel = p.Results.parallel;
 restore = p.Results.restore;
+peak_weight = p.Results.peak_weight;
 
 if restore
     fprintf('Starting rescue_spikes RESTORE on %d channels...\n', length(channels));
@@ -27,18 +29,18 @@ end
 
 if parallel
     parfor kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore);
+        process_channel_rescue(channels(kk), restore, peak_weight);
     end
 else
     for kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore);
+        process_channel_rescue(channels(kk), restore, peak_weight);
     end
 end
 
 fprintf('rescue_spikes DONE.\n');
 end
 
-function process_channel_rescue(ch, restore)
+function process_channel_rescue(ch, restore, peak_weight)
     try
         ch_lbl = get_channel_label(ch); % Helper to get output_name or label
         fname_spk = sprintf('%s_spikes.mat', ch_lbl);
@@ -157,8 +159,7 @@ function process_channel_rescue(ch, restore)
             return;
         end
         % Features for quarantined spikes
-        spikes_quar = spikes_all(mask_quar, :);
-        index_quar = index_all(mask_quar);
+
         % Load times file and get clustering info
         if exist(fname_times, 'file')
             S = load(fname_times);
@@ -169,9 +170,7 @@ function process_channel_rescue(ch, restore)
                 cluster_class_pre_rescue = S.cluster_class;
                 save(fname_times, 'spikes_pre_rescue', 'index_pre_rescue', ...
                      'cluster_class_pre_rescue', '-append');
-            else
-                fprintf("spikes already rescued on Channel %d\n",ch);
-                return
+
             end
             
             cluster_class = S.cluster_class;
@@ -194,6 +193,8 @@ function process_channel_rescue(ch, restore)
             cluster_class = [class_good, index(:)];
             mask_quar = ~mask_non_quarantine | ~mask_non_collision;
         end
+        spikes_quar = spikes_all(mask_quar, :);
+        index_quar = index_all(mask_quar);
         % Use class_good as those with cluster_class ~= 0
         class_good_mask = cluster_class(:,1) ~= 0;
         class_good = cluster_class(class_good_mask, 1);
@@ -203,7 +204,7 @@ function process_channel_rescue(ch, restore)
         inspk_quar_full = local_wavelet_decomp(spikes_quar);
         inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
         % Use force_membership_wc to assign clusters to quarantined spikes
-        class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
+        class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par, 'peak_weight', peak_weight);
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)
             fprintf('  Channel %s: No spikes rescued.\n', ch_lbl);

@@ -67,6 +67,13 @@ for k = 1:length(pos_chans)
     chan_spike_map(k).chan_id = chan_id;
     chan_spike_map(k).spike_times = spike_times;
     chan_spike_map(k).waveforms = waveforms;
+    % Determine reference sample within waveform that corresponds to the spike time
+    if isfield(SPK, 'par') && isfield(SPK.par, 'ref') && ~isempty(SPK.par.ref)
+        chan_spike_map(k).ref = SPK.par.ref;
+    else
+        % fallback: center of waveform
+        chan_spike_map(k).ref = ceil(size(waveforms, 2) / 2);
+    end
     
     all_spktimes = [all_spktimes spike_times];
     which_chan = [which_chan chan_id * ones(size(spike_times))];
@@ -76,7 +83,7 @@ end
 [all_spktimes, II] = sort(all_spktimes);
 which_chan = which_chan(II);
 
-fprintf('Total spikes loaded: %d\n', length(all_spktimes));
+%fprintf('Total spikes loaded: %d\n', length(all_spktimes));
 
 % Find artifact indices from mask_nonart (false = artifact)
 artifact_idxs = [];
@@ -96,8 +103,8 @@ for k = 1:length(pos_chans)
 end
 artifact_idxs = unique(artifact_idxs);
 
-fprintf('Total collision spikes: %d (%.1f%%)\n', length(artifact_idxs), ...
-        100 * length(artifact_idxs) / length(all_spktimes));
+% fprintf('Total collision spikes: %d (%.1f%%)\n', length(artifact_idxs), ...
+%         100 * length(artifact_idxs) / length(all_spktimes));
 
 if isempty(artifact_idxs)
     fprintf('No collisions detected to plot.\n');
@@ -190,23 +197,35 @@ for page = 1:num_pages
         event_times = all_spktimes(event_idxs);
         event_chans = which_chan(event_idxs);
         
-        % Plot each spike as vertical line colored by channel
-        for i = 1:length(event_times)
+        % Center times on the mean (mu) so x-axis is samples from mu
+        mu_time = mean(event_times);
+        event_times_rel = event_times - mu_time;
+        n_spikes = numel(event_times);
+        std_samples = std(event_times_rel); % standard deviation in same units as index_all (usually samples)
+
+        % Plot each spike as vertical line colored by channel (relative to mu)
+        for i = 1:length(event_times_rel)
             ch = event_chans(i);
             color = chan_colors(ch);
-            plot([event_times(i) event_times(i)], [ch-0.4 ch+0.4], ...
+            plot([event_times_rel(i) event_times_rel(i)], [ch-0.4 ch+0.4], ...
                  'Color', color, 'LineWidth', 3);
         end
+
+        % Draw vertical line at mu (now x==0) and label it
+        ylims = [min(event_chans)-1, max(event_chans)+1];
+        plot([0 0], ylims, 'k--', 'LineWidth', 2);
+        text(0, ylims(2) - 0.1*(ylims(2)-ylims(1)), 'mu', 'HorizontalAlignment', 'center', 'FontWeight', 'bold');
         
         % Format plot
         ylabel('Channel ID');
-        xlabel('Time (samples)');
-        title(sprintf('Collision %d: %d channels, %d spikes at time ~%.0f', ...
-                      selected(ev), length(unique(event_chans)), length(event_times), min(event_times)), ...
+        xlabel('Time (samples from mu)');
+        title(sprintf('Collision %d: %d channels, %d spikes (mu=%.0f, std=%.2f samples)', ...
+                  selected(ev), length(unique(event_chans)), n_spikes, mu_time, std_samples), ...
               'Interpreter', 'none');
         grid on;
-        ylim([min(event_chans)-1, max(event_chans)+1]);
-        xlim([min(event_times)-t_win*0.1, max(event_times)+t_win*0.1]);
+        ylim(ylims);
+        % Set x limits relative to mu, include a small padding based on t_win
+        xlim([min(event_times_rel)-t_win*0.1, max(event_times_rel)+t_win*0.1]);
         
         % Add legend for channels
         channels_in_collision = unique(event_chans);
@@ -244,6 +263,9 @@ for page = 1:num_pages
         save_name = fullfile(save_folder, sprintf('%s_collision_timing.png', bundle_name));
     end
     
+    if ~show_figure
+        set(fig, 'ToolBar', 'none');
+    end
     exportgraphics(fig, save_name, 'Resolution', 150);
     fprintf('Saved collision timing to: %s\n', save_name);
     
@@ -336,9 +358,124 @@ for page = 1:num_pages
         save_name = fullfile(save_folder, sprintf('%s_collision_waveforms.png', bundle_name));
     end
     
+    if ~show_figure
+        set(fig, 'ToolBar', 'none');
+    end
     exportgraphics(fig, save_name, 'Resolution', 150);
     fprintf('Saved collision waveforms to: %s\n', save_name);
     
+    if ~show_figure
+        close(fig);
+    end
+end
+
+% TIME-ALIGNED WAVEFORMS - Plot waveforms placed at their absolute spike times (no vertical channel offset)
+for page = 1:num_pages
+    fig = figure('Position', [100, 100, 1200, 800], 'Color', 'w', 'Visible', vis_str);
+
+    % Determine range for this page
+    start_idx = (page - 1) * max_per_page + 1;
+    end_idx = min(page * max_per_page, num_events);
+    events_this_page = end_idx - start_idx + 1;
+
+    for ev_idx = 1:events_this_page
+        ev = start_idx + ev_idx - 1;
+        subplot(events_this_page, 1, ev_idx);
+        hold on;
+
+        event_idxs = collision_events{selected(ev)};
+        event_times = all_spktimes(event_idxs);
+        event_chans = which_chan(event_idxs);
+
+        % absolute mu for reference, std (in samples)
+        mu_time = mean(event_times);
+        std_samples = std(event_times - mu_time);
+        n_spikes = numel(event_times);
+
+        min_x = inf; max_x = -inf;
+        % Plot each spike waveform at its absolute time
+        for i = 1:length(event_times)
+            t = event_times(i);
+            ch = event_chans(i);
+            % Find waveform
+            for k = 1:length(chan_spike_map)
+                if chan_spike_map(k).chan_id == ch
+                    spike_idx = find(chan_spike_map(k).spike_times == t, 1);
+                    if ~isempty(spike_idx)
+                        waveform = chan_spike_map(k).waveforms(spike_idx, :);
+                        L = length(waveform);
+                            % x positions: place waveform first sample at spike time (no ref alignment)
+                            x = t + (0:(L-1));
+                        color = chan_colors(ch);
+                        plot(x, waveform, 'Color', color, 'LineWidth', 1.2);
+                        min_x = min(min_x, min(x));
+                        max_x = max(max_x, max(x));
+                    end
+                    break;
+                end
+            end
+        end
+
+        % Draw vertical mu line at absolute sample
+        ylims = ylim;
+        plot([mu_time mu_time], ylims, 'k--', 'LineWidth', 2);
+
+        % Format
+        ylabel('Amplitude');
+        xlabel('Samples');
+        title(sprintf('Collision %d (time-aligned): %d channels, %d spikes (mu=%.0f, std=%.2f)', ...
+                      selected(ev), length(unique(event_chans)), n_spikes, mu_time, std_samples), ...
+              'Interpreter', 'none');
+        grid on;
+
+        % x limits
+        if isfinite(min_x)
+            pad = max(1, round(0.05 * (max_x - min_x + 1)));
+            xlim([min_x - pad, max_x + pad]);
+        else
+            xlim([min(event_times)-t_win*0.1, max(event_times)+t_win*0.1]);
+        end
+
+        % Legend by channel
+        channels_in_collision = unique(event_chans);
+        legend_entries = cell(1, length(channels_in_collision));
+        legend_handles = [];
+        for c = 1:length(channels_in_collision)
+            ch = channels_in_collision(c);
+            color = chan_colors(ch);
+            h = plot(NaN, NaN, 'Color', color, 'LineWidth', 1.5);
+            legend_handles = [legend_handles h];
+            legend_entries{c} = sprintf('Ch %d', ch);
+        end
+        legend(legend_handles, legend_entries, 'Location', 'best');
+
+        hold off;
+    end
+
+    if num_pages > 1
+        sgtitle(sprintf('Collision Time-Aligned Waveforms - %s (Page %d/%d)', bundle_name, page, num_pages), ...
+                'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+    else
+        sgtitle(sprintf('Collision Time-Aligned Waveforms - %s', bundle_name), ...
+                'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+    end
+
+    % Save
+    save_folder = fullfile(spike_dir, 'collision_pics');
+    if ~exist(save_folder, 'dir')
+        mkdir(save_folder);
+    end
+    if num_pages > 1
+        save_name = fullfile(save_folder, sprintf('%s_collision_time_waveforms_p%d.png', bundle_name, page));
+    else
+        save_name = fullfile(save_folder, sprintf('%s_collision_time_waveforms.png', bundle_name));
+    end
+    if ~show_figure
+        set(fig, 'ToolBar', 'none');
+    end
+    exportgraphics(fig, save_name, 'Resolution', 150);
+    fprintf('Saved time-aligned waveforms to: %s\n', save_name);
+
     if ~show_figure
         close(fig);
     end
