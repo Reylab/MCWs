@@ -709,6 +709,7 @@ function Do_clustering(input, varargin)
         f_in  = spikes(classes~=0,:);
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
+        par.save_templates = true;
         class_out = force_membership_wc(f_in, class_in, f_out, par);
         forced = classes==0;
         classes(classes==0) = class_out;

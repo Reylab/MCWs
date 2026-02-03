@@ -13,13 +13,14 @@ addParameter(p,'channels',[],@isnumeric);
 addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'restore', false, @islogical);
 addParameter(p, 'peak_weight', 1, @(x) isnumeric(x) && isscalar(x) && x > 0);
-
+addParameter(p, 'amp_dir','neg',@ischar);
 parse(p, varargin{:});
 
 channels = p.Results.channels;
 parallel = p.Results.parallel;
 restore = p.Results.restore;
 peak_weight = p.Results.peak_weight;
+amp_dir = p.Results.amp_dir;
 
 if restore
     fprintf('Starting rescue_spikes RESTORE on %d channels...\n', length(channels));
@@ -29,18 +30,18 @@ end
 
 if parallel
     parfor kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore, peak_weight);
+        process_channel_rescue(channels(kk), restore, peak_weight,amp_dir);
     end
 else
     for kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore, peak_weight);
+        process_channel_rescue(channels(kk), restore, peak_weight,amp_dir);
     end
 end
 
 fprintf('rescue_spikes DONE.\n');
 end
 
-function process_channel_rescue(ch, restore, peak_weight)
+function process_channel_rescue(ch, restore, peak_weight,amp_dir)
     try
         ch_lbl = get_channel_label(ch); % Helper to get output_name or label
         fname_spk = sprintf('%s_spikes.mat', ch_lbl);
@@ -139,7 +140,8 @@ function process_channel_rescue(ch, restore, peak_weight)
         index = SPK.index;
         spikes = SPK.spikes;
 
-       
+        par.amp_dir = amp_dir;
+        par.pk_weight = peak_weight;
 
         % Build rescue mask - select which spikes to attempt rescue on
        
@@ -152,7 +154,7 @@ function process_channel_rescue(ch, restore, peak_weight)
       %   mask_quar = ~mask_non_quarantine | ~mask_non_collision;                % Quarantine + collision
        %  mask_quar = ~mask_non_quarantine | ~mask_task;                         % Quarantine + task-excluded
        %  mask_quar = ~mask_non_collision | ~mask_task;                          % Collision + task-excluded
-        mask_quar = ~mask_non_quarantine | ~mask_non_collision | ~mask_task;     % All three combined
+        mask_quar = ~mask_non_quarantine | ~mask_non_collision;% | ~mask_task;     % All three combined
 
         if ~any(mask_quar)
             fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
@@ -204,7 +206,8 @@ function process_channel_rescue(ch, restore, peak_weight)
         inspk_quar_full = local_wavelet_decomp(spikes_quar);
         inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
         % Use force_membership_wc to assign clusters to quarantined spikes
-        class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par, 'peak_weight', peak_weight);
+
+        class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)
             fprintf('  Channel %s: No spikes rescued.\n', ch_lbl);
