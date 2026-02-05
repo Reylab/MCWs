@@ -76,14 +76,28 @@ function plot_rescue_waveforms(ch, varargin)
     class_good = cluster_class(class_good_mask, 1);
     spikes_good_classified = spikes_good(class_good_mask, :);
 
-    [centers, maxdist, ~] = build_templates(class_good, spikes_good_classified);
-
+    % Exclude rescued spikes from template building to match rescue process
+    if isfield(SPK, 'rescue_mask') && ~isempty(SPK.rescue_mask) && any(SPK.rescue_mask)
+        % Get timestamps of rescued spikes from index_all
+        rescued_timestamps = SPK.index_all(SPK.rescue_mask);
+        
+        % Get timestamps of good classified spikes from SPK.index
+        good_timestamps = SPK.index(class_good_mask);
+        
+        % Find which good spikes are rescued by matching timestamps
+        original_good_mask = ~ismember(good_timestamps, rescued_timestamps);
+    else
+        original_good_mask = true(size(class_good));
+    end
+    
+    [centers, maxdist, ~] = build_templates(class_good(original_good_mask), spikes_good_classified(original_good_mask, :));
+    
     % Set up parameters for distance computation
     par.pk_weight = weight;
     if ~isfield(par, 'amp_dir')
         par.amp_dir = 'neg';
     end
-
+    
     % Compute normalized distances for all quarantined spikes (both weighted and unweighted)
     norm_dist_unweighted = zeros(1, n_quar);
     norm_dist_weighted = zeros(1, n_quar);

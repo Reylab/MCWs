@@ -75,17 +75,29 @@ function plot_rescue_distances(ch, varargin)
     class_good = cluster_class(class_good_mask, 1);
     spikes_good_classified = spikes_good(class_good_mask, :);
 
-    [centers, maxdist, ~] = build_templates(class_good, spikes_good_classified);
-
-    % Randomly select spikes
-    n_quar = size(spikes_quar, 1);
-    if n_quar > num_spikes
-        rand_idx = randperm(n_quar, num_spikes);
+    % Exclude rescued spikes from template building to match rescue process
+    if isfield(SPK, 'rescue_mask') && ~isempty(SPK.rescue_mask) && any(SPK.rescue_mask)
+        % Get timestamps of rescued spikes from index_all
+        rescued_timestamps = SPK.index_all(SPK.rescue_mask);
+        
+        % Get timestamps of good classified spikes from SPK.index
+        good_timestamps = SPK.index(class_good_mask);
+        
+        % Find which good spikes are rescued by matching timestamps
+        original_good_mask = ~ismember(good_timestamps, rescued_timestamps);
     else
-        rand_idx = 1:n_quar;
+        original_good_mask = true(size(class_good));
+    end
+    
+    [centers, maxdist, ~] = build_templates(class_good(original_good_mask), spikes_good_classified(original_good_mask, :));
+    
+    % Select random subset of quarantined spikes
+    n_quar = size(spikes_quar, 1);
+    if num_spikes > n_quar
         num_spikes = n_quar;
     end
-
+    rand_idx = randperm(n_quar, num_spikes);
+    
     selected_spikes = spikes_quar(rand_idx, :);
     selected_indices_in_all = quar_indices_in_all(rand_idx);
 

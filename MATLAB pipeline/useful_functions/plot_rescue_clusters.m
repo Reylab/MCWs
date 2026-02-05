@@ -232,6 +232,66 @@ for page = 1:num_pages
     n_rescued_clust = sum(mask_rescued_clust);
     n_total_clust = sum(mask_this_clust);
     
+    % Collect all spike data for this cluster to determine common y-limits
+    spikes_original_clust = spikes_combined(mask_original_clust, :);
+    spikes_total_clust = spikes_combined(mask_this_clust, :);
+    
+    % Subsample if needed for y-limits calculation
+    if size(spikes_original_clust, 1) > max_spikes
+        idx_subsample = round(linspace(1, size(spikes_original_clust, 1), max_spikes));
+        spikes_original_clust_sub = spikes_original_clust(idx_subsample, :);
+    else
+        spikes_original_clust_sub = spikes_original_clust;
+    end
+    
+    if size(spikes_total_clust, 1) > max_spikes
+        idx_subsample = round(linspace(1, size(spikes_total_clust, 1), max_spikes));
+        spikes_total_clust_sub = spikes_total_clust(idx_subsample, :);
+    else
+        spikes_total_clust_sub = spikes_total_clust;
+    end
+    
+    if clust_id == 0
+        % For cluster 0, collect not rescued spikes
+        if isfield(S_times, 'class_quar')
+            class_quar = S_times.class_quar;
+            if isfield(S_times, 'index_quar')
+                index_quar = S_times.index_quar;
+                not_rescued_timestamps = index_quar(class_quar == 0);
+                mask_not_rescued_all = ismember(index_all, not_rescued_timestamps);
+                spikes_rescued_clust = spikes_all(mask_not_rescued_all, :);
+            else
+                spikes_rescued_clust = [];
+            end
+        else
+            spikes_rescued_clust = [];
+        end
+    else
+        spikes_rescued_clust = spikes_combined(mask_rescued_clust, :);
+    end
+    
+    % Subsample spikes_rescued_clust if needed for y-limits
+    if size(spikes_rescued_clust, 1) > max_spikes
+        idx_subsample = round(linspace(1, size(spikes_rescued_clust, 1), max_spikes));
+        spikes_rescued_clust_sub = spikes_rescued_clust(idx_subsample, :);
+    else
+        spikes_rescued_clust_sub = spikes_rescued_clust;
+    end
+    
+    % Determine common y-limits for this cluster
+    all_spikes = [spikes_original_clust_sub; spikes_rescued_clust_sub; spikes_total_clust_sub];
+    if ~isempty(all_spikes)
+        y_min = min(all_spikes(:));
+        y_max = max(all_spikes(:));
+        y_range = y_max - y_min;
+        if y_range == 0
+            y_range = 1e-6;  % Avoid zero range
+        end
+        y_limits = [y_min - 0.05*y_range, y_max + 0.05*y_range];
+    else
+        y_limits = [-1, 1];  % Default if no spikes
+    end
+    
     % Row 1: Original spikes in this cluster (before rescue was added)
     waveform_pos = (ic-1)*2 + 1;
     density_pos = (ic-1)*2 + 2;
@@ -257,6 +317,7 @@ for page = 1:num_pages
     title(sprintf('Cluster %d\nOriginal: n=%d', clust_id, n_original_clust), ...
           'FontWeight', 'bold');
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     
@@ -265,6 +326,7 @@ for page = 1:num_pages
     set(gca, 'Color', 'w');
     density_image_matlab(spikes_original_clust, gca, fs);
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     
@@ -330,6 +392,7 @@ for page = 1:num_pages
               'FontWeight', 'bold');
     end
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     
@@ -342,6 +405,7 @@ for page = 1:num_pages
         density_image_matlab(spikes_rescued_clust, gca, fs);
     end
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     
@@ -373,6 +437,7 @@ for page = 1:num_pages
           'FontWeight', 'bold');
     xlabel(x_label);
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     
@@ -382,6 +447,7 @@ for page = 1:num_pages
     density_image_matlab(spikes_total_clust, gca, fs);
     xlabel(x_label);
     ylabel('Amplitude');
+    ylim(y_limits);
     grid on;
     box on;
     end  % end cluster loop
