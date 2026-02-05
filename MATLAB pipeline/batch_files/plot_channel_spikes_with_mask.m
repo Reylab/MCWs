@@ -33,6 +33,7 @@ addParameter(p, 'spike_dir', pwd, @ischar);
 addParameter(p, 'show_figures', false, @islogical);
 addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'max_spikes', 5000, @isnumeric);
+addParameter(p, 'max_spikes', 5000, @isnumeric);
 parse(p, varargin{:});
 
 channel_nums = p.Results.channels;
@@ -291,12 +292,10 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     color_removed = [1, 0, 0, 0.15];        % Red  
     color_kept = [0, 0, 1, 0.15];           % Blue
     
-    % Use a tiled layout (3 rows x 3 columns): waveform | density | text
-    t = tiledlayout(fig, num_rows, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
-
-    % --- Row 1: All spikes (left), density (center), text (right) ---
-    ax1 = nexttile(t, 1);
-    set(ax1, 'Color', 'w'); hold(ax1, 'on');
+    % --- Subplot 1: All spikes (sampled, stratified) ---
+    ax1 = subplot(3, 1, 1);
+    set(ax1, 'Color', 'w');
+    hold(ax1, 'on');
 
     n_all = min(5000, num_total);
     % Stratified sampling: keep ratio of kept/masked
@@ -319,6 +318,7 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     else
         idx_kept = [];
     end
+    idx_all = [idx_kept idx_masked];
     % Ensure column vectors and concatenate vertically to form a single index vector
     idx_masked = idx_masked(:);
     idx_kept = idx_kept(:);
@@ -328,26 +328,15 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
     plot(ax1, tvec, mean(spikes, 1), 'k', 'LineWidth', 2.4);
     hold(ax1, 'off');
 
+
     title(ax1, sprintf('All Spikes: %d total', num_total), 'FontWeight', 'bold');
     ylim(ax1, y_limits);
     xlabel(ax1, 'Samples'); ylabel(ax1, 'Amplitude');
     grid(ax1, 'on'); box(ax1, 'off');
     set(ax1, 'GridAlpha', 0.25, 'LineWidth', 0.8);
 
-    ax1_den = nexttile(t, 2);
-    if exist('idx_all','var') && ~isempty(idx_all)
-        W_all = spikes(idx_all, :);
-    else
-        W_all = spikes;
-    end
-    density_image_matlab(W_all, ax1_den, [], 'cmap', 'inferno');
-    set(ax1_den, 'YLim', y_limits);
-
-    % Text axis for row 1 (tile 3)
-    ax1_txt = nexttile(t, 3);
-    axis(ax1_txt, 'off');
-
-    ax2 = nexttile(t, 4);
+    % --- Subplot 2: Masked spikes from sampled set ---
+    ax2 = subplot(3, 1, 2);
     set(ax2, 'Color', 'w');
     idx_masked_in_sample = idx_all(ismember(idx_all, idx_masked_pool));
     n_masked_in_sample = length(idx_masked_in_sample);
@@ -357,32 +346,18 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
         plot(ax2, tvec, removed_spikes', 'Color', color_removed, 'LineWidth', 0.8);
         plot(ax2, tvec, mean(removed_spikes, 1), 'k', 'LineWidth', 2.4);
         hold(ax2, 'off');
-        title(ax2, sprintf('Removed: %d (%.1f%% of total)', num_removed, 100*num_removed/max(num_total,1)), 'FontWeight', 'bold', 'Color', 'r');
+        title(ax2, sprintf('Masked in Sample: %d (%.1f%% of sample, %.1f%% of all masked)', n_masked_in_sample, 100*n_masked_in_sample/length(idx_all), 100*n_masked_in_sample/max(num_removed,1)), 'FontWeight', 'bold', 'Color', 'r');
     else
-        title(ax2, sprintf('Removed: %d (%.1f%% of total)', num_removed, 100*num_removed/max(num_total,1)), 'FontWeight', 'bold', 'Color', 'r');
-        text(ax2, 0.5, 0.5, 'No removed spikes to display', 'Units', 'normalized', 'HorizontalAlignment', 'center');
+        title(ax2, sprintf('Masked in Sample: 0 (0.0%%)'), 'FontWeight', 'bold', 'Color', 'r');
+        text(ax2, 0.5, 0.5, 'None removed in sample', 'Units', 'normalized', 'HorizontalAlignment', 'center');
     end
     ylim(ax2, y_limits);
     xlabel(ax2, 'Samples'); ylabel(ax2, 'Amplitude');
     grid(ax2, 'on'); box(ax2, 'off');
     set(ax2, 'GridAlpha', 0.25, 'LineWidth', 0.8);
 
-    ax2_den = nexttile(t, 5);
-    if exist('idx_masked_in_sample','var') && ~isempty(idx_masked_in_sample)
-        W_removed = spikes(idx_masked_in_sample, :);
-    else
-        W_removed = [];
-    end
-    density_image_matlab(W_removed, ax2_den, [], 'cmap', 'inferno');
-    set(ax2_den, 'YLim', y_limits);
-
-    % Text axis for row 2 (tile 6)
-    ax2_txt = nexttile(t, 6);
-    axis(ax2_txt, 'off');
-
-    % --- Row 3: Kept spikes (left) and density (right) ---
-    % --- Row 3: Kept spikes (left), density (center), text (right) ---
-    ax3 = nexttile(t, 7);
+    % --- Subplot 3: Kept spikes from sampled set ---
+    ax3 = subplot(3, 1, 3);
     set(ax3, 'Color', 'w');
     idx_kept_in_sample = idx_all(ismember(idx_all, idx_kept_pool));
     n_kept_in_sample = length(idx_kept_in_sample);
@@ -392,10 +367,10 @@ function process_single_channel(channel_num, mask_name, spike_dir, vis_str, show
         plot(ax3, tvec, kept_spikes', 'Color', color_kept, 'LineWidth', 0.8);
         plot(ax3, tvec, mean(kept_spikes, 1), 'k', 'LineWidth', 2.4);
         hold(ax3, 'off');
-        title(ax3, sprintf('Kept: %d (%.1f%% of total)', num_kept, 100*num_kept/max(num_total,1)), 'FontWeight', 'bold', 'Color', 'b');
+        title(ax3, sprintf('Kept in Sample: %d (%.1f%% of sample, %.1f%% of all kept)', n_kept_in_sample, 100*n_kept_in_sample/length(idx_all), 100*n_kept_in_sample/max(num_kept,1)), 'FontWeight', 'bold', 'Color', 'b');
     else
-        title(ax3, sprintf('Kept: %d (%.1f%% of total)', num_kept, 100*num_kept/max(num_total,1)), 'FontWeight', 'bold', 'Color', 'b');
-        text(ax3, 0.5, 0.5, 'No kept spikes to display', 'Units', 'normalized', 'HorizontalAlignment', 'center');
+        title(ax3, sprintf('Kept in Sample: 0 (0.0%%)'), 'FontWeight', 'bold', 'Color', 'b');
+        text(ax3, 0.5, 0.5, 'None kept in sample', 'Units', 'normalized', 'HorizontalAlignment', 'center');
     end
     ylim(ax3, y_limits);
     xlabel(ax3, 'Samples'); ylabel(ax3, 'Amplitude');

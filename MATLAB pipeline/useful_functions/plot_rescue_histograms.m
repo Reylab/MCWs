@@ -139,7 +139,6 @@ function plot_rescue_histograms(ch, varargin)
     raw_dist_rescued = raw_dist_weighted(rescued_mask);
     raw_dist_non_rescued = raw_dist_weighted(~rescued_mask);
 
-    %% ========== NORMALIZED HISTOGRAM PLOT ==========
     fig = figure;
 
     % All spikes
@@ -192,7 +191,6 @@ function plot_rescue_histograms(ch, varargin)
     exportgraphics(fig, save_name, 'Resolution', 300);
     fprintf('Saved normalized histogram to: %s\n', save_name);
 
-    %% ========== RAW (UNNORMALIZED) HISTOGRAM PLOT ==========
     fig_raw = figure;
 
     % All spikes
@@ -286,7 +284,9 @@ function [normConst, weights] = get_weight_vector(spike_x, pk_weight, amp_dir)
             right_width = size(spike_x, 2);
         end
         
-        w_vect(left_width:right_width) = pk_weight;
+        % if width_max < length(spike_x)/2.5
+        %     w_vect(left_width:right_width) = pk_weight;
+        % end
     end
     
     weights = w_vect';

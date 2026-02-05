@@ -224,7 +224,7 @@ function plot_rescue_waveforms(ch, varargin)
     sgtitle(sprintf('Waveforms by Rescue Status - Channel %s (weight=%.1f)', ch_lbl, weight), ...
         'Interpreter', 'none');
     
-    save_name_summary = fullfile(save_folder, sprintf('%s_waveforms_summary.png', ch_lbl));
+    save_name_summary = fullfile(save_folder, sprintf('%s_waves_wt%.1f.png', ch_lbl, weight));
     exportgraphics(fig_summary, save_name_summary, 'Resolution', 300);
     fprintf('Saved summary plot to: %s\n', save_name_summary);
 
@@ -281,7 +281,7 @@ function plot_rescue_waveforms(ch, varargin)
     sgtitle(sprintf('Stable States by Mask - Channel %s (weight=%.1f)', ch_lbl, weight), ...
         'Interpreter', 'none');
     
-    save_name_stable = fullfile(save_folder, sprintf('%s_waveforms_stable.png', ch_lbl));
+    save_name_stable = fullfile(save_folder, sprintf('%s_waves_stable_wt%.1f.png', ch_lbl, weight));
     exportgraphics(fig_stable, save_name_stable, 'Resolution', 300);
     fprintf('Saved stable states plot to: %s\n', save_name_stable);
 
@@ -334,7 +334,7 @@ function plot_rescue_waveforms(ch, varargin)
     sgtitle(sprintf('Changed States by Mask - Channel %s (weight=%.1f)', ch_lbl, weight), ...
         'Interpreter', 'none');
     
-    save_name_changed = fullfile(save_folder, sprintf('%s_waveforms_changed.png', ch_lbl));
+    save_name_changed = fullfile(save_folder, sprintf('%s_waves_changed_wt%.1f.png', ch_lbl, weight));
     exportgraphics(fig_changed, save_name_changed, 'Resolution', 300);
     fprintf('Saved changed states plot to: %s\n', save_name_changed);
 end
@@ -430,7 +430,9 @@ function [normConst, weights] = get_weight_vector(spike_x, pk_weight, amp_dir)
             right_width = size(spike_x, 2);
         end
         
-        w_vect(left_width:right_width) = pk_weight;
+        % if width_max < length(spike_x)/2.5
+        %     w_vect(left_width:right_width) = pk_weight;
+        % end
     end
     
     weights = w_vect';
