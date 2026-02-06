@@ -197,10 +197,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         % Linear fit to log(weights) vs normalized distance
         p = polyfit(log10(weights), norm_dist_orig(i, :), 1);
         slopes(i) = p(1);
-        if slopes(i) > 0.05  % Threshold for positive trend
+        if slopes(i) > 0.1  % Threshold for positive trend
             pos_trend_good = pos_trend_good + 1;
             pos_idx_good = [pos_idx_good; i];
-        elseif slopes(i) < -0.05  % Threshold for negative trend
+        elseif slopes(i) < -0.1  % Threshold for negative trend
             neg_trend_good = neg_trend_good + 1;
             neutral_neg_idx_good = [neutral_neg_idx_good; i];
         else
@@ -448,7 +448,17 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             n_spikes = length(neutral_neg_idx_good);
             colors = lines(n_spikes);
             for i = 1:n_spikes
-                plot(orig_spikes(neutral_neg_idx_good(i), :), 'Color', colors(i, :), 'LineWidth', 1);
+                spike_idx = neutral_neg_idx_good(i);
+                spike = orig_spikes(spike_idx, :);
+                plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
+                
+                % Get and plot peak width region
+                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                if ~isnan(left_w)
+                    % Plot dotted line at peak width boundaries
+                    plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+                    plot([right_w right_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+                end
             end
         end
         hold off;
@@ -464,7 +474,17 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             n_spikes = length(neutral_neg_idx_poor);
             colors = lines(n_spikes);
             for i = 1:n_spikes
-                plot(resc_spikes(neutral_neg_idx_poor(i), :), 'Color', colors(i, :), 'LineWidth', 1);
+                spike_idx = neutral_neg_idx_poor(i);
+                spike = resc_spikes(spike_idx, :);
+                plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
+                
+                % Get and plot peak width region
+                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                if ~isnan(left_w)
+                    % Plot dotted line at peak width boundaries
+                    plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+                    plot([right_w right_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+                end
             end
         end
         hold off;
@@ -552,7 +572,16 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         n_spikes = length(neutral_neg_idx_good);
         colors = lines(n_spikes + length(neutral_neg_idx_poor));
         for i = 1:n_spikes
-            plot(orig_spikes(neutral_neg_idx_good(i), :), 'Color', colors(i, :), 'LineWidth', 1);
+            spike_idx = neutral_neg_idx_good(i);
+            spike = orig_spikes(spike_idx, :);
+            plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
+            
+            % Get and plot peak width region
+            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            if ~isnan(left_w)
+                plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+                plot([right_w right_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
+            end
         end
     end
     % Plot poor_rescue spikes
@@ -561,7 +590,16 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         n_spikes = length(neutral_neg_idx_poor);
         colors = lines(n_offset + n_spikes);
         for i = 1:n_spikes
-            plot(resc_spikes(neutral_neg_idx_poor(i), :), 'Color', colors(n_offset + i, :), 'LineWidth', 1);
+            spike_idx = neutral_neg_idx_poor(i);
+            spike = resc_spikes(spike_idx, :);
+            plot(spike, 'Color', colors(n_offset + i, :), 'LineWidth', 1);
+            
+            % Get and plot peak width region
+            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            if ~isnan(left_w)
+                plot([left_w left_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
+                plot([right_w right_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
+            end
         end
     end
     hold off;
@@ -661,13 +699,52 @@ function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
     if ~isempty(pks)
         [pk, peak_loc] = max(pks);
         width_max = w(peak_loc);
-        peak_loc = locs(peak_loc);
+        prom_max = p(peak_loc);
+        pk_loc = locs(peak_loc);
         
-        left_width = round(peak_loc - width_max/2);
+        level = pk - prom_max/2;
+        above_level = find(wav >= level);
+        if ~isempty(above_level)
+            % Find connected components
+            diff_above = diff(above_level);
+            breaks = find(diff_above > 1);
+            segments = {};
+            start_idx = 1;
+            for b = 1:length(breaks)
+                segments{end+1} = above_level(start_idx:breaks(b));
+                start_idx = breaks(b) + 1;
+            end
+            segments{end+1} = above_level(start_idx:end);
+            % Find segment containing peak_loc
+            peak_segment = [];
+            for s = 1:length(segments)
+                if any(segments{s} == pk_loc)
+                    peak_segment = segments{s};
+                    break;
+                end
+            end
+            if ~isempty(peak_segment)
+                left_width = min(peak_segment);
+                right_width = max(peak_segment);
+            else
+                left_width = NaN;
+                right_width = NaN;
+            end
+        else
+            left_width = NaN;
+            right_width = NaN;
+        end
+        % wave_pk = find(wav < prom_max/2);
+        % intersect_prom = abs(wave_pk-pk_loc*ones(1,length(wave_pk)));
+        % [val, intIdx] = mink(intersect_prom,2);
+        % left_width = wave_pk(min(intIdx));
+        % right_width = wave_pk(max(intIdx));
+        % left_width = round(peak_loc - width_max/2);
         if left_width <= 0
             left_width = 1;
         end
-        right_width = round(peak_loc + width_max/2);
+        
+        % right_width = round(peak_loc + width_max/2);
         if right_width > size(spike_x, 2)
             right_width = size(spike_x, 2);
         end
@@ -714,13 +791,52 @@ function [normConst, weights] = get_weight_vector(spike_x, pk_weight, amp_dir)
     if ~isempty(pks)
         [pk, peak_loc] = max(pks);
         width_max = w(peak_loc);
-        peak_loc = locs(peak_loc);
-        
-        left_width = round(peak_loc - width_max/2);
+        pk_loc = locs(peak_loc);
+        prom_max = p(peak_loc);
+
+        level = pk - prom_max/2;
+        above_level = find(wav >= level);
+        if ~isempty(above_level)
+            % Find connected components
+            diff_above = diff(above_level);
+            breaks = find(diff_above > 1);
+            segments = {};
+            start_idx = 1;
+            for b = 1:length(breaks)
+                segments{end+1} = above_level(start_idx:breaks(b));
+                start_idx = breaks(b) + 1;
+            end
+            segments{end+1} = above_level(start_idx:end);
+            % Find segment containing peak_loc
+            peak_segment = [];
+            for s = 1:length(segments)
+                if any(segments{s} == pk_loc)
+                    peak_segment = segments{s};
+                    break;
+                end
+            end
+            if ~isempty(peak_segment)
+                left_width = min(peak_segment);
+                right_width = max(peak_segment);
+            else
+                left_width = NaN;
+                right_width = NaN;
+            end
+        else
+            left_width = NaN;
+            right_width = NaN;
+        end
+        % left_width = round(peak_loc - width_max/2);
+        % wave_pk = find(wav < prom_max/2);
+        % intersect_prom = abs(wave_pk-pk_loc*ones(1,length(wave_pk)));
+        % [val, intIdx] = mink(intersect_prom,2);
+        % left_width = wave_pk(min(intIdx));
+        % right_width = wave_pk(max(intIdx));
         if left_width <= 0
             left_width = 1;
         end
-        right_width = round(peak_loc + width_max/2);
+        % right_width = round(peak_loc + width_max/2);
+
         if right_width > size(spike_x, 2)
             right_width = size(spike_x, 2);
         end
