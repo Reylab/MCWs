@@ -56,12 +56,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Debug: print template info
     [centers, maxdist, ~] = build_templates(class_good(original_good_mask), spikes_good_classified(original_good_mask, :));
-    fprintf('Built %d templates for clusters: ', size(centers, 1));
-    fprintf('%d ', 1:size(centers, 1));
-    fprintf('\n');
-    fprintf('maxdist values: ');
-    fprintf('%.2f ', maxdist);
-    fprintf('\n');
+
     
     par = SPK.par;
     par.amp_dir = 'neg';
@@ -119,9 +114,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     end
     
     % Display table for one weight
-    [~, display_idx] = min(abs(weights - table_weight));
-    fprintf('\n=== GOOD SPIKES (Weight=%d) ===\n', weights(display_idx));
-    disp(dist_tables_orig{display_idx});
+    % [~, display_idx] = min(abs(weights - table_weight));
+    % fprintf('\n=== GOOD SPIKES (Weight=%d) ===\n', weights(display_idx));
+    % disp(dist_tables_orig{display_idx});
     
     % Compute distances for resc_spikes
     n_resc = size(resc_spikes, 1);
@@ -174,8 +169,8 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     end
     
     % Display table for one weight
-    fprintf('\n=== POOR_RESCUE SPIKES (Weight=%d) ===\n', weights(display_idx));
-    disp(dist_tables_resc{display_idx});
+    % fprintf('\n=== POOR_RESCUE SPIKES (Weight=%d) ===\n', weights(display_idx));
+    % disp(dist_tables_resc{display_idx});
     
     % Create output structure with all tables
     out.weights = weights;
@@ -189,7 +184,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     out_table = fullfile(folder_name, 'distance_tables.mat');
     save(out_table, 'out');
-    fprintf('Distance tables saved to: %s\n', out_table);
+    % fprintf('Distance tables saved to: %s\n', out_table);
     
     % Compute trends for each spike and track indices
     pos_trend_good = 0;
@@ -197,15 +192,15 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     neg_trend_good = 0;
     pos_idx_good = [];
     neutral_neg_idx_good = [];
-    
+    slopes = zeros(n_orig, 1);
     for i = 1:n_orig
         % Linear fit to log(weights) vs normalized distance
         p = polyfit(log10(weights), norm_dist_orig(i, :), 1);
-        slope = p(1);
-        if slope > 0.05  % Threshold for positive trend
+        slopes(i) = p(1);
+        if slopes(i) > 0.05  % Threshold for positive trend
             pos_trend_good = pos_trend_good + 1;
             pos_idx_good = [pos_idx_good; i];
-        elseif slope < -0.05  % Threshold for negative trend
+        elseif slopes(i) < -0.05  % Threshold for negative trend
             neg_trend_good = neg_trend_good + 1;
             neutral_neg_idx_good = [neutral_neg_idx_good; i];
         else
@@ -219,15 +214,16 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     neg_trend_poor = 0;
     pos_idx_poor = [];
     neutral_neg_idx_poor = [];
+    slopes_resc = zeros(n_resc, 1);
     
     for i = 1:n_resc
         % Linear fit to log(weights) vs normalized distance
         p = polyfit(log10(weights), norm_dist_resc(i, :), 1);
-        slope = p(1);
-        if slope > 0.05
+        slopes_resc(i) = p(1);
+        if slopes_resc(i) > 0.05
             pos_trend_poor = pos_trend_poor + 1;
             pos_idx_poor = [pos_idx_poor; i];
-        elseif slope < -0.05
+        elseif slopes_resc(i) < -0.05
             neg_trend_poor = neg_trend_poor + 1;
             neutral_neg_idx_poor = [neutral_neg_idx_poor; i];
         else
@@ -236,10 +232,73 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         end
     end
     
-    fprintf('\n=== TREND ANALYSIS ===\n');
-    fprintf('               Positive  Neutral  Negative\n');
-    fprintf('Good:          %8d %8d %9d\n', pos_trend_good, neutral_trend_good, neg_trend_good);
-    fprintf('Poor_Rescue:   %8d %8d %9d\n', pos_trend_poor, neutral_trend_poor, neg_trend_poor);
+    % fprintf('\n=== TREND ANALYSIS ===\n');
+    % fprintf('               Positive  Neutral  Negative\n');
+    % fprintf('Good:          %8d %8d %9d\n', pos_trend_good, neutral_trend_good, neg_trend_good);
+    % fprintf('Poor_Rescue:   %8d %8d %9d\n', pos_trend_poor, neutral_trend_poor, neg_trend_poor);
+    
+    % Collect data for table
+    % For neutral/negative
+    nn_slopes = [];
+    nn_widths = [];
+    nn_types = {};
+    for i = 1:length(neutral_neg_idx_good)
+        spike_idx = neutral_neg_idx_good(i);
+        spike = orig_spikes(spike_idx, :);
+        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        if ~isnan(left_w)
+            width = right_w - left_w;
+            nn_slopes = [nn_slopes; slopes(spike_idx)];
+            nn_widths = [nn_widths; width];
+            nn_types = [nn_types; 'good'];
+        end
+    end
+    for i = 1:length(neutral_neg_idx_poor)
+        spike_idx = neutral_neg_idx_poor(i);
+        spike = resc_spikes(spike_idx, :);
+        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        if ~isnan(left_w)
+            width = right_w - left_w;
+            nn_slopes = [nn_slopes; slopes_resc(spike_idx)];
+            nn_widths = [nn_widths; width];
+            nn_types = [nn_types; 'poor_rescue'];
+        end
+    end
+    % Sort neutral/negative by slope
+    [nn_sorted_slopes, nn_idx] = sort(nn_slopes);
+    nn_sorted_widths = nn_widths(nn_idx);
+    nn_sorted_types = nn_types(nn_idx);
+    
+    % For positive
+    pos_slopes = [];
+    pos_widths = [];
+    pos_types = {};
+    for i = 1:length(pos_idx_good)
+        spike_idx = pos_idx_good(i);
+        spike = orig_spikes(spike_idx, :);
+        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        if ~isnan(left_w)
+            width = right_w - left_w;
+            pos_slopes = [pos_slopes; slopes(spike_idx)];
+            pos_widths = [pos_widths; width];
+            pos_types = [pos_types; 'good'];
+        end
+    end
+    for i = 1:length(pos_idx_poor)
+        spike_idx = pos_idx_poor(i);
+        spike = resc_spikes(spike_idx, :);
+        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        if ~isnan(left_w)
+            width = right_w - left_w;
+            pos_slopes = [pos_slopes; slopes_resc(spike_idx)];
+            pos_widths = [pos_widths; width];
+            pos_types = [pos_types; 'poor_rescue'];
+        end
+    end
+    % Sort positive by slope
+    [pos_sorted_slopes, pos_idx_sort] = sort(pos_slopes);
+    pos_sorted_widths = pos_widths(pos_idx_sort);
+    pos_sorted_types = pos_types(pos_idx_sort);
     
     % Figure for normalized distances
     figure;
@@ -376,6 +435,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     y_min = min(all_waveforms);
     y_max = max(all_waveforms);
     y_limits = [y_min, y_max];
+    offset = (y_max - y_min) * 0.05;
     
     % FIGURE 1: Neutral and Negative trend waveforms
     if ~isempty(neutral_neg_idx_good) || ~isempty(neutral_neg_idx_poor)
@@ -558,6 +618,35 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     saveas(gcf, save_path);
     close(gcf);
     fprintf('Combined trend waveforms saved to: %s\n', save_path);
+    
+    % Figure for tables
+    figure;
+    % Left: Neutral/Negative
+    subplot(1, 2, 1);
+    nn_table_str = sprintf('%-6s  %-5s  %-12s\n', 'Slope', 'Width', 'Type');
+    for i = 1:length(nn_sorted_slopes)
+        nn_table_str = sprintf('%s%-6.3f  %-5.1f  %-12s\n', nn_table_str, nn_sorted_slopes(i), nn_sorted_widths(i), nn_sorted_types{i});
+    end
+    fprintf('Neutral & Negative Trends Table:\n%s\n', nn_table_str);
+    text(0.5, 0.5, nn_table_str, 'Units', 'normalized', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', 'FontName', 'Courier', 'FontSize', 8, 'Interpreter', 'none');
+    title('Neutral & Negative Trends', 'Interpreter', 'none');
+    axis off;
+    
+    % Right: Positive
+    subplot(1, 2, 2);
+    pos_table_str = sprintf('%-6s  %-5s  %-12s\n', 'Slope', 'Width', 'Type');
+    for i = 1:length(pos_sorted_slopes)
+        pos_table_str = sprintf('%s%-6.3f  %-5.1f  %-12s\n', pos_table_str, pos_sorted_slopes(i), pos_sorted_widths(i), pos_sorted_types{i});
+    end
+    fprintf('Positive Trends Table:\n%s\n', pos_table_str);
+    text(0.5, 0.5, pos_table_str, 'Units', 'normalized', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', 'FontName', 'Courier', 'FontSize', 8, 'Interpreter', 'none');
+    title('Positive Trends', 'Interpreter', 'none');
+    axis off;
+    
+    table_save_path = sprintf('%s/trend_tables_wave%d_clust%d.png', folder_name, ch, cluster_num);
+    saveas(gcf, table_save_path);
+    close(gcf);
+    fprintf('Trend tables saved to: %s\n', table_save_path);
 end
 
 function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
