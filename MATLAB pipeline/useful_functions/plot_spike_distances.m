@@ -237,6 +237,32 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     % fprintf('Good:          %8d %8d %9d\n', pos_trend_good, neutral_trend_good, neg_trend_good);
     % fprintf('Poor_Rescue:   %8d %8d %9d\n', pos_trend_poor, neutral_trend_poor, neg_trend_poor);
     
+    % Identify special spikes for highlighting and separate plots
+    % 1. Top 2 and bottom 2 finishing distances (at last weight)
+    final_dists_good = norm_dist_orig(:, end);
+    final_dists_poor = norm_dist_resc(:, end);
+    
+    [~, idx_sorted_good] = sort(final_dists_good);
+    [~, idx_sorted_poor] = sort(final_dists_poor);
+    
+    top2_finish_good = idx_sorted_good(end-1:end);  % Highest 2 distances
+    bottom2_finish_good = idx_sorted_good(1:min(2, n_orig));  % Lowest 2 distances
+    top2_finish_poor = idx_sorted_poor(end-1:end);
+    bottom2_finish_poor = idx_sorted_poor(1:min(2, n_resc));
+    
+    % 2. Highest and lowest slope spikes
+    [~, idx_sorted_slopes_good] = sort(slopes);
+    [~, idx_sorted_slopes_poor] = sort(slopes_resc);
+    
+    highest_slope_good = idx_sorted_slopes_good(end-1:end);  % 2 highest slopes
+    lowest_slope_good = idx_sorted_slopes_good(1:min(2, n_orig));  % 2 lowest slopes
+    highest_slope_poor = idx_sorted_slopes_poor(end-1:end);
+    lowest_slope_poor = idx_sorted_slopes_poor(1:min(2, n_resc));
+    
+    % Combine for highlighting
+    highlight_good = unique([top2_finish_good; bottom2_finish_good; highest_slope_good; lowest_slope_good]);
+    highlight_poor = unique([top2_finish_poor; bottom2_finish_poor; highest_slope_poor; lowest_slope_poor]);
+    
     % Collect data for table
     % For neutral/negative
     nn_slopes = [];
@@ -310,8 +336,14 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Plot good spikes with lines connecting each spike's points
     for i = 1:n_orig
+        % Check if this spike should be highlighted
+        linewidth = 0.5;
+        if ismember(i, highlight_good)
+            linewidth = 2.5;  % Bolder line for highlighted spikes
+        end
+        
         % Draw line connecting all points for this spike
-        plot(weights, norm_dist_orig(i, :), 'b-', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+        plot(weights, norm_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
         
         % Plot markers on top
         for w_idx = 1:length(weights)
@@ -325,8 +357,14 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Plot poor_rescue spikes with lines connecting each spike's points
     for i = 1:n_resc
+        % Check if this spike should be highlighted
+        linewidth = 0.5;
+        if ismember(i, highlight_poor)
+            linewidth = 2.5;  % Bolder line for highlighted spikes
+        end
+        
         % Draw line connecting all points for this spike
-        plot(weights, norm_dist_resc(i, :), 'r-', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+        plot(weights, norm_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
         
         % Plot markers on top
         for w_idx = 1:length(weights)
@@ -375,8 +413,14 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Plot good spikes with lines connecting each spike's points
     for i = 1:n_orig
+        % Check if this spike should be highlighted
+        linewidth = 0.5;
+        if ismember(i, highlight_good)
+            linewidth = 2.5;  % Bolder line for highlighted spikes
+        end
+        
         % Draw line connecting all points for this spike
-        plot(weights, raw_dist_orig(i, :), 'b-', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+        plot(weights, raw_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
         
         % Plot markers on top
         for w_idx = 1:length(weights)
@@ -390,8 +434,14 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Plot poor_rescue spikes with lines connecting each spike's points
     for i = 1:n_resc
+        % Check if this spike should be highlighted
+        linewidth = 0.5;
+        if ismember(i, highlight_poor)
+            linewidth = 2.5;  % Bolder line for highlighted spikes
+        end
+        
         % Draw line connecting all points for this spike
-        plot(weights, raw_dist_resc(i, :), 'r-', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+        plot(weights, raw_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
         
         % Plot markers on top
         for w_idx = 1:length(weights)
@@ -437,6 +487,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     y_limits = [y_min, y_max];
     offset = (y_max - y_min) * 0.05;
     
+    % Extract template for this cluster
+    template_center = centers(cluster_num, :);
+    template_std = maxdist(cluster_num);
+    
     % FIGURE 1: Neutral and Negative trend waveforms
     if ~isempty(neutral_neg_idx_good) || ~isempty(neutral_neg_idx_poor)
         figure;
@@ -461,6 +515,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 end
             end
         end
+        % Plot template
+        plot(template_center, 'k-', 'LineWidth', 2.5);
+        plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+        plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
         hold off;
         title(sprintf('Good Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -487,6 +545,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 end
             end
         end
+        % Plot template
+        plot(template_center, 'k-', 'LineWidth', 2.5);
+        plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+        plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
         hold off;
         title(sprintf('Poor_Rescue Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -523,6 +585,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 end
             end
         end
+        % Plot template
+        plot(template_center, 'k-', 'LineWidth', 2.5);
+        plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+        plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
         hold off;
         title(sprintf('Good Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -549,6 +615,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 end
             end
         end
+        % Plot template
+        plot(template_center, 'k-', 'LineWidth', 2.5);
+        plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+        plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
         hold off;
         title(sprintf('Poor_Rescue Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -602,6 +672,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             end
         end
     end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
     hold off;
     title(sprintf('All Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -646,6 +720,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             end
         end
     end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
     hold off;
     title(sprintf('All Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -685,6 +763,164 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     saveas(gcf, table_save_path);
     close(gcf);
     fprintf('Trend tables saved to: %s\n', table_save_path);
+    
+    % NEW FIGURE: Top 2 and Bottom 2 finishing distances
+    figure;
+    subplot(2, 2, 1);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(top2_finish_good)
+        i = top2_finish_good(idx);
+        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Good - Top 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: %.2f', i, final_dists_good(i)), top2_finish_good, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 2);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(top2_finish_poor)
+        i = top2_finish_poor(idx);
+        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Poor_Rescue - Top 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: %.2f', i, final_dists_poor(i)), top2_finish_poor, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 3);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(bottom2_finish_good)
+        i = bottom2_finish_good(idx);
+        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Good - Bottom 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: %.2f', i, final_dists_good(i)), bottom2_finish_good, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 4);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(bottom2_finish_poor)
+        i = bottom2_finish_poor(idx);
+        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Poor_Rescue - Bottom 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: %.2f', i, final_dists_poor(i)), bottom2_finish_poor, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    save_path = sprintf('%s/waveforms_finishing_distances_wave%d_clust%d.png', folder_name, ch, cluster_num);
+    saveas(gcf, save_path);
+    close(gcf);
+    fprintf('Finishing distances waveforms saved to: %s\n', save_path);
+    
+    % NEW FIGURE: Highest and Lowest slope spikes
+    figure;
+    subplot(2, 2, 1);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(highest_slope_good)
+        i = highest_slope_good(idx);
+        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Good - Highest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: slope=%.3f', i, slopes(i)), highest_slope_good, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 2);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(highest_slope_poor)
+        i = highest_slope_poor(idx);
+        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Poor_Rescue - Highest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: slope=%.3f', i, slopes_resc(i)), highest_slope_poor, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 3);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(lowest_slope_good)
+        i = lowest_slope_good(idx);
+        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Good - Lowest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: slope=%.3f', i, slopes(i)), lowest_slope_good, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    subplot(2, 2, 4);
+    hold on;
+    colors = lines(2);
+    for idx = 1:length(lowest_slope_poor)
+        i = lowest_slope_poor(idx);
+        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+    end
+    % Plot template
+    plot(template_center, 'k-', 'LineWidth', 2.5);
+    plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
+    plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    hold off;
+    title(sprintf('Poor_Rescue - Lowest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
+    xlabel('Sample');
+    ylabel('Amplitude');
+    ylim(y_limits);
+    legend(arrayfun(@(i) sprintf('Spike %d: slope=%.3f', i, slopes_resc(i)), lowest_slope_poor, 'UniformOutput', false), 'Interpreter', 'none');
+    
+    save_path = sprintf('%s/waveforms_extreme_slopes_wave%d_clust%d.png', folder_name, ch, cluster_num);
+    saveas(gcf, save_path);
+    close(gcf);
+    fprintf('Extreme slopes waveforms saved to: %s\n', save_path);
 end
 
 function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
