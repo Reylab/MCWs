@@ -1,18 +1,30 @@
-function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
+function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num, use_template_weight)
 % plot_spike_distances - Compute and plot distance metrics for original vs rescued spikes
 % Inputs:
-%   orig_spikes - Matrix of original spike waveforms (n_spikes x n_samples)
-%   resc_spikes - Matrix of rescued spike waveforms (n_spikes x n_samples)
-%   ch - Channel number or label
-%   cluster_num - Cluster number
+%   orig_spikes        - Matrix of original spike waveforms (n_spikes x n_samples)
+%   resc_spikes        - Matrix of rescued spike waveforms (n_spikes x n_samples)
+%   ch                 - Channel number or label
+%   cluster_num        - Cluster number
+%   use_template_weight - (optional, default false) If true, sweeps spike weight then
+%                         template weight separately over fixed pairs. If false, uses
+%                         the original combined weight sweep up to 1000.
 % Outputs:
 %   out - Structure with fields:
-%         .weights - Array of weight values
-%         .orig - Structure with table for each weight (W1, W5, W10, etc.)
-%         .resc - Structure with table for each weight
+%         .weights / .spike_weights / .tmpl_weights - weight info
+%         .orig - Structure with table for each weight pair
+%         .resc - Structure with table for each weight pair
 
-    % Create folder
-    folder_name = sprintf('wave%d_clust%d', ch, cluster_num);
+    if nargin < 5
+        use_template_weight = false;
+    end
+
+    % Create folder (append ' template weight' suffix when using that mode)
+    folder_base = sprintf('wave%d_clust%d', ch, cluster_num);
+    if use_template_weight
+        folder_name = [folder_base ' xOR weight + AND weight'];
+    else
+        folder_name = folder_base;
+    end
     if ~exist(folder_name, 'dir')
         mkdir(folder_name);
     end
@@ -60,32 +72,50 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     par = SPK.par;
     par.amp_dir = 'neg';
-    weights = [1, 5, 10, 25, 50, 100, 200, 300, 500, 1000];
-    
+
+    if use_template_weight
+        % Template weight sweep mode
+        % Phase 1: spike weight increases [1,25,50,100], template held at 1
+        % Phase 2: spike held at 100, template increases [5,10,25,50,100]
+        spike_weights = [1, 5, 10, 25, 50, 100, 100, 100, 100, 100, 100];
+        tmpl_weights  = [1, 1, 1, 1, 1,  1, 5, 10, 25, 50, 100];
+        n_pairs = length(spike_weights);
+        % Build x-axis labels: (spike_weight, template_weight)
+        weight_pair_labels = arrayfun(@(s,t) sprintf('(%d,%d)', s, t), spike_weights, tmpl_weights, 'UniformOutput', false);
+        % First index where template weight starts increasing
+        tmpl_transition_idx = find(tmpl_weights > tmpl_weights(1), 1);
+    else
+        weights = [1, 5, 10, 25, 50, 100];
+        n_pairs = length(weights);
+    end
+
     % Compute distances for orig_spikes
     n_orig = size(orig_spikes, 1);
-    norm_dist_orig = zeros(n_orig, length(weights));
-    raw_dist_orig = zeros(n_orig, length(weights));
-    win_cls_orig = zeros(n_orig, length(weights));
-    
-    % Create tables for all weights
-    dist_tables_orig = cell(1, length(weights));
+    norm_dist_orig = zeros(n_orig, n_pairs);
+    raw_dist_orig = zeros(n_orig, n_pairs);
+    win_cls_orig = zeros(n_orig, n_pairs);
+
+    % Create tables for all weight pairs
+    dist_tables_orig = cell(1, n_pairs);
     table_weight = 300;  % Weight to display in console
     
-    for w_idx = 1:length(weights)
-        par.pk_weight = weights(w_idx);
+    for w_idx = 1:n_pairs
+        if use_template_weight
+            cur_spike_wt = spike_weights(w_idx);
+            cur_tmpl_wt  = tmpl_weights(w_idx);
+        else
+            par.pk_weight = weights(w_idx);
+        end
         dist_table_w = zeros(n_orig, size(centers, 1) + 1);
         
         for i = 1:n_orig
             spike = orig_spikes(i, :);
-            dist_w = zeros(1, size(centers, 1));
-            for cls = 1:size(centers, 1)
-                center = centers(cls, :);
-                [normConst_w, w] = get_weight_vector(spike, par.pk_weight, par.amp_dir);
-                dist_w(cls) = normConst_w * sqrt(sum(w .* (spike - center).^2));
+            if use_template_weight
+                [normConst_vec, w_matrix] = get_weight_matrix(spike, centers, cur_spike_wt, par.amp_dir, cur_tmpl_wt);
+            else
+                [normConst_vec, w_matrix] = get_weight_matrix(spike, centers, par.pk_weight, par.amp_dir);
             end
-            
-            % Store distances for this weight
+            dist_w = (normConst_vec .* sqrt(sum(w_matrix .* (repmat(spike, size(centers,1),1) - centers).^2, 2)))';
             dist_table_w(i, 1:size(centers, 1)) = dist_w;
             
             % Find conforming clusters (within maxdist) like nearest_neighbor does
@@ -120,27 +150,30 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Compute distances for resc_spikes
     n_resc = size(resc_spikes, 1);
-    norm_dist_resc = zeros(n_resc, length(weights));
-    raw_dist_resc = zeros(n_resc, length(weights));
-    win_cls_resc = zeros(n_resc, length(weights));
+    norm_dist_resc = zeros(n_resc, n_pairs);
+    raw_dist_resc = zeros(n_resc, n_pairs);
+    win_cls_resc = zeros(n_resc, n_pairs);
     
-    % Create tables for all weights
-    dist_tables_resc = cell(1, length(weights));
+    % Create tables for all weight pairs
+    dist_tables_resc = cell(1, n_pairs);
     
-    for w_idx = 1:length(weights)
-        par.pk_weight = weights(w_idx);
+    for w_idx = 1:n_pairs
+        if use_template_weight
+            cur_spike_wt = spike_weights(w_idx);
+            cur_tmpl_wt  = tmpl_weights(w_idx);
+        else
+            par.pk_weight = weights(w_idx);
+        end
         dist_table_w = zeros(n_resc, size(centers, 1) + 1);
         
         for i = 1:n_resc
             spike = resc_spikes(i, :);
-            dist_w = zeros(1, size(centers, 1));
-            for cls = 1:size(centers, 1)
-                center = centers(cls, :);
-                [normConst_w, w] = get_weight_vector(spike, par.pk_weight, par.amp_dir);
-                dist_w(cls) = normConst_w * sqrt(sum(w .* (spike - center).^2));
+            if use_template_weight
+                [normConst_vec, w_matrix] = get_weight_matrix(spike, centers, cur_spike_wt, par.amp_dir, cur_tmpl_wt);
+            else
+                [normConst_vec, w_matrix] = get_weight_matrix(spike, centers, par.pk_weight, par.amp_dir);
             end
-            
-            % Store distances for this weight
+            dist_w = (normConst_vec .* sqrt(sum(w_matrix .* (repmat(spike, size(centers,1),1) - centers).^2, 2)))';
             dist_table_w(i, 1:size(centers, 1)) = dist_w;
             
             % Find conforming clusters (within maxdist) like nearest_neighbor does
@@ -173,11 +206,21 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     % disp(dist_tables_resc{display_idx});
     
     % Create output structure with all tables
-    out.weights = weights;
+    if use_template_weight
+        out.spike_weights = spike_weights;
+        out.tmpl_weights  = tmpl_weights;
+        out.weight_pair_labels = weight_pair_labels;
+    else
+        out.weights = weights;
+    end
     out.orig = struct();
     out.resc = struct();
-    for w_idx = 1:length(weights)
-        field_name = sprintf('W%d', weights(w_idx));
+    for w_idx = 1:n_pairs
+        if use_template_weight
+            field_name = sprintf('S%d_T%d', spike_weights(w_idx), tmpl_weights(w_idx));
+        else
+            field_name = sprintf('W%d', weights(w_idx));
+        end
         out.orig.(field_name) = dist_tables_orig{w_idx};
         out.resc.(field_name) = dist_tables_resc{w_idx};
     end
@@ -194,8 +237,12 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     neutral_neg_idx_good = [];
     slopes = zeros(n_orig, 1);
     for i = 1:n_orig
-        % Linear fit to log(weights) vs normalized distance
-        p = polyfit(log10(weights), norm_dist_orig(i, :), 1);
+        % Linear fit: use pair index for template-weight mode, log10(weights) for classic mode
+        if use_template_weight
+            p = polyfit(1:n_pairs, norm_dist_orig(i, :), 1);
+        else
+            p = polyfit(log10(weights), norm_dist_orig(i, :), 1);
+        end
         slopes(i) = p(1);
         if slopes(i) > 0.1  % Threshold for positive trend
             pos_trend_good = pos_trend_good + 1;
@@ -217,8 +264,12 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     slopes_resc = zeros(n_resc, 1);
     
     for i = 1:n_resc
-        % Linear fit to log(weights) vs normalized distance
-        p = polyfit(log10(weights), norm_dist_resc(i, :), 1);
+        % Linear fit: use pair index for template-weight mode, log10(weights) for classic mode
+        if use_template_weight
+            p = polyfit(1:n_pairs, norm_dist_resc(i, :), 1);
+        else
+            p = polyfit(log10(weights), norm_dist_resc(i, :), 1);
+        end
         slopes_resc(i) = p(1);
         if slopes_resc(i) > 0.05
             pos_trend_poor = pos_trend_poor + 1;
@@ -271,7 +322,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     for i = 1:length(neutral_neg_idx_good)
         spike_idx = neutral_neg_idx_good(i);
         spike = orig_spikes(spike_idx, :);
-        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
         if ~isnan(left_w)
             width = right_w - left_w;
             nn_slopes = [nn_slopes; slopes(spike_idx)];
@@ -282,7 +335,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     for i = 1:length(neutral_neg_idx_poor)
         spike_idx = neutral_neg_idx_poor(i);
         spike = resc_spikes(spike_idx, :);
-        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
         if ~isnan(left_w)
             width = right_w - left_w;
             nn_slopes = [nn_slopes; slopes_resc(spike_idx)];
@@ -302,7 +357,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     for i = 1:length(pos_idx_good)
         spike_idx = pos_idx_good(i);
         spike = orig_spikes(spike_idx, :);
-        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
         if ~isnan(left_w)
             width = right_w - left_w;
             pos_slopes = [pos_slopes; slopes(spike_idx)];
@@ -313,7 +370,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     for i = 1:length(pos_idx_poor)
         spike_idx = pos_idx_poor(i);
         spike = resc_spikes(spike_idx, :);
-        [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
         if ~isnan(left_w)
             width = right_w - left_w;
             pos_slopes = [pos_slopes; slopes_resc(spike_idx)];
@@ -326,6 +385,15 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     pos_sorted_widths = pos_widths(pos_idx_sort);
     pos_sorted_types = pos_types(pos_idx_sort);
     
+    % Set up x-axis values for the distance plots
+    % Always use evenly spaced positions so the first point isn't pinned against 0
+    x_vals = 1:n_pairs;
+    if use_template_weight
+        x_label_str = '(Spike Weight, Template Weight)';
+    else
+        x_label_str = 'Weight';
+    end
+
     % Figure for normalized distances
     figure;
     hold on;
@@ -333,7 +401,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     h2 = scatter(nan, nan, '^b', 'filled'); % Dummy for legend - Good unclassified
     h3 = scatter(nan, nan, 'ro', 'filled'); % Dummy for legend - Poor_Rescue
     h4 = scatter(nan, nan, '^r', 'filled'); % Dummy for legend - Poor_Rescue unclassified
-    
+
     % Plot good spikes with lines connecting each spike's points
     for i = 1:n_orig
         % Check if this spike should be highlighted
@@ -341,20 +409,20 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         if ismember(i, highlight_good)
             linewidth = 2.5;  % Bolder line for highlighted spikes
         end
-        
+
         % Draw line connecting all points for this spike
-        plot(weights, norm_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
-        
+        plot(x_vals, norm_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
+
         % Plot markers on top
-        for w_idx = 1:length(weights)
+        for w_idx = 1:n_pairs
             if win_cls_orig(i, w_idx) == 0
-                scatter(weights(w_idx), norm_dist_orig(i, w_idx), '^b', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), norm_dist_orig(i, w_idx), '^b', 'filled', 'HandleVisibility', 'off');
             else
-                scatter(weights(w_idx), norm_dist_orig(i, w_idx), 'bo', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), norm_dist_orig(i, w_idx), 'bo', 'filled', 'HandleVisibility', 'off');
             end
         end
     end
-    
+
     % Plot poor_rescue spikes with lines connecting each spike's points
     for i = 1:n_resc
         % Check if this spike should be highlighted
@@ -362,24 +430,45 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         if ismember(i, highlight_poor)
             linewidth = 2.5;  % Bolder line for highlighted spikes
         end
-        
+
         % Draw line connecting all points for this spike
-        plot(weights, norm_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
-        
+        plot(x_vals, norm_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
+
         % Plot markers on top
-        for w_idx = 1:length(weights)
+        for w_idx = 1:n_pairs
             if win_cls_resc(i, w_idx) == 0
-                scatter(weights(w_idx), norm_dist_resc(i, w_idx), '^r', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), norm_dist_resc(i, w_idx), '^r', 'filled', 'HandleVisibility', 'off');
             else
-                scatter(weights(w_idx), norm_dist_resc(i, w_idx), 'ro', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), norm_dist_resc(i, w_idx), 'ro', 'filled', 'HandleVisibility', 'off');
             end
         end
     end
-    set(gca, 'XScale', 'log');
-    xticks(weights);
-    xticklabels(string(weights));
+
+    % Add shaded region + dividing line where template weight begins increasing
+    if use_template_weight && ~isempty(tmpl_transition_idx)
+        yl = ylim;
+        patch([x_vals(tmpl_transition_idx)-0.5, x_vals(end)+0.5, x_vals(end)+0.5, x_vals(tmpl_transition_idx)-0.5], ...
+              [yl(1), yl(1), yl(2), yl(2)], [0.85 0.85 1.0], ...
+              'FaceAlpha', 0.3, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        xline(x_vals(tmpl_transition_idx)-0.5, '--', 'Template weight increasing', ...
+              'Color', [0.2 0.2 0.8], 'LineWidth', 1.5, ...
+              'LabelVerticalAlignment', 'top', 'HandleVisibility', 'off');
+        ylim(yl);  % restore limits after patch
+    end
+
+    % X-axis formatting
+    if use_template_weight
+        xticks(x_vals);
+        xticklabels(weight_pair_labels);
+        xtickangle(45);
+        xlim([x_vals(1), x_vals(end) + 0.5]);
+    else
+        xticks(1:n_pairs);
+        xticklabels(string(weights));
+        xlim([1, n_pairs + 0.5]);
+    end
     title(sprintf('Normalized Distances vs Weight - Cluster %d', cluster_num), 'Interpreter', 'none');
-    xlabel('Weight');
+    xlabel(x_label_str);
     ylabel('Normalized Distance');
     
     % Add trend analysis table as text annotation
@@ -410,7 +499,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     h2 = scatter(nan, nan, '^b', 'filled'); % Dummy for legend - Good unclassified
     h3 = scatter(nan, nan, 'ro', 'filled'); % Dummy for legend - Poor_Rescue
     h4 = scatter(nan, nan, '^r', 'filled'); % Dummy for legend - Poor_Rescue unclassified
-    
+
     % Plot good spikes with lines connecting each spike's points
     for i = 1:n_orig
         % Check if this spike should be highlighted
@@ -418,20 +507,20 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         if ismember(i, highlight_good)
             linewidth = 2.5;  % Bolder line for highlighted spikes
         end
-        
+
         % Draw line connecting all points for this spike
-        plot(weights, raw_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
-        
+        plot(x_vals, raw_dist_orig(i, :), 'b-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
+
         % Plot markers on top
-        for w_idx = 1:length(weights)
+        for w_idx = 1:n_pairs
             if win_cls_orig(i, w_idx) == 0
-                scatter(weights(w_idx), raw_dist_orig(i, w_idx), '^b', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), raw_dist_orig(i, w_idx), '^b', 'filled', 'HandleVisibility', 'off');
             else
-                scatter(weights(w_idx), raw_dist_orig(i, w_idx), 'bo', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), raw_dist_orig(i, w_idx), 'bo', 'filled', 'HandleVisibility', 'off');
             end
         end
     end
-    
+
     % Plot poor_rescue spikes with lines connecting each spike's points
     for i = 1:n_resc
         % Check if this spike should be highlighted
@@ -439,24 +528,45 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         if ismember(i, highlight_poor)
             linewidth = 2.5;  % Bolder line for highlighted spikes
         end
-        
+
         % Draw line connecting all points for this spike
-        plot(weights, raw_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
-        
+        plot(x_vals, raw_dist_resc(i, :), 'r-', 'LineWidth', linewidth, 'HandleVisibility', 'off');
+
         % Plot markers on top
-        for w_idx = 1:length(weights)
+        for w_idx = 1:n_pairs
             if win_cls_resc(i, w_idx) == 0
-                scatter(weights(w_idx), raw_dist_resc(i, w_idx), '^r', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), raw_dist_resc(i, w_idx), '^r', 'filled', 'HandleVisibility', 'off');
             else
-                scatter(weights(w_idx), raw_dist_resc(i, w_idx), 'ro', 'filled', 'HandleVisibility', 'off');
+                scatter(x_vals(w_idx), raw_dist_resc(i, w_idx), 'ro', 'filled', 'HandleVisibility', 'off');
             end
         end
     end
-    set(gca, 'XScale', 'log');
-    xticks(weights);
-    xticklabels(string(weights));
+
+    % Add shaded region + dividing line where template weight begins increasing
+    if use_template_weight && ~isempty(tmpl_transition_idx)
+        yl = ylim;
+        patch([x_vals(tmpl_transition_idx)-0.5, x_vals(end)+0.5, x_vals(end)+0.5, x_vals(tmpl_transition_idx)-0.5], ...
+              [yl(1), yl(1), yl(2), yl(2)], [0.85 0.85 1.0], ...
+              'FaceAlpha', 0.3, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        xline(x_vals(tmpl_transition_idx)-0.5, '--', 'Template weight increasing', ...
+              'Color', [0.2 0.2 0.8], 'LineWidth', 1.5, ...
+              'LabelVerticalAlignment', 'top', 'HandleVisibility', 'off');
+        ylim(yl);
+    end
+
+    % X-axis formatting
+    if use_template_weight
+        xticks(x_vals);
+        xticklabels(weight_pair_labels);
+        xtickangle(45);
+        xlim([x_vals(1), x_vals(end) + 0.5]);
+    else
+        xticks(1:n_pairs);
+        xticklabels(string(weights));
+        xlim([1, n_pairs + 0.5]);
+    end
     title(sprintf('Raw Distances vs Weight - Cluster %d', cluster_num), 'Interpreter', 'none');
-    xlabel('Weight');
+    xlabel(x_label_str);
     ylabel('Raw Distance');
     
     % Add trend analysis table as text annotation
@@ -476,7 +586,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     
     % Save raw distances
     save_path_raw = sprintf('%s/raw_distances_wave%d_clust%d.png', folder_name, ch, cluster_num);
-    saveas(gcf, save_path_raw);
+    % saveas(gcf, save_path_raw);
     close(gcf);
     fprintf('Raw distance plot saved to: %s\n', save_path_raw);
     
@@ -490,6 +600,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     % Extract template for this cluster
     template_center = centers(cluster_num, :);
     template_std = maxdist(cluster_num);
+    template_width_struct = get_peak_width(template_center, par.amp_dir);
     
     % FIGURE 1: Neutral and Negative trend waveforms
     if ~isempty(neutral_neg_idx_good) || ~isempty(neutral_neg_idx_poor)
@@ -507,7 +618,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
                 
                 % Get and plot peak width region
-                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                width_struct = get_peak_width(spike, par.amp_dir);
+                left_w = width_struct.left;
+                right_w = width_struct.right;
                 if ~isnan(left_w)
                     % Plot dotted line at peak width boundaries
                     plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -519,6 +632,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         plot(template_center, 'k-', 'LineWidth', 2.5);
         plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
         plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+        if ~isnan(template_width_struct.left)
+            plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+            plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+        end
         hold off;
         title(sprintf('Good Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -537,7 +654,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
                 
                 % Get and plot peak width region
-                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                width_struct = get_peak_width(spike, par.amp_dir);
+                left_w = width_struct.left;
+                right_w = width_struct.right;
                 if ~isnan(left_w)
                     % Plot dotted line at peak width boundaries
                     plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -549,6 +668,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         plot(template_center, 'k-', 'LineWidth', 2.5);
         plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
         plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+        if ~isnan(template_width_struct.left)
+            plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+            plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+        end
         hold off;
         title(sprintf('Poor_Rescue Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -577,7 +700,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
                 
                 % Get and plot peak width region
-                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                width_struct = get_peak_width(spike, par.amp_dir);
+                left_w = width_struct.left;
+                right_w = width_struct.right;
                 if ~isnan(left_w)
                     % Plot dotted line at peak width boundaries
                     plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -589,6 +714,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         plot(template_center, 'k-', 'LineWidth', 2.5);
         plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
         plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+        if ~isnan(template_width_struct.left)
+            plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+            plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+        end
         hold off;
         title(sprintf('Good Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -607,7 +736,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
                 plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
                 
                 % Get and plot peak width region
-                [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+                width_struct = get_peak_width(spike, par.amp_dir);
+                left_w = width_struct.left;
+                right_w = width_struct.right;
                 if ~isnan(left_w)
                     % Plot dotted line at peak width boundaries
                     plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -619,6 +750,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
         plot(template_center, 'k-', 'LineWidth', 2.5);
         plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
         plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+        if ~isnan(template_width_struct.left)
+            plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+            plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+        end
         hold off;
         title(sprintf('Poor_Rescue Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
         xlabel('Sample');
@@ -647,7 +782,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
             
             % Get and plot peak width region
-            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            width_struct = get_peak_width(spike, par.amp_dir);
+            left_w = width_struct.left;
+            right_w = width_struct.right;
             if ~isnan(left_w)
                 plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
                 plot([right_w right_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -665,7 +802,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             plot(spike, 'Color', colors(n_offset + i, :), 'LineWidth', 1);
             
             % Get and plot peak width region
-            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            width_struct = get_peak_width(spike, par.amp_dir);
+            left_w = width_struct.left;
+            right_w = width_struct.right;
             if ~isnan(left_w)
                 plot([left_w left_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
                 plot([right_w right_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
@@ -676,6 +815,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('All Spikes - Neutral & Negative Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -695,7 +838,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             plot(spike, 'Color', colors(i, :), 'LineWidth', 1);
             
             % Get and plot peak width region
-            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            width_struct = get_peak_width(spike, par.amp_dir);
+            left_w = width_struct.left;
+            right_w = width_struct.right;
             if ~isnan(left_w)
                 plot([left_w left_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
                 plot([right_w right_w], y_limits, ':', 'Color', colors(i, :), 'LineWidth', 1);
@@ -713,7 +858,9 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
             plot(spike, 'Color', colors(n_offset + i, :), 'LineWidth', 1);
             
             % Get and plot peak width region
-            [left_w, right_w] = get_peak_width(spike, par.amp_dir);
+            width_struct = get_peak_width(spike, par.amp_dir);
+            left_w = width_struct.left;
+            right_w = width_struct.right;
             if ~isnan(left_w)
                 plot([left_w left_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
                 plot([right_w right_w], y_limits, ':', 'Color', colors(n_offset + i, :), 'LineWidth', 1);
@@ -724,6 +871,10 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('All Spikes - Positive Trends - Cluster %d', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -771,12 +922,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(top2_finish_good)
         i = top2_finish_good(idx);
-        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = orig_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Good - Top 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -789,12 +955,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(top2_finish_poor)
         i = top2_finish_poor(idx);
-        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = resc_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Poor_Rescue - Top 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -807,12 +988,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(bottom2_finish_good)
         i = bottom2_finish_good(idx);
-        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = orig_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Good - Bottom 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -825,12 +1021,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(bottom2_finish_poor)
         i = bottom2_finish_poor(idx);
-        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = resc_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Poor_Rescue - Bottom 2 Finishing Distances (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -850,12 +1061,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(highest_slope_good)
         i = highest_slope_good(idx);
-        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = orig_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Good - Highest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -868,12 +1094,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(highest_slope_poor)
         i = highest_slope_poor(idx);
-        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = resc_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Poor_Rescue - Highest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -886,12 +1127,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(lowest_slope_good)
         i = lowest_slope_good(idx);
-        plot(orig_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = orig_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Good - Lowest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -904,12 +1160,27 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     colors = lines(2);
     for idx = 1:length(lowest_slope_poor)
         i = lowest_slope_poor(idx);
-        plot(resc_spikes(i, :), 'Color', colors(idx, :), 'LineWidth', 1.5);
+        spike = resc_spikes(i, :);
+        plot(spike, 'Color', colors(idx, :), 'LineWidth', 1.5);
+        
+        % Get and plot peak width region
+        width_struct = get_peak_width(spike, par.amp_dir);
+        left_w = width_struct.left;
+        right_w = width_struct.right;
+        if ~isnan(left_w)
+            % Plot dotted line at peak width boundaries
+            plot([left_w left_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+            plot([right_w right_w], y_limits, ':', 'Color', colors(idx, :), 'LineWidth', 1);
+        end
     end
     % Plot template
     plot(template_center, 'k-', 'LineWidth', 2.5);
     plot(template_center + template_std, 'k--', 'LineWidth', 1.5);
     plot(template_center - template_std, 'k--', 'LineWidth', 1.5);
+    if ~isnan(template_width_struct.left)
+        plot([template_width_struct.left template_width_struct.left], y_limits, 'k:', 'LineWidth', 1.5);
+        plot([template_width_struct.right template_width_struct.right], y_limits, 'k:', 'LineWidth', 1.5);
+    end
     hold off;
     title(sprintf('Poor_Rescue - Lowest Slopes (Cluster %d)', cluster_num), 'Interpreter', 'none');
     xlabel('Sample');
@@ -923,8 +1194,7 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num)
     fprintf('Extreme slopes waveforms saved to: %s\n', save_path);
 end
 
-function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
-    % Extract peak width boundaries used in get_weight_vector
+function width_struct = get_peak_width(spike_x, amp_dir)
     if strcmp(amp_dir, 'neg')
         wav = -spike_x;
     else
@@ -934,10 +1204,9 @@ function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
     
     if ~isempty(pks)
         [pk, peak_loc] = max(pks);
-        width_max = w(peak_loc);
-        prom_max = p(peak_loc);
         pk_loc = locs(peak_loc);
-        
+        prom_max = p(peak_loc);
+
         level = pk - prom_max/2;
         above_level = find(wav >= level);
         if ~isempty(above_level)
@@ -970,24 +1239,19 @@ function [left_width, right_width] = get_peak_width(spike_x, amp_dir)
             left_width = NaN;
             right_width = NaN;
         end
-        % wave_pk = find(wav < prom_max/2);
-        % intersect_prom = abs(wave_pk-pk_loc*ones(1,length(wave_pk)));
-        % [val, intIdx] = mink(intersect_prom,2);
-        % left_width = wave_pk(min(intIdx));
-        % right_width = wave_pk(max(intIdx));
-        % left_width = round(peak_loc - width_max/2);
         if left_width <= 0
             left_width = 1;
         end
-        
-        % right_width = round(peak_loc + width_max/2);
-        if right_width > size(spike_x, 2)
-            right_width = size(spike_x, 2);
+        if right_width > length(spike_x)
+            right_width = length(spike_x);
         end
     else
         left_width = NaN;
         right_width = NaN;
     end
+    
+    width_struct.left = left_width;
+    width_struct.right = right_width;
 end
 
 function ch_lbl = get_channel_label(ch)
@@ -1015,71 +1279,55 @@ function ch_lbl = get_channel_label(ch)
     end
 end
 
-function [normConst, weights] = get_weight_vector(spike_x, pk_weight, amp_dir)
-    if strcmp(amp_dir, 'neg')
-        wav = -spike_x;
-    else
-        wav = spike_x;
+function [normConst, weights] = get_weight_matrix(spike_x, tmplt_vect, pk_weight, amp_dir, template_weight)
+    % Compute peak width for spike_x
+    % pk_weight      - weight applied to the spike XOR region (and overlap)
+    % template_weight - (optional) separate weight for the template-only XOR region.
+    %                   When omitted, falls back to old behavior: symmetric_diff = max(1,pk_weight/2)
+    if nargin < 5
+        template_weight = [];   % empty = use old combined-weight behaviour
     end
-    [pks, locs, w, p] = findpeaks(wav);
-    w_vect = ones(size(spike_x, 2), 1);
-    
-    if ~isempty(pks)
-        [pk, peak_loc] = max(pks);
-        width_max = w(peak_loc);
-        pk_loc = locs(peak_loc);
-        prom_max = p(peak_loc);
 
-        level = pk - prom_max/2;
-        above_level = find(wav >= level);
-        if ~isempty(above_level)
-            % Find connected components
-            diff_above = diff(above_level);
-            breaks = find(diff_above > 1);
-            segments = {};
-            start_idx = 1;
-            for b = 1:length(breaks)
-                segments{end+1} = above_level(start_idx:breaks(b));
-                start_idx = breaks(b) + 1;
-            end
-            segments{end+1} = above_level(start_idx:end);
-            % Find segment containing peak_loc
-            peak_segment = [];
-            for s = 1:length(segments)
-                if any(segments{s} == pk_loc)
-                    peak_segment = segments{s};
-                    break;
-                end
-            end
-            if ~isempty(peak_segment)
-                left_width = min(peak_segment);
-                right_width = max(peak_segment);
-            else
-                left_width = NaN;
-                right_width = NaN;
-            end
+    spike_width = get_peak_width(spike_x, amp_dir);
+
+    n_templates = size(tmplt_vect, 1);
+    n_samples = size(tmplt_vect, 2);
+    weights = ones(n_templates, n_samples);
+
+    % Create spike mask once (static across templates)
+    spike_mask = false(1, n_samples);
+    if ~isnan(spike_width.left) && ~isnan(spike_width.right)
+        spike_mask(spike_width.left:spike_width.right) = true;
+    end
+
+    for i = 1:n_templates
+        template = tmplt_vect(i, :);
+        template_width = get_peak_width(template, amp_dir);
+
+        % Create template mask
+        template_mask = false(1, n_samples);
+        if ~isnan(template_width.left) && ~isnan(template_width.right)
+            template_mask(template_width.left:template_width.right) = true;
+        end
+
+        % Overlap: both spike and template have width
+        overlap = spike_mask & template_mask;
+
+        if isempty(template_weight)
+            % --- Original behaviour: symmetric XOR gets half weight ---
+            symmetric_diff = xor(spike_mask, template_mask);
+            % weights(i, symmetric_diff) = max(1, pk_weight);
+            % weights(i, overlap) = pk_weight;
+            weights(i,spike_mask) = pk_weight;
         else
-            left_width = NaN;
-            right_width = NaN;
+            % --- New behaviour: separate spike-only and template-only XOR weights ---
+            spike_only    = spike_mask    & ~template_mask;
+            template_only = template_mask & ~spike_mask;
+            weights(i, spike_only)    = pk_weight;        % spike XOR region
+            weights(i, template_only) = template_weight;  % template XOR region
+            weights(i, overlap)       = pk_weight;        % overlap unchanged (uses spike weight)
         end
-        % left_width = round(peak_loc - width_max/2);
-        % wave_pk = find(wav < prom_max/2);
-        % intersect_prom = abs(wave_pk-pk_loc*ones(1,length(wave_pk)));
-        % [val, intIdx] = mink(intersect_prom,2);
-        % left_width = wave_pk(min(intIdx));
-        % right_width = wave_pk(max(intIdx));
-        if left_width <= 0
-            left_width = 1;
-        end
-        % right_width = round(peak_loc + width_max/2);
-
-        if right_width > size(spike_x, 2)
-            right_width = size(spike_x, 2);
-        end
-        
-        w_vect(left_width:right_width) = pk_weight;
     end
-    
-    weights = w_vect';
-    normConst = sqrt(length(weights)) / sqrt(sum(weights));
+
+    normConst = sqrt(n_samples) ./ sqrt(sum(weights, 2));
 end

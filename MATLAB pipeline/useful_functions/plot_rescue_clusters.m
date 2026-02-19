@@ -63,7 +63,7 @@ fprintf('Done processing %d channels.\n', length(channel_nums));
 
 end % end main function
 
-%% Helper function for single channel processing
+% Helper function for single channel processing
 function process_single_rescue_plot(channel_id, max_spikes, fs, save_fig, show_fig, vis_str, output_suffix, include_task)
 
 % Get channel label

@@ -66,6 +66,7 @@ step_pic = 15;
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
 elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\MCWs'; % aj desktop
+elseif contains(name,'MCW-21454'), dir_base = 'C:\Users\betan\Documents\Github\MCWs'; % aj laptop mcw
 end
 
 addpath(genpath(dir_base));

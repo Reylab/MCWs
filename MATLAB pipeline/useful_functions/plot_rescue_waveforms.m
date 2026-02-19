@@ -107,18 +107,17 @@ function plot_rescue_waveforms(ch, varargin)
         
         % Compute distances to all centers
         dist_uw = zeros(1, size(centers, 1));
-        dist_w = zeros(1, size(centers, 1));
         
         for cls = 1:size(centers, 1)
             center = centers(cls, :);
             
             % Unweighted distance
             dist_uw(cls) = sqrt(sum((spike - center).^2));
-            
-            % Weighted distance
-            [normConst_w, w] = get_weight_vector(spike, par.pk_weight, par.amp_dir);
-            dist_w(cls) = normConst_w * sqrt(sum(w .* (spike - center).^2));
         end
+        
+        % Weighted distance
+        [normConst_vec, w_matrix] = get_weight_matrix(spike, centers, par.pk_weight, par.amp_dir);
+        dist_w = (normConst_vec .* sqrt(sum(w_matrix .* (repmat(spike, size(centers,1),1) - centers).^2, 2)))';
         
         % Find winning class (min distance) for each
         [~, win_cls_uw] = min(dist_uw);
@@ -407,34 +406,99 @@ function ch_lbl = get_channel_label(ch)
     end
 end
 
-function [normConst, weights] = get_weight_vector(spike_x, pk_weight, amp_dir)
+function [normConst, weights] = get_weight_matrix(spike_x, tmplt_vect, pk_weight, amp_dir)
+    % Compute peak width for spike_x
+    spike_width = get_peak_width(spike_x, amp_dir);
+    
+    n_templates = size(tmplt_vect, 1);
+    n_samples = size(tmplt_vect, 2);
+    weights = ones(n_templates, n_samples);
+    
+    % Create spike mask once (static across templates)
+    spike_mask = false(1, n_samples);
+    if ~isnan(spike_width.left) && ~isnan(spike_width.right)
+        spike_mask(spike_width.left:spike_width.right) = true;
+    end
+    
+    for i = 1:n_templates
+        template = tmplt_vect(i, :);
+        template_width = get_peak_width(template, amp_dir);
+        
+        % Create template mask
+        template_mask = false(1, n_samples);
+        if ~isnan(template_width.left) && ~isnan(template_width.right)
+            template_mask(template_width.left:template_width.right) = true;
+        end
+        
+        % Overlap: both have width
+        overlap = spike_mask & template_mask;
+        % Symmetric difference: only one has width
+        symmetric_diff = xor(spike_mask, template_mask);
+        
+        % Set weights: pk_weight in overlap, max(1, pk_weight/2) in symmetric difference
+        weights(i, symmetric_diff) = max(1, pk_weight / 2);
+        weights(i, overlap) = pk_weight;
+    end
+    
+    normConst = sqrt(n_samples) ./ sqrt(sum(weights, 2));
+end
+
+function width_struct = get_peak_width(spike_x, amp_dir)
     if strcmp(amp_dir, 'neg')
         wav = -spike_x;
     else
         wav = spike_x;
     end
     [pks, locs, w, p] = findpeaks(wav);
-    w_vect = ones(size(spike_x, 2), 1);
     
     if ~isempty(pks)
         [pk, peak_loc] = max(pks);
-        width_max = w(peak_loc);
-        peak_loc = locs(peak_loc);
-        
-        left_width = round(peak_loc - width_max/2);
+        pk_loc = locs(peak_loc);
+        prom_max = p(peak_loc);
+
+        level = pk - prom_max/2;
+        above_level = find(wav >= level);
+        if ~isempty(above_level)
+            % Find connected components
+            diff_above = diff(above_level);
+            breaks = find(diff_above > 1);
+            segments = {};
+            start_idx = 1;
+            for b = 1:length(breaks)
+                segments{end+1} = above_level(start_idx:breaks(b));
+                start_idx = breaks(b) + 1;
+            end
+            segments{end+1} = above_level(start_idx:end);
+            % Find segment containing peak_loc
+            peak_segment = [];
+            for s = 1:length(segments)
+                if any(segments{s} == pk_loc)
+                    peak_segment = segments{s};
+                    break;
+                end
+            end
+            if ~isempty(peak_segment)
+                left_width = min(peak_segment);
+                right_width = max(peak_segment);
+            else
+                left_width = NaN;
+                right_width = NaN;
+            end
+        else
+            left_width = NaN;
+            right_width = NaN;
+        end
         if left_width <= 0
             left_width = 1;
         end
-        right_width = round(peak_loc + width_max/2);
-        if right_width > size(spike_x, 2)
-            right_width = size(spike_x, 2);
+        if right_width > length(spike_x)
+            right_width = length(spike_x);
         end
-        
-        % if width_max < length(spike_x)/2.5
-        %     w_vect(left_width:right_width) = pk_weight;
-        % end
+    else
+        left_width = NaN;
+        right_width = NaN;
     end
     
-    weights = w_vect';
-    normConst = sqrt(length(weights)) / sqrt(sum(weights));
+    width_struct.left = left_width;
+    width_struct.right = right_width;
 end
