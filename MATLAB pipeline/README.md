@@ -17,6 +17,7 @@ Recommended for raw data processing.
 **Setup:**
 1. Update the path variable to match your local machine.
 2. Set the directory to the location of the NSX file.
+3. Compile code in "/MCWs/(MATLAB,Python) pipeline/codes_emu/mex" using MATLAB compiler for faster processing.
 
 **Steps:**
 
