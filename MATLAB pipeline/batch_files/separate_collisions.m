@@ -114,8 +114,20 @@ for ibun = 1:length(bundles_to_explore)
 
         index = all_spktimes(~is_artifact & (which_chan==ch_id));
         mask_nonart = ismember(index_all,index);
-        spikes = spikes_all(mask_nonart,:);
+        if isfield(SPK,'mask_taskspks')
+            mask_taskspks = SPK.mask_taskspks;
+        else
+            mask_taskspks = true(size(index_all));
+        end
 
+        if isfield(SPK,'mask_non_quarantine')
+            mask_non_quarantine = SPK.mask_non_quarantine;
+        else
+            mask_non_quarantine = true(size(index_all));
+        end
+        mask_tot = mask_non_quarantine & mask_taskspks & mask_nonart;
+        spikes = spikes_all(mask_tot,:);
+        index = index_all(mask_tot);
         % make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
         
         save(sprintf('%s_spikes.mat', ch_lbl), ...

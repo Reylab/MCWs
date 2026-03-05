@@ -48,6 +48,12 @@ function artifact_removal(channels)
                 warning('ArtifactRemoval:NoCollisionMask', 'No collision mask found for %s. Assuming all spikes are non-collision.', ch_lbl);
             end
             
+            if isfield(SPK, 'mask_taskspks')
+                mask_taskspks = SPK. mask_taskspks;
+            else
+                mask_taskspks = true(size(index_all));
+            end
+
             % map the loaded mask back to the original variable name for saving
             mask_nonart = mask_non_collision;
 
@@ -58,7 +64,7 @@ function artifact_removal(channels)
             mask_non_quarantine = ~mask_quarantine_local;
             
             % Combine Masks: Spike must pass collision check AND quarantine check
-            mask_total_pass = mask_non_collision & mask_non_quarantine;
+            mask_total_pass = mask_non_collision & mask_non_quarantine & mask_taskspks;
 
             % Final cleaned indices
             index = index_all(mask_total_pass);

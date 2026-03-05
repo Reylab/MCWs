@@ -36,10 +36,15 @@ switch par.template_type
         end
       
     case 'center'
+        [centers, sd, pd] = build_templates_save(f_in,class_in,par);
+        % if par.save_templates
+        %      save(sprintf('%s_times.mat', ch_lbl), ...
+        %      "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", "-append")
+        % end
         [centers, sd, pd] = build_templates(class_in,f_in); % we are going to ignore pd
         sdnum = par.template_sdnum;
         for i=1:nspk,
-            class_out(i) = nearest_neighbor(f_out(i,:),centers,sdnum*sd);        
+            class_out(i) = nearest_neighbor(f_out(i,:),centers,sdnum*sd,par);        
         end
         
     case 'ml'

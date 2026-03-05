@@ -65,12 +65,13 @@ step_pic = 15;
 [~,name] = system('hostname');
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
-
+elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\MCWs'; % aj desktop
+elseif contains(name,'MCW-21454'), dir_base = 'C:\Users\betan\Documents\Github\MCWs'; % aj laptop mcw
 end
 
 addpath(genpath(dir_base));
 % custompath = reylab_custompath({'wave_clus_reylab','NPMK','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
-custompath = reylab_custompath({'wave_clus_reylab','NPMK-master_Gemini','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
+%custompath = reylab_custompath({'wave_clus_reylab','NPMK-master_Gemini','codes_for_analysis','mex','useful_functions','neuroshare','tasks/.','tasks/locations/'});
 
 if contains(name,'REYLAB')
     params = MCW_location(['MCW-' par.which_system_micro]);
