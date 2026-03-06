@@ -1,10 +1,10 @@
 function Do_features(input, varargin)
     % PROGRAM Do_features.
-    % Extracts features (wavelets) from *_spikes.mat files and saves them 
-    % to 'features_*.mat'. 
-    % 
+    % Extracts features (wavelets) from *_spikes.mat files and appends
+    % 'inspk' and 'coeff' directly to the same *_spikes.mat file.
+    %
     % This is Step 1 of the clustering process.
-    % Step 2 is Do_clustering.m (which loads the file created here).
+    % Step 2 is Do_clustering.m (which loads inspk/coeff from the spikes file).
 
     min_spikes4SPC = 64; % if less than this number of spikes, features won't be calculated.
     
@@ -147,19 +147,13 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
     end
 
     [inspk, coeff] = wave_features(spikes, par);
-    
-    outfile_name = ['features_' data_handler.nick_name '.mat'];
-    
-    par_saved = par; 
-    save_helper(outfile_name, spikes, index, spikes_all, index_all, inspk, coeff, par_saved);
 
-    fprintf('Features saved: %s\n', outfile_name);
-end
-
-function save_helper(fname, spikes, index, spikes_all, index_all, inspk, coeff, par)
+    % Append features directly to the spikes file instead of a separate file
     try
-        save(fname, 'spikes', 'index', 'spikes_all', 'index_all', 'inspk', 'coeff', 'par');
+        save(filename, 'inspk', 'coeff', '-append');
     catch
-        save(fname, 'spikes', 'index', 'spikes_all', 'index_all', 'inspk', 'coeff', 'par', '-v7.3');
+        save(filename, 'inspk', 'coeff', '-append', '-v7.3');
     end
+
+    fprintf('Features appended to: %s\n', filename);
 end

@@ -206,7 +206,7 @@ function process_channel_rescue(ch, restore, peak_weight,amp_dir)
         inspk_quar_full = local_wavelet_decomp(spikes_quar);
         inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
         % Use force_membership_wc to assign clusters to quarantined spikes
-
+        par.sdnum = 3;
         class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
         rescued_idx = find(class_quar ~= 0);
         if isempty(rescued_idx)

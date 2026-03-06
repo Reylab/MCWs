@@ -587,22 +587,25 @@ function Do_clustering(input, varargin)
     par.nick_name = data_handler.nick_name;
     par.fnamespc = ['data_wc' num2str(fnum)];
 
-    % LOAD PRE-CALCULATED FEATURES
-    feature_file = ['features_' data_handler.nick_name '.mat'];
-    
-    if ~exist(feature_file, 'file')
-        warning('Features file not found: %s. Please run Do_features first.', feature_file);
+     par.randomseed = 42; %% test if default seed param valid.
+
+    if par.randomseed ~= 0 && exists(par,'randomseed')
+        rng(par.randomseed);
+    end
+
+    % LOAD PRE-CALCULATED FEATURES (stored in the spikes file)
+    feat = load(filename, 'spikes', 'index', 'inspk', 'coeff', 'spikes_all', 'index_all');
+
+    if ~isfield(feat, 'inspk') || ~isfield(feat, 'coeff')
+        warning('Features not found in %s. Please run Do_features first.', filename);
         return
     end
-    
-    % Load variables directly from the mat file
-    feat = load(feature_file);
-    
+
     spikes = feat.spikes;
     index = feat.index;
     inspk = feat.inspk;
     coeff = feat.coeff;
-    
+
     % Handle optional fields that might not exist in all files
     if isfield(feat, 'spikes_all')
         spikes_all = feat.spikes_all;
@@ -709,6 +712,7 @@ function Do_clustering(input, varargin)
         f_in  = spikes(classes~=0,:);
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
+        par.sdnum = 1;
         class_out = force_membership_wc(f_in, class_in, f_out, par);
         forced = classes==0;
         classes(classes==0) = class_out;
