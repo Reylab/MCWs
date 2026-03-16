@@ -19,6 +19,11 @@ detect = par.detection;
 stdmin = par.stdmin;
 stdmax = par.stdmax;
 
+if ~isfield(par,'detection')
+    par.detection = 'neg';
+end
+
+
 
 if par.sort_order > 0
     xf = filt_signal(x,par.sort_order,par.sort_fmin,par.sort_fmax,par.sr,par);
@@ -80,11 +85,12 @@ switch detect
                 if isempty(pks)
                     continue
                 end
-                [~,iM] = max(pks);                
+                [maxp,iM] = max(pks);                
                 nspk = nspk + 1;
                 % index(nspk) = iaux + xaux(i) -1;
                 % index(nspk) = iaux + xaux(i) -10 -1;
                 index(nspk) = locs(iM) + xaux(i) -10 -1;
+                % plot(index(nspk),-maxp,'r*')
                 % if nspk==72
                 %     figure
                 %     plot(xf(index(nspk)-w_pre:index(nspk)+w_post));

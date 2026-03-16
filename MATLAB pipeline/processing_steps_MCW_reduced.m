@@ -222,7 +222,7 @@ if par.micros
     param.stdmax = 50;                     % maximum threshold for detection
     param.ref_ms = 1.5;
     % param.preprocessing = false;
-    param.preprocessing = true;
+    param.preprocessing = false;
 
     disp('spike detection BEGIN..')
     param.detection = 'neg';

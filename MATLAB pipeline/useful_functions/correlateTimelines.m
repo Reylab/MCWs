@@ -9,7 +9,7 @@ function results = correlateTimelines(t1, t2, binSize)
 
     if nargin < 3, binSize = 50; end
 
-    tol_ms = (22/30000) * 1000;  % 1 sample at 30 kHz, in ms (~0.0333 ms)
+    tol_ms = (3/30000) * 1000;  % 1 sample at 30 kHz, in ms (~0.0333 ms)
 
     % ── 1. SHARED / UNIQUE SPIKE MATCHING ────────────────────────────────
     [t1s, idx1_sort] = sort(t1(:));
@@ -169,12 +169,30 @@ function results = correlateTimelines(t1, t2, binSize)
     end
     
     if ~isempty(unique_offsets)
-        nbins = max(100, round(sqrt(length(unique_offsets)) * 3));
-        histogram(unique_offsets, nbins, 'FaceColor', [0.8 0.4 0.2], 'EdgeColor', 'none');
+        % Use adaptive binning: fine bins for target regions, coarser elsewhere
+        % Ensure all data is captured by extending to full range
+        min_val = min(unique_offsets);
+        max_val = max(unique_offsets);
+        
+        % Build bins in three regions
+        bins_region1 = 0:0.5:20;          % 0.5 ms bins from 0-20 ms (wider bars)
+        bins_region2 = 20:15:980;         % 15 ms bins for middle region
+        bins_region3 = 980:0.5:1020;      % 0.5 ms bins from 980-1020 ms (wider bars)
+        % Add catch-all bins for anything beyond defined regions
+        if min_val < 0
+            bins_region1 = [min_val:0.5:0, bins_region1];
+        end
+        if max_val > 1020
+            bins_region3 = [bins_region3, 1020:15:max_val];
+        end
+        custom_bins = [bins_region1, bins_region2(2:end), bins_region3(2:end)];  % avoid duplicate edges
+        
+        h = histogram(unique_offsets, custom_bins, 'FaceColor', [0.8 0.4 0.2], 'EdgeColor', [0.6 0.2 0.1], 'LineWidth', 0.5);
+        h.FaceAlpha = 0.85;
         xlabel('Nearest neighbor offset (ms)');
         ylabel('Count');
-        title(sprintf('Cross-Correlogram: Unique Spikes\nmedian = %.4f ms, SD = %.4f ms', ...
-            median(unique_offsets), std(unique_offsets)));
+        title(sprintf('Cross-Correlogram: Unique Spikes (n=%d)\nmedian = %.4f ms, SD = %.4f ms', ...
+            length(unique_offsets), median(unique_offsets), std(unique_offsets)));
         xline(0, 'k--', 'LineWidth', 1);
     else
         text(0.5, 0.5, 'No unique spikes', 'HorizontalAlignment', 'center', 'Units', 'normalized');

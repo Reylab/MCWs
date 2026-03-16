@@ -587,7 +587,7 @@ function Do_clustering(input, varargin)
     par.nick_name = data_handler.nick_name;
     par.fnamespc = ['data_wc' num2str(fnum)];
 
-     par.randomseed = 42; %% test if default seed param valid.
+    par.randomseed = 42; %% test if default seed param valid.
 
     if par.randomseed ~= 0 && exists(par,'randomseed')
         rng(par.randomseed);
