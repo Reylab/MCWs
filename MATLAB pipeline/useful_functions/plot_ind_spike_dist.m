@@ -246,18 +246,16 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
 end
 
 function distance = compute_weighted_distance(spike, template, spike_width, template_width, variant, par, varargin)
-    % Compute distance between spike and template under different weighting schemes
-    % variant: 'spike_width_only', 'template_width_only', 'spike_and_template_width',
-    %          'spike_or_template_width', 'spike_AND_vs_XOR'
-    % Optional: varargin{1} = spike_wt, varargin{2} = xor_wt for parametric XOR weighting
-    %
+    % Compute distance using same approach as get_weight_matrix in plot_spike_distances
+    % This ensures normalized distances match between both functions
+    
     % Parse optional weight parameters
     if length(varargin) >= 2
-        spike_wt = varargin{1};  % weight for AND region
-        xor_wt = varargin{2};    % weight for XOR region
+        spike_wt = varargin{1};  % weight for spike region
+        xor_wt = varargin{2};    % weight for XOR region (only used in spike_AND_vs_XOR)
     else
-        spike_wt = 1;   % default for AND region
-        xor_wt = 3;     % default for XOR region
+        spike_wt = 1;
+        xor_wt = 3;
     end
     
     n = length(spike);
@@ -272,42 +270,47 @@ function distance = compute_weighted_distance(spike, template, spike_width, temp
         template_mask(template_width.left:min(template_width.right, n)) = true;
     end
     
-    % Compute difference
-    diff = (spike - template) .^ 2;
+    % Initialize weights
+    weights = ones(1, n);
     
     % Apply weighting based on variant
+    % Key: each variant applies weights differently, but ALL use the same approach as get_weight_matrix
     switch variant
         case 'spike_width_only'
-            weights = ones(1, n);
-            weights(spike_mask) = spike_wt;  % weight based on spike_wt parameter
+            % Only weight spike region
+            weights(spike_mask) = spike_wt;
             
         case 'template_width_only'
-            weights = ones(1, n);
-            weights(template_mask) = spike_wt;  % weight based on spike_wt parameter
+            % Only weight template region
+            weights(template_mask) = spike_wt;
             
         case 'spike_and_template_width'
-            weights = ones(1, n);
+            % Only weight overlap region
             overlap = spike_mask & template_mask;
-            weights(overlap) = spike_wt;  % weight in overlap
+            weights(overlap) = spike_wt;
             
         case 'spike_or_template_width'
-            weights = ones(1, n);
-            weights(spike_mask | template_mask) = spike_wt;  % weight based on spike_wt parameter
+            % Weight union of spike and template regions
+            weights(spike_mask | template_mask) = spike_wt;
             
         case 'spike_AND_vs_XOR'
-            weights = ones(1, n);
+            % Different weights for overlap (AND) vs non-overlap (XOR)
             overlap = spike_mask & template_mask;
             xor_region = (spike_mask | template_mask) & ~overlap;
-            weights(overlap) = spike_wt;  % AND region weight
-            weights(xor_region) = xor_wt;  % XOR region weight
+            weights(overlap) = spike_wt;       % AND region
+            weights(xor_region) = xor_wt;      % XOR region
             
         otherwise
-            weights = ones(1, n);
+            % No weighting
     end
     
-    % Apply normalization constant: normConst = sqrt(n) / sqrt(sum_weights)
+    % CRITICAL: compute normalization constant based on THIS template's weights
+    % This matches get_weight_matrix which computes normConst per template
     sum_weights = sum(weights);
     normConst = sqrt(n) / sqrt(sum_weights);
+    
+    % Compute distance
+    diff = (spike - template) .^ 2;
     distance = normConst * sqrt(sum(diff .* weights));
 end
 
