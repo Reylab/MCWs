@@ -18,9 +18,7 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
     if nargin < 5
         set_plots = true;
     end
-    if nargin < 5
-        set_plots = true;
-    end
+
     
     % Create output folder
     folder_base = sprintf('wave%d_clust%d_individual', ch, cluster_num);
@@ -164,23 +162,27 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         hold on;
         
         colors = lines(length(weight_variants));
+        offset_step = 0.02;
+        variant_offsets = (0:length(weight_variants)-1) * offset_step;
         for var_idx = 1:length(weight_variants)
             variant = weight_variants{var_idx};
             distances = distances_by_variant{var_idx};
             
             % Plot target cluster distance (matching reference: dist_w(cluster_num) / maxdist(cluster_num))
             target_distances = distances(cluster_num, :);
-            plot(1:size(distances, 2), target_distances, 'o-', 'LineWidth', 2, ...
-                'MarkerSize', 6, 'Color', colors(var_idx, :), 'DisplayName', strrep(variant, '_', ' '));
+            target_distances_offset = target_distances + variant_offsets(var_idx);
+            plot(1:size(distances, 2), target_distances_offset, 'o-', 'LineWidth', 2, ...
+                'MarkerSize', 6, 'Color', colors(var_idx, :), ...
+                'DisplayName', sprintf('%s (+%.2f)', strrep(variant, '_', ' '), variant_offsets(var_idx)));
         end
         
         hold off;
         xlabel('Weight Point', 'FontSize', 11);
-        ylabel('Normalized Distance', 'FontSize', 11);
+        ylabel(sprintf('Normalized Distance (offset by %.2f per variant)', offset_step), 'FontSize', 11);
         xticks(1:4);
         xticklabels({'(1,1)', '(5,1)', '(50,1)', '(50,50)'});
         xtickangle(45);
-        title('All Weight Variants', 'FontSize', 12);
+        title('All Weight Variants (visual offset applied)', 'FontSize', 12);
         grid on;
         legend('Location', 'best', 'FontSize', 9);
         

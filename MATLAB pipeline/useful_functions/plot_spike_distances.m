@@ -77,8 +77,8 @@ function out = plot_spike_distances(orig_spikes, resc_spikes, ch, cluster_num, u
         % Template weight sweep mode
         % Phase 1: spike weight increases [1,25,50,100], template held at 1
         % Phase 2: spike held at 100, template increases [5,10,25,50,100]
-        spike_weights = [1, 5, 10, 25, 50, 100, 100, 100, 100, 100, 100];
-        tmpl_weights  = [1, 1, 1, 1, 1,  1, 5, 10, 25, 50, 100];
+        spike_weights = [1, 5, 10, 25, 50, 50, 50, 50, 50];
+        tmpl_weights  = [1, 1, 1, 1, 1, 5, 10, 25, 50];
         n_pairs = length(spike_weights);
         % Build x-axis labels: (spike_weight, template_weight)
         weight_pair_labels = arrayfun(@(s,t) sprintf('(%d,%d)', s, t), spike_weights, tmpl_weights, 'UniformOutput', false);
@@ -1317,13 +1317,14 @@ function [normConst, weights] = get_weight_matrix(spike_x, tmplt_vect, pk_weight
             % --- Original behaviour: symmetric XOR gets half weight ---
             symmetric_diff = xor(spike_mask, template_mask);
             % weights(i, symmetric_diff) = max(1, pk_weight);
-            % weights(i, overlap) = pk_weight;
-            weights(i,spike_mask) = pk_weight;
+            weights(i, overlap) = pk_weight;
+            % weights(i,spike_mask) = pk_weight;
+            % weights(i,template_mask) = pk_weight;
         else
             % --- New behaviour: separate spike-only and template-only XOR weights ---
             spike_only    = spike_mask    & ~template_mask;
             template_only = template_mask & ~spike_mask;
-            weights(i, spike_only)    = pk_weight;        % spike XOR region
+            weights(i, spike_only)    = template_weight;        % spike XOR region
             weights(i, template_only) = template_weight;  % template XOR region
             weights(i, overlap)       = pk_weight;        % overlap unchanged (uses spike weight)
         end
