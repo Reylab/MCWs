@@ -116,15 +116,23 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         spike_weights_phase2 = 50; % Spike weight constant at 50
         
          
+        if isfield(par, 'template_sdnum')
+            sdnum = par.template_sdnum;
+        else
+            sdnum = 3;
+        end
+        
         % Compute distances under all weight variants
         distances_by_variant = cell(1, length(weight_variants));
+        winning_clusters_by_variant = cell(1, length(weight_variants));
         
         for var_idx = 1:length(weight_variants)
             variant = weight_variants{var_idx};
             
             % All variants use parametric spike weights
             n_weight_points = length(xor_weights_phase1) + length(xor_weights_phase2);
-            distances = zeros(n_clusters, n_weight_points);
+            distances = zeros(n_clusters, n_weight_points);     % Normalized distances
+            raw_distances = zeros(n_clusters, n_weight_points); % Raw distances
             
             % Phase 1: vary spike weight, hold XOR at 1
             for pt = 1:length(spike_weights_phase1)
@@ -133,6 +141,7 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
                     distance = compute_weighted_distance(spike_waveform, template, ...
                         spike_width, template_widths{c}, variant, par, ...
                         spike_weights_phase1(pt), xor_weights_phase1(pt));
+                    raw_distances(c, pt) = distance;
                     distances(c, pt) = distance / template_stds(c);
                 end
             end
@@ -144,11 +153,26 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
                     distance = compute_weighted_distance(spike_waveform, template, ...
                         spike_width, template_widths{c}, variant, par, ...
                         spike_weights_phase2(pt), xor_weights_phase2(pt));
+                    raw_distances(c, length(spike_weights_phase1) + pt) = distance;
                     distances(c, length(spike_weights_phase1) + pt) = distance / template_stds(c);
                 end
             end
             
             distances_by_variant{var_idx} = distances;
+            
+            % Compute winning clusters mirroring `nearest_neighbor` / `plot_spike_distances` logic 
+            % (min raw distance among those within sdnum threshold)
+            winning_clusters = zeros(1, n_weight_points);
+            for pt = 1:n_weight_points
+                conforming = find(distances(:, pt) < sdnum);
+                if isempty(conforming)
+                    winning_clusters(pt) = 0; % Falls to noise
+                else
+                    [~, min_idx] = min(raw_distances(conforming, pt));
+                    winning_clusters(pt) = conforming(min_idx);
+                end
+            end
+            winning_clusters_by_variant{var_idx} = winning_clusters;
         end
         
         % Create figure with 2 plots: all variants overlaid (left) + waveform (right)
@@ -171,10 +195,50 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
             % Plot target cluster distance (matching reference: dist_w(cluster_num) / maxdist(cluster_num))
             target_distances = distances(cluster_num, :);
             target_distances_offset = target_distances + variant_offsets(var_idx);
-            plot(1:size(distances, 2), target_distances_offset, 'o-', 'LineWidth', 2, ...
-                'MarkerSize', 6, 'Color', colors(var_idx, :), ...
-                'DisplayName', sprintf('%s (+%.2f)', strrep(variant, '_', ' '), variant_offsets(var_idx)));
+            
+            winning_clusters = winning_clusters_by_variant{var_idx};
+            
+            same_cluster_idx = winning_clusters == cluster_num;
+            diff_cluster_idx = (winning_clusters ~= cluster_num) & (winning_clusters > 0);
+            noise_cluster_idx = winning_clusters == 0;
+            
+            plot(1:size(distances, 2), target_distances_offset, '-', 'LineWidth', 2, ...
+                'Color', colors(var_idx, :), 'HandleVisibility', 'off');
+                
+            % Ensure legend gets exactly one entry per variant
+            if any(same_cluster_idx)
+                plot(find(same_cluster_idx), target_distances_offset(same_cluster_idx), 'o', ...
+                    'LineWidth', 2, 'MarkerSize', 6, 'Color', colors(var_idx, :), ...
+                    'DisplayName', sprintf('%s (+%.2f)', strrep(variant, '_', ' '), variant_offsets(var_idx)));
+            end
+            if any(diff_cluster_idx)
+                if ~any(same_cluster_idx)
+                    plot(find(diff_cluster_idx), target_distances_offset(diff_cluster_idx), 'x', ...
+                        'LineWidth', 2, 'MarkerSize', 8, 'Color', colors(var_idx, :), ...
+                        'DisplayName', sprintf('%s (+%.2f)', strrep(variant, '_', ' '), variant_offsets(var_idx)));
+                else
+                    plot(find(diff_cluster_idx), target_distances_offset(diff_cluster_idx), 'x', ...
+                        'LineWidth', 2, 'MarkerSize', 8, 'Color', colors(var_idx, :), ...
+                        'HandleVisibility', 'off');
+                end
+            end
+            if any(noise_cluster_idx)
+                if ~any(same_cluster_idx) && ~any(diff_cluster_idx)
+                    plot(find(noise_cluster_idx), target_distances_offset(noise_cluster_idx), 's', ...
+                        'LineWidth', 2, 'MarkerSize', 8, 'Color', colors(var_idx, :), ...
+                        'DisplayName', sprintf('%s (+%.2f)', strrep(variant, '_', ' '), variant_offsets(var_idx)));
+                else
+                    plot(find(noise_cluster_idx), target_distances_offset(noise_cluster_idx), 's', ...
+                        'LineWidth', 2, 'MarkerSize', 8, 'Color', colors(var_idx, :), ...
+                        'HandleVisibility', 'off');
+                end
+            end
         end
+        
+        % Add explanatory dummy points for the legend
+        plot(NaN, NaN, 'ko', 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'o : Target Cluster Won');
+        plot(NaN, NaN, 'kx', 'LineWidth', 2, 'MarkerSize', 8, 'DisplayName', 'x : Other Valid Cluster Won');
+        plot(NaN, NaN, 'ks', 'LineWidth', 2, 'MarkerSize', 8, 'DisplayName', 's : Noise (All dists > 3)');
         
         hold off;
         xlabel('Weight Point', 'FontSize', 11);
@@ -187,7 +251,7 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         legend('Location', 'best', 'FontSize', 9);
         
         % Add phase divider line at position 3.5
-        xline(3.5, 'k--', 'LineWidth', 1.5, 'Alpha', 0.5);
+        xline(3.5, 'k--', 'LineWidth', 1.5, 'Alpha', 0.5, 'HandleVisibility', 'off');
         hold off;
         
         % Right plot: Waveform with template overlay
@@ -198,32 +262,52 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         plot(spike_waveform, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Spike');
         
         % Plot template for winning cluster
-        all_distances = distances_by_variant{1}(:);  % flatten all distances
-        [~, winning_idx] = min(all_distances);
-        winning_cluster = mod(winning_idx - 1, n_clusters) + 1;  % convert flat index back to cluster
-        template = centers(winning_cluster, :);
-        plot(template, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Template C%d', winning_cluster));
+        all_winning_clusters = cat(2, winning_clusters_by_variant{:});
+        winning_cluster_overall = cluster_num;
+        other_winners = all_winning_clusters(all_winning_clusters ~= cluster_num & all_winning_clusters > 0);
         
-        % Plot template std bands
-        plot(template + template_stds(winning_cluster), 'r--', 'LineWidth', 1, 'DisplayName', 'Std±');
-        plot(template - template_stds(winning_cluster), 'r--', 'LineWidth', 1);
+        if ~isempty(other_winners)
+            % Pick the alternative cluster that won the most
+            winning_cluster_overall = mode(other_winners);
+        elseif all(all_winning_clusters == 0)
+            winning_cluster_overall = 0; % It was entirely noise
+        end
+        
+        % Plot original cluster template
+        orig_template = centers(cluster_num, :);
+        plot(orig_template, 'g-', 'LineWidth', 2, 'DisplayName', sprintf('Orig C%d', cluster_num));
+        
+        if winning_cluster_overall ~= cluster_num && winning_cluster_overall > 0
+            template = centers(winning_cluster_overall, :);
+            plot(template, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Win C%d', winning_cluster_overall));
+        end
+        
+        % Plot template std bands for original
+        plot(orig_template + 3 * template_stds(cluster_num), 'g--', 'LineWidth', 1, 'DisplayName', 'Orig \pm3 Std');
+        plot(orig_template - 3 * template_stds(cluster_num), 'g--', 'LineWidth', 1, 'HandleVisibility', 'off');
         
         % Plot spike width markers
         if ~isnan(spike_width.left) && ~isnan(spike_width.right)
             plot([spike_width.left spike_width.left], y_limits, 'b:', 'LineWidth', 2, 'DisplayName', 'Spike width');
-            plot([spike_width.right spike_width.right], y_limits, 'b:', 'LineWidth', 2);
+            plot([spike_width.right spike_width.right], y_limits, 'b:', 'LineWidth', 2, 'HandleVisibility', 'off');
         end
         
-        % Plot template width markers
-        if ~isnan(template_widths{winning_cluster}.left) && ~isnan(template_widths{winning_cluster}.right)
-            plot([template_widths{winning_cluster}.left template_widths{winning_cluster}.left], y_limits, 'r:', 'LineWidth', 2, 'DisplayName', 'Template width');
-            plot([template_widths{winning_cluster}.right template_widths{winning_cluster}.right], y_limits, 'r:', 'LineWidth', 2);
+        % Plot template width markers (use original cluster)
+        if ~isnan(template_widths{cluster_num}.left) && ~isnan(template_widths{cluster_num}.right)
+            plot([template_widths{cluster_num}.left template_widths{cluster_num}.left], y_limits, 'g:', 'LineWidth', 2, 'DisplayName', 'Orig T-width');
+            plot([template_widths{cluster_num}.right template_widths{cluster_num}.right], y_limits, 'g:', 'LineWidth', 2, 'HandleVisibility', 'off');
         end
         
         hold off;
         xlabel('Sample');
         ylabel('Amplitude');
-        title(sprintf('Spike %d Waveform & Winning Template (C%d)', spike_num_in_set, winning_cluster), ...
+        
+        if winning_cluster_overall == 0
+            win_title_str = 'Noise (0)';
+        else
+            win_title_str = sprintf('C%d', winning_cluster_overall);
+        end
+        title(sprintf('Spike %d Waveform & Winning Template (%s)', spike_num_in_set, win_title_str), ...
             'FontSize', 10, 'Interpreter', 'none');
         ylim(y_limits);
         legend('Location', 'northeast', 'FontSize', 8);
