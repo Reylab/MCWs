@@ -112,8 +112,8 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         xor_weights_phase1 = [1, 1, 1];        % XOR weight held constant at 1
         spike_weights_phase1 = [1, 5, 50];     % Spike weight varies: 1, 5, 50
         
-        xor_weights_phase2 = 50;   % XOR weight constant at 50
-        spike_weights_phase2 = 50; % Spike weight constant at 50
+        xor_weights_phase2 = [5,25];   % XOR weight constant at 50
+        spike_weights_phase2 = [50,50]; % Spike weight constant at 50
         
          
         if isfield(par, 'template_sdnum')
@@ -191,18 +191,27 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         for var_idx = 1:length(weight_variants)
             variant = weight_variants{var_idx};
             distances = distances_by_variant{var_idx};
+            is_xor_variant = strcmp(variant, 'spike_AND_vs_XOR');
+
+            % Only the XOR variant changes at point 4 ((50,50));
+            % keep other variants plotted through point 3 ((50,1)).
+            if is_xor_variant
+                plot_points = 1:size(distances, 2);
+            else
+                plot_points = 1:length(spike_weights_phase1);
+            end
             
             % Plot target cluster distance (matching reference: dist_w(cluster_num) / maxdist(cluster_num))
-            target_distances = distances(cluster_num, :);
+            target_distances = distances(cluster_num, plot_points);
             target_distances_offset = target_distances + variant_offsets(var_idx);
             
-            winning_clusters = winning_clusters_by_variant{var_idx};
+            winning_clusters = winning_clusters_by_variant{var_idx}(plot_points);
             
             same_cluster_idx = winning_clusters == cluster_num;
             diff_cluster_idx = (winning_clusters ~= cluster_num) & (winning_clusters > 0);
             noise_cluster_idx = winning_clusters == 0;
             
-            plot(1:size(distances, 2), target_distances_offset, '-', 'LineWidth', 2, ...
+            plot(plot_points, target_distances_offset, '-', 'LineWidth', 2, ...
                 'Color', colors(var_idx, :), 'HandleVisibility', 'off');
                 
             % Ensure legend gets exactly one entry per variant
@@ -243,8 +252,8 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         hold off;
         xlabel('Weight Point', 'FontSize', 11);
         ylabel(sprintf('Normalized Distance (offset by %.2f per variant)', offset_step), 'FontSize', 11);
-        xticks(1:4);
-        xticklabels({'(1,1)', '(5,1)', '(50,1)', '(50,50)'});
+        xticks(1:5);
+        xticklabels({'(1,1)', '(5,1)', '(25,1)', '(50,5)','(50,25)'});
         xtickangle(45);
         title('All Weight Variants (visual offset applied)', 'FontSize', 12);
         grid on;
@@ -275,16 +284,16 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         
         % Plot original cluster template
         orig_template = centers(cluster_num, :);
-        plot(orig_template, 'g-', 'LineWidth', 2, 'DisplayName', sprintf('Orig C%d', cluster_num));
+        plot(orig_template, 'g-', 'LineWidth', 2, 'DisplayName', sprintf('Orig C%d template', cluster_num));
         
         if winning_cluster_overall ~= cluster_num && winning_cluster_overall > 0
             template = centers(winning_cluster_overall, :);
-            plot(template, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Win C%d', winning_cluster_overall));
+            plot(template, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Win C%d template', winning_cluster_overall));
         end
         
         % Plot template std bands for original
-        plot(orig_template + 3 * template_stds(cluster_num), 'g--', 'LineWidth', 1, 'DisplayName', 'Orig \pm3 Std');
-        plot(orig_template - 3 * template_stds(cluster_num), 'g--', 'LineWidth', 1, 'HandleVisibility', 'off');
+        plot(orig_template + template_stds(cluster_num), 'k--', 'LineWidth', 1, 'DisplayName', 'Orig max width');
+        plot(orig_template - template_stds(cluster_num), 'k--', 'LineWidth', 1, 'HandleVisibility', 'off');
         
         % Plot spike width markers
         if ~isnan(spike_width.left) && ~isnan(spike_width.right)
@@ -294,7 +303,7 @@ function plot_ind_spike_dist(orig_spikes, resc_spikes, ch, cluster_num, set_plot
         
         % Plot template width markers (use original cluster)
         if ~isnan(template_widths{cluster_num}.left) && ~isnan(template_widths{cluster_num}.right)
-            plot([template_widths{cluster_num}.left template_widths{cluster_num}.left], y_limits, 'g:', 'LineWidth', 2, 'DisplayName', 'Orig T-width');
+            plot([template_widths{cluster_num}.left template_widths{cluster_num}.left], y_limits, 'g:', 'LineWidth', 2, 'DisplayName', 'Orig Templ width');
             plot([template_widths{cluster_num}.right template_widths{cluster_num}.right], y_limits, 'g:', 'LineWidth', 2, 'HandleVisibility', 'off');
         end
         
