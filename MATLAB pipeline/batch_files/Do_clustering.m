@@ -50,62 +50,29 @@ function Do_clustering(input, varargin)
     % min_spikes4SPC = 16; % if are less that this number of spikes, clustering won't be made.
     min_spikes4SPC = 64; % if are less that this number of spikes, clustering won't be made.
     
-    %default config
-    par_input = struct;
-    parallel = false;
-    make_times = true;
-    make_plots = true;
-    make_templates = false;
-    resolution = '-r150';
-    save_spikes = true;
-    %search for optional inputs
-    nvar = length(varargin);
-    for v = 1:nvar
-        if strcmp(varargin{v},'par')
-            if (nvar>=v+1) && isstruct(varargin{v+1})
-                par_input = varargin{v+1};
-            else
-                error('Error in ''par'' optional input.')
-            end
-        elseif strcmp(varargin{v},'parallel')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                parallel = varargin{v+1};
-            else
-                error('Error in ''parallel'' optional input.')
-            end
-        elseif strcmp(varargin{v},'make_times')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                make_times = varargin{v+1};
-            else
-                error('Error in ''make_times'' optional input.')
-            end
-        elseif strcmp(varargin{v},'make_plots')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                make_plots = varargin{v+1};
-            else
-                error('Error in ''make_plots'' optional input.')
-            end
-        elseif strcmp(varargin{v},'make_templates')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                make_templates = varargin{v+1};
-            else
-                error('Error in ''make_templates'' optional input.')
-            end
-        elseif strcmp(varargin{v},'resolution')
-            if (nvar>=v+1) && ischar(varargin{v+1})
-                resolution = varargin{v+1};
-            else
-                error('Error in ''resolution'' optional input.')
-            end
-        elseif strcmp(varargin{v},'save_spikes')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                save_spikes = varargin{v+1};
-            else
-                error('Error in ''save_spikes'' optional input.')
-            end
+    % Parse input arguments
+    p = inputParser;
+    addParameter(p, 'par', struct, @isstruct);
+    addParameter(p, 'parallel', false, @islogical);
+    addParameter(p, 'make_times', true, @islogical);
+    addParameter(p, 'make_plots', true, @islogical);
+    addParameter(p, 'make_templates', false, @islogical);
+    addParameter(p, 'resolution', '-r150', @ischar);
+    addParameter(p, 'save_spikes', true, @islogical);
+    addParameter(p, 'sdnum', 3, @isnumeric); % temp number for testing
+    parse(p, varargin{:});
     
-        end
-    end
+    par_input = p.Results.par;
+    parallel = p.Results.parallel;
+    make_times = p.Results.make_times;
+    make_plots = p.Results.make_plots;
+    make_templates = p.Results.make_templates;
+    resolution = p.Results.resolution;
+    save_spikes = p.Results.save_spikes;
+
+    sdnum = p.Results.sdnum;
+    run_par_for = parallel;
+    filenames = {};
     
     run_par_for = parallel;
     filenames = {};
@@ -179,7 +146,7 @@ function Do_clustering(input, varargin)
             parfor fnum = 1:Nfiles
                 filename = filenames{fnum};
                 begin_time = tic;
-                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes);
+                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_times(initial_date, filenames),Nfiles, filename, time_taken)
@@ -188,7 +155,7 @@ function Do_clustering(input, varargin)
             for fnum = 1:length(filenames)
                 filename = filenames{fnum};
                 begin_time = tic;
-                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes);
+                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_times(initial_date, filenames),Nfiles, filename, time_taken)
@@ -564,7 +531,7 @@ function Do_clustering(input, varargin)
     
     end
     
-    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes)
+    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum)
     
         par = struct;
         par = update_parameters(par,par_file,'clus');
@@ -712,7 +679,8 @@ function Do_clustering(input, varargin)
         f_in  = spikes(classes~=0,:);
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
-        par.sdnum = 1;
+        par.template_sdnum = sdnum;
+        
         class_out = force_membership_wc(f_in, class_in, f_out, par);
         forced = classes==0;
         classes(classes==0) = class_out;

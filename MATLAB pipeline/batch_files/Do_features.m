@@ -8,26 +8,14 @@ function Do_features(input, varargin)
 
     min_spikes4SPC = 64; % if less than this number of spikes, features won't be calculated.
     
-    par_input = struct;
-    parallel = false;
+    % Parse input arguments
+    p = inputParser;
+    addParameter(p, 'par', struct, @isstruct);
+    addParameter(p, 'parallel', false, @islogical);
+    parse(p, varargin{:});
     
-    nvar = length(varargin);
-    for v = 1:nvar
-        if strcmp(varargin{v},'par')
-            if (nvar>=v+1) && isstruct(varargin{v+1})
-                par_input = varargin{v+1};
-            else
-                error('Error in ''par'' optional input.')
-            end
-        elseif strcmp(varargin{v},'parallel')
-            if (nvar>=v+1) && islogical(varargin{v+1})
-                parallel = varargin{v+1};
-            else
-                error('Error in ''parallel'' optional input.')
-            end
-        end
-    end
-
+    par_input = p.Results.par;
+    parallel = p.Results.parallel;
     run_par_for = parallel;
     filenames = {};
 

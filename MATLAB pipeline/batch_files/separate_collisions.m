@@ -1,6 +1,7 @@
 function separate_collisions(channels)
 separate_collisions_tic = tic;
-load('NSx','NSx');
+load('NSx','NSx');  %% change to ge a parameter in spikes.mat so dont need to load in full file just spikes file with 
+% the relative bundle information 
 NSx = NSx(ismember(cell2mat({NSx.chan_ID}),channels));
 t_win = 0.5;
 bundle_min_art = 6;

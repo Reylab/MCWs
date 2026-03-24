@@ -1,4 +1,4 @@
-function class_out = force_membership_wc(f_in, class_in, f_out, par)
+function class_out = force_membership_wc(f_in, class_in, f_out, par,algo)
 % class = function force_membership_wc(f_in, class_in, f_out, par)
 % Given classified points, try to classify new points via template matching
 %
@@ -44,7 +44,7 @@ switch par.template_type
         [centers, sd, pd] = build_templates(class_in,f_in); % we are going to ignore pd
         sdnum = par.template_sdnum;
         for i=1:nspk,
-            class_out(i) = nearest_neighbor(f_out(i,:),centers,sdnum*sd,par);        
+            class_out(i) = nearest_neighbor(f_out(i,:),centers,sdnum*sd,par,algo);        
         end
         
     case 'ml'
