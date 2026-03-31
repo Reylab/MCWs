@@ -12,10 +12,10 @@ function batch_clust_resp(input,varargin)
     
     par_input = p.Results.par;
     parallel = p.Results.parallel;
+    filenames = {};
     
     if isnumeric(input) || any(strcmp(input,'all'))  %cases for numeric or 'all' input
         
-        filenames_all = {};
         dirnames = dir();
         dirnames = {dirnames.name};
     
@@ -36,7 +36,6 @@ function batch_clust_resp(input,varargin)
                     filenames = [filenames {fname}];
                 end
             end
-            filenames_all = [filenames_all {fname}];
         end
     
     elseif ischar(input) && length(input) > 4
@@ -53,11 +52,21 @@ function batch_clust_resp(input,varargin)
         throw(ME)
     end
 
+    if ~isempty(filenames)
+        fprintf('Detected %d input spike file(s).\n', numel(filenames));
+    end
+
     par_file = set_parameters();
-    %% first step is feature extraction
-    % same for all methods - can be saved in same folder bc/ new
-    
-    do_features_single(input, 64, par_file, par_input, 1);
+    par = struct;
+    par_groups = {'clus', 'relevant', 'batch_plot'};
+    for k = 1:numel(par_groups)
+        par = update_parameters(par, par_file, par_groups{k});
+    end
+    for k = 1:numel(par_groups)
+        par = update_parameters(par, par_input, par_groups{k});
+    end
+
+
 
     %% create files for all methods
     
@@ -67,31 +76,38 @@ function batch_clust_resp(input,varargin)
     end
 
 
-    folder_sd_3 = sprintf('sdnum_%d', sdnum);
+    folder_sd_3 = sprintf('sdnum_3');
     if ~exist(folder_sd_3, 'dir')
         mkdir(folder_sd_3);
     end
 
-
-    %% Copy spikes file to all folders
-    spikes_file = filenames{1};
     orig_cluster_temp = {folder_sd_1, folder_sd_3};
-    
-    for i = 1:length(orig_cluster_temp)
-        dest_file = fullfile(orig_cluster_temp{i}, spikes_file);
-        copyfile(spikes_file, dest_file);
+
+    % Stage shared files once per sd folder. Spike files are included so
+    % downstream response-profile code can load *_spikes.mat locally.
+    shared_patterns = {'*times*.mat', '*NSx*.mat', '*stimulus*.mat', ...
+                       '*finalevents*.mat', '*experiment_properties_online3*.mat'};
+    shared_files = collect_files_from_patterns(shared_patterns);
+    if isempty(shared_files)
+        error('No shared pipeline files found in top-level directory');
+    end
+    if isempty(filenames)
+        spike_files = {dir('*_spikes.mat').name};
+    else
+        spike_files = filenames;
+    end
+    if ~isempty(spike_files)
+        shared_files = unique([shared_files, spike_files], 'stable');
     end
 
-    %% clustering is where things change - the original clustering is done already
- 
-    cd(orig_cluster_temp{1});
-    do_clustering(current_file, 'par', par_input, 'parallel', parallel, 'sdnum', 1);
-    compute_metrics_batch(input,'parallel',false, 'save',true);
-
-    cd('../' + orig_cluster_temp{2});
-    do_clustering(current_file, 'par', par_input, 'parallel', parallel, 'sdnum', 3);
-    compute_metrics_batch(input,'parallel',false, 'save',true);
-    cd('../');
+    for i = 1:length(orig_cluster_temp)
+        if ~exist(orig_cluster_temp{i}, 'dir')
+            mkdir(orig_cluster_temp{i});
+        end
+        for j = 1:length(shared_files)
+            copy_or_link_file(shared_files{j}, fullfile(orig_cluster_temp{i}, shared_files{j}));
+        end
+    end
 
     %% create folders for varying logic of template matching and copy clustered files there
     folder_sd_1_t_3 = sprintf('sdnum_1_t_3');
@@ -155,27 +171,29 @@ function batch_clust_resp(input,varargin)
     sd3_folders = {folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3};
     all_algo_folders = [sd1_folders, sd3_folders];
     
-    % Copy all files from sd_1 to sd_1-based folders
-    sd1_files = dir(fullfile(folder_sd_1, '*'));
-    for i = 1:length(sd1_files)
-        if ~sd1_files(i).isdir  % Copy only files, not directories
-            for j = 1:length(sd1_folders)
-                source = fullfile(folder_sd_1, sd1_files(i).name);
-                dest = fullfile(sd1_folders{j}, sd1_files(i).name);
-                copyfile(source, dest);
-            end
+    required_names = unique(shared_files, 'stable');
+
+    % Populate sd_1-based folders with required files only.
+    for i = 1:length(required_names)
+        source = fullfile(folder_sd_1, required_names{i});
+        if ~exist(source, 'file')
+            continue
+        end
+        for j = 1:length(sd1_folders)
+            dest = fullfile(sd1_folders{j}, required_names{i});
+            copy_or_link_file(source, dest);
         end
     end
     
-    % Copy all files from sd_3 to sd_3-based folders
-    sd3_files = dir(fullfile(folder_sd_3, '*'));
-    for i = 1:length(sd3_files)
-        if ~sd3_files(i).isdir  % Copy only files, not directories
-            for j = 1:length(sd3_folders)
-                source = fullfile(folder_sd_3, sd3_files(i).name);
-                dest = fullfile(sd3_folders{j}, sd3_files(i).name);
-                copyfile(source, dest);
-            end
+    % Populate sd_3-based folders with required files only.
+    for i = 1:length(required_names)
+        source = fullfile(folder_sd_3, required_names{i});
+        if ~exist(source, 'file')
+            continue
+        end
+        for j = 1:length(sd3_folders)
+            dest = fullfile(sd3_folders{j}, required_names{i});
+            copy_or_link_file(source, dest);
         end
     end
     
@@ -186,11 +204,43 @@ function batch_clust_resp(input,varargin)
         cd(all_algo_folders{i});
         
         % Load the clustering results
-        load('*times*.mat');
+        times_file = dir('*times*.mat');
+        if isempty(times_file)
+            warning('No times file found in %s. Skipping.', all_algo_folders{i});
+            cd('../');
+            continue
+        end
+        fname_times = times_file(1).name;
+        data = load(fname_times);
+        if ~isfield(data, 'spikes') || ~isfield(data, 'classes') || ~isfield(data, 'cluster_class')
+            warning('Missing required variables in %s. Skipping.', fname_times);
+            cd('../');
+            continue
+        end
+        spikes = data.spikes;
+        classes = data.classes;
+        cluster_class = data.cluster_class;
+        if isfield(data, 'forced')
+            forced = data.forced;
+        else
+            forced = [];
+        end
+
+        % Start each trial from original clustering by undoing previously forced assignments.
+        classes = classes(:)';
+        if exist('forced', 'var') && numel(forced) == numel(classes)
+            forced_mask = logical(forced(:))';
+            classes(forced_mask) = 0;
+        end
+
         f_in  = spikes(classes~=0,:);
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
-        par.template_sdnum = 3;
+        if contains(all_algo_folders{i}, 'sd1')
+            par.template_sdnum = 1;
+        else
+            par.template_sdnum = 3;
+        end
         
         if contains(all_algo_folders{i}, 'algo1')
             algo = 'algo1';
@@ -213,15 +263,11 @@ function batch_clust_resp(input,varargin)
         forced(classes==0) = 0;  % Unmark the newly classified ones
         
         % Update cluster_class with new classifications
-        cluster_class(:,1) = classes';
+        cluster_class(:,1) = classes(:);
         
         % Save updated results to times file
-        times_file = dir('*times*.mat');
-        if ~isempty(times_file)
-            fname_times = times_file(1).name;
-            save(fname_times, 'classes', 'cluster_class', 'forced', '-append');
-        end
-        compute_metrics_batch(input,'parallel',false, 'save',true);
+        save(fname_times, 'classes', 'cluster_class', 'forced', '-append');
+        compute_metrics_batch(input,'parallel',parallel, 'save',true);
         cd('../');
     end
 
@@ -230,51 +276,66 @@ function batch_clust_resp(input,varargin)
     all_folders = [orig_cluster_temp, all_algo_folders];
     for i = 1:length(all_folders)
         cd(all_folders{i});
-        do_structure_sorted_BCM_online3(input, par.use_blanks, par.circshiftblanks, par.is_online)                
+        do_structure_mu_BCM_online3(input,'RSVP_online', true, false,false)
+
+        do_structure_sorted_BCM_online3(input, true,false, false)                
 
         plot_grapes_as_online('grapes_offline',true,'channels2plot', 'all', 'stim_list', 'all', 'order_by_rank', true, ...
-                                'is_online', par.is_online, 'plot_best_stims_only', par.plot_best_stims_only, ...
-                                'copy2miniscrfolder', par.copy2miniscrfolder, 'show_sel_count', par.show_sel_count, ...
-                                'show_best_stims_wins', par.show_best_stims_wins, 'best_stims_nwins', 8, ...
-                                'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', par.use_blanks, ...
-                                'circshiftblanks', par.circshiftblanks);
+                                'is_online', false, 'plot_best_stims_only', false, ...
+                                'copy2miniscrfolder',false, 'show_sel_count', true, ...
+                                'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
+                                'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
+                                'circshiftblanks', false);
         cd('../');
     end
 
 
 end
-function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
 
-    par = struct;
-    par = update_parameters(par,par_file,'clus');
-    par = update_parameters(par,par_input,'clus');
-    par.filename = filename;
-
-    data_handler = readInData(par);
-    par = data_handler.par;
-    
-    if data_handler.with_spikes
-        [spikes, index, spikes_all, index_all] = data_handler.load_spikes_withCollisions();
-    else
-        warning('File: %s doesn''t include spikes', filename);
-        return
+function files = collect_files_from_patterns(patterns)
+files = {};
+for k = 1:numel(patterns)
+    d = dir(patterns{k});
+    d = d(~[d.isdir]);
+    if isempty(d)
+        continue
     end
+    files = [files, {d.name}]; %#ok<AGROW>
+end
+if isempty(files)
+    files = {};
+else
+    files = unique(files, 'stable');
+end
+end
 
-    % Check spike count
-    nspk = size(spikes,1);
-    if nspk < min_spikes4SPC
-        warning('Not enough spikes in %s (found %d, need %d)', filename, nspk, min_spikes4SPC);
-        return
-    end
+function copy_or_link_file(source, dest)
+if exist(dest, 'file')
+    return
+end
 
-    [inspk, coeff] = wave_features(spikes, par);
+dest_dir = fileparts(dest);
+if ~isempty(dest_dir) && ~exist(dest_dir, 'dir')
+    mkdir(dest_dir);
+end
 
-    % Append features directly to the spikes file instead of a separate file
-    try
-        save(filename, 'inspk', 'coeff', '-append');
-    catch
-        save(filename, 'inspk', 'coeff', '-append', '-v7.3');
-    end
+if ~exist(source, 'file')
+    warning('Source file not found: %s', source);
+    return
+end
 
-    fprintf('Features appended to: %s\n', filename);
+% Prefer hard links for large shared files to avoid redundant storage.
+if ispc
+    cmd = sprintf('cmd /c mklink /H "%s" "%s"', dest, source);
+    [status, ~] = system(cmd);
+    did_link = (status == 0);
+else
+    cmd = sprintf('ln "%s" "%s"', source, dest);
+    [status, ~] = system(cmd);
+    did_link = (status == 0);
+end
+
+if ~did_link
+    copyfile(source, dest);
+end
 end
