@@ -126,13 +126,13 @@ function plot_grapes_as_online(varargin)
     
     if grapes_offline
         grapes = load(grapes_name);
-        grapes.ImageNames=table(repmat({[pwd filesep 'pics_used']}, ...
+        grapes.ImageNames=table(repmat({fullfile(pwd, '..', 'pics_used')}, ...
                                 numel(grapes.ImageNames),1),grapes.ImageNames, ...
                                 'VariableNames',{'folder', 'name'});
     else
         load(['results' filesep 'grapes_online.mat']);
     %     picusa = cellfun(@(x) contains(x,'pics_USA'),grapes.ImageNames.folder);
-         grapes.ImageNames.folder(:)={[pwd filesep 'pics_used']};
+         grapes.ImageNames.folder(:)={fullfile(pwd, '..', 'pics_used')};
     end
 
     final_n_scr = numel(scr_end_cell);
@@ -150,6 +150,7 @@ function plot_grapes_as_online(varargin)
         mkdir(folder)
     end
     cd(folder)
+    output_dir = pwd;
     if ~contains(grapes.exp_type,'freq_tag')
         all_picsused = unique(cell2mat(cellfun(@(x)x.pics2use, scr_config_cell, 'UniformOutput', false)));
     else
@@ -225,7 +226,8 @@ function plot_grapes_as_online(varargin)
                                 'save_fig', true, 'emu_num', experiment.params.EMU_num, ...
                                 'close_fig', true, 'order_offset', 0, ...
                                 'priority_chs_ranking', priority_chs_ranking, ...
-                                'parallel_plots', true, 'extra_lbl', extra_lbl);
+                                'parallel_plots', true, 'extra_lbl', extra_lbl, ...
+                                'output_dir', output_dir);
     end
     cd('..')
     % 

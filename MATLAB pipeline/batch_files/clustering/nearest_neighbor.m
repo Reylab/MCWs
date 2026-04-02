@@ -1,54 +1,59 @@
-function index = nearest_neighbor(spike_x, tmplt_vect, maxdist, par, varargin)
-    % nearest_neighbor - Find nearest neighbor(s) within a distance threshold
+function index = nearest_neighbor(spike_x, tmplt_vect, maxdist, par_or_pointdist, varargin)
+    % nearest_neighbor - Backward-compatible nearest-neighbor with algo-specific weighting.
     %
-    % Required:
-    %   spike_x    - row vector query point (1 x n_features)
-    %   tmplt_vect - template matrix (n_templates x n_features)
-    %   maxdist    - maximum distance threshold (scalar or 1 x n_templates vector)
-    %   par        - parameter struct; relevant fields:
-    %                  par.pk_weight  (default 1)   - weight boost at spike peak
-    %                  par.amp_dir    (default 'neg')- polarity of peak ('neg'|'pos')
-    %
-    % Optional name-value pairs:
-    %   'pointdist'  - per-template std-dev matrix, same size as tmplt_vect
-    %                  (default: [], disables pointwise filter)
-    %   'pointlimit' - max number of per-dim violations allowed (default: Inf)
-    %   'k'          - number of nearest neighbors to return (default: [], returns 1)
+    % Supports two call styles used in this repo:
+    % 1) New style: nearest_neighbor(spike, templates, maxdist, par, ...)
+    % 2) Legacy style: nearest_neighbor(spike, templates, maxdist, pointdist, pointlimit, k)
+
+    % Legacy API path used by template_type 'nn'.
+    if ~isstruct(par_or_pointdist)
+        pointdist = par_or_pointdist;
+        pointlimit = Inf;
+        k = [];
+        if ~isempty(varargin), pointlimit = varargin{1}; end
+        if numel(varargin) >= 2, k = varargin{2}; end
+        index = legacy_nearest_neighbor(spike_x, tmplt_vect, maxdist, pointdist, pointlimit, k);
+        return
+    end
+
+    par = par_or_pointdist;
+    if ~isfield(par, 'pk_weight'), par.pk_weight = 1; end
+    if ~isfield(par, 'amp_dir'), par.amp_dir = 'neg'; end
+    if ~isfield(par, 'xor_weight'), par.xor_weight = 3; end
+
+    % Support positional algo argument, e.g. nearest_neighbor(..., par, 'algo3').
+    algo = 'algo0';
+    extra = varargin;
+    if ~isempty(extra) && (ischar(extra{1}) || (isstring(extra{1}) && isscalar(extra{1})))
+        first = char(extra{1});
+        if startsWith(first, 'algo')
+            algo = first;
+            extra = extra(2:end);
+        end
+    end
 
     p = inputParser;
-    addParameter(p, 'pointdist',  [],  @(x) isnumeric(x));
+    addParameter(p, 'pointdist', [], @(x) isnumeric(x));
     addParameter(p, 'pointlimit', Inf, @(x) isnumeric(x) && isscalar(x));
-    addParameter(p, 'k',          [],  @(x) isnumeric(x) && isscalar(x));
-    addParameter(p, 'algo', 'algo0', @ischar);
-    parse(p, varargin{:});
+    addParameter(p, 'k', [], @(x) isnumeric(x) && isscalar(x));
+    addParameter(p, 'algo', algo, @(x) ischar(x) || (isstring(x) && isscalar(x)));
+    addParameter(p, 'template_weight', [], @(x) isnumeric(x) || isempty(x));
+    parse(p, extra{:});
 
-    pointdist  = p.Results.pointdist;
+    pointdist = p.Results.pointdist;
     pointlimit = p.Results.pointlimit;
-    k          = p.Results.k;
-    algo       = p.Results.algo;
+    k = p.Results.k;
+    algo = char(p.Results.algo);
+    template_weight = p.Results.template_weight;
 
-    % if ~isfield(par, 'pk_weight'), par.pk_weight = 1;     end
-    if ~isfield(par, 'amp_dir'),   par.amp_dir   = 'neg'; end
-
-    % [normConst, w] = get_weight_vector(spike_x, par.pk_weight, par.amp_dir);
-    % w_resize  = ones(size(tmplt_vect, 1), 1) * w;
-    % distances = normConst * sqrt(sum(w_resize .* (ones(size(tmplt_vect,1),1)*spike_x - tmplt_vect).^2, 2)');
-
-    % distances = sqrt(sum((ones(size(tmplt_vect,1),1)*spike_x - tmplt_vect).^2, 2)');
-    spike_width = compute_peak_width(spike_waveform, par.amp_dir);
-
-    for i = 1:size(tmplt_vect, 1)
-        template_width(i) = compute_peak_width(tmplt_vect(i,:), par.amp_dir);
-        distances = compute_weighted_distance(spike_x, tmplt_vect, spike_width, template_width(i), algo, par,50,25);
-
-    end
+    distances = compute_algo_distances(spike_x, tmplt_vect, par, algo, template_weight);
     conforming = find(distances < maxdist);
 
-    % Pointwise distance filter (optional)
+    % Optional pointwise filter for compatibility.
     if ~isempty(pointdist)
         pointwise_conforming = [];
         for i = 1:size(tmplt_vect, 1)
-            if sum(abs(spike_x - tmplt_vect(i,:)) > pointdist(i,:)) < pointlimit
+            if sum(abs(spike_x - tmplt_vect(i, :)) > pointdist(i, :)) < pointlimit
                 pointwise_conforming = [pointwise_conforming i]; %#ok<AGROW>
             end
         end
@@ -59,7 +64,7 @@ function index = nearest_neighbor(spike_x, tmplt_vect, maxdist, par, varargin)
         index = 0;
     else
         if ~isempty(k)
-            [~, i] = sort(distances(conforming));   % k-nearest neighbors
+            [~, i] = sort(distances(conforming));
             i = i(1:min(length(i), k));
         else
             [~, i] = min(distances(conforming));
@@ -68,95 +73,119 @@ function index = nearest_neighbor(spike_x, tmplt_vect, maxdist, par, varargin)
     end
 end
 
-function distance = compute_weighted_distance(spike,template,spike_width,template_width,algo,par, varargin)    % get_weight_vector - Compute weight vector for distance calculation
-    %
-    % Inputs:
-    %   algo      - algorithm type (string)
-     if length(varargin) >= 2
-        spike_wt = varargin{1};  % weight for spike region
-        xor_wt = varargin{2};    % weight for XOR region (only used in spike_AND_vs_XOR)
+function index = legacy_nearest_neighbor(spike_x, tmplt_vect, maxdist, pointdist, pointlimit, k)
+    diff = tmplt_vect - repmat(spike_x, size(tmplt_vect, 1), 1);
+    distances = sqrt(sum(diff.^2, 2))';
+    conforming = find(distances < maxdist);
+
+    if ~isempty(pointdist)
+        pointwise_conforming = [];
+        for i = 1:size(tmplt_vect, 1)
+            if sum(abs(spike_x - tmplt_vect(i, :)) > pointdist(i, :)) < pointlimit
+                pointwise_conforming = [pointwise_conforming i]; %#ok<AGROW>
+            end
+        end
+        conforming = intersect(conforming, pointwise_conforming);
+    end
+
+    if isempty(conforming)
+        index = 0;
     else
-        spike_wt = 1;
-        xor_wt = 3;
+        if ~isempty(k)
+            [~, i] = sort(distances(conforming));
+            i = i(1:min(length(i), k));
+        else
+            [~, i] = min(distances(conforming));
+        end
+        index = conforming(i);
     end
-    
-    n = length(spike);
-    spike_mask = false(1, n);
-    template_mask = false(1, n);
-    
-    % Create masks from width struct
-    if isstruct(spike_width) && ~isnan(spike_width.left) && ~isnan(spike_width.right)
-        spike_mask(spike_width.left:min(spike_width.right, n)) = true;
-    end
-    if isstruct(template_width) && ~isnan(template_width.left) && ~isnan(template_width.right)
-        template_mask(template_width.left:min(template_width.right, n)) = true;
-    end
-    
-    % Initialize weights
-    weights = ones(1, n);
-    
-    % Apply weighting based on variant
-    % Key: each variant applies weights differently, but ALL use the same approach as get_weight_matrix
-    switch algo
-        case 'algo0'
-            % Only weight spike region
-            
-        case 'algo1'
-            % Only weight template region
-            weights(spike_mask) = spike_wt;
-            
-        case 'algo2'
-            % Only weight overlap region
-            overlap = spike_mask & template_mask;
-            weights(overlap) = spike_wt;
-            
-        case 'algo3'
-            % Weight union of spike and template regions
-            overlap = spike_mask & template_mask;
-            xor_region = (spike_mask | template_mask) & ~overlap;
-            weights(overlap) = spike_wt;       % AND region
-            weights(xor_region) = xor_wt;      % XOR region
-                        
-        case 'algo4'
-            overlap = spike_mask | template_mask;
-            weights(overlap) = spike_wt;
-
-        case 'algo5'
-            weights(template_mask) = spike_wt;
-            
-        otherwise
-            % No weighting
-    end
-
 end
 
-function width_struct = compute_peak_width(spike_x, amp_dir)
+function distances = compute_algo_distances(spike_x, tmplt_vect, par, algo, template_weight)
+    n_templates = size(tmplt_vect, 1);
+    distances = zeros(1, n_templates);
+    spike_width = get_peak_width(spike_x, par.amp_dir);
+
+    for i = 1:n_templates
+        template = tmplt_vect(i, :);
+        template_width = get_peak_width(template, par.amp_dir);
+        [normConst, weights] = compute_weight_vector(length(spike_x), spike_width, template_width, algo, par, template_weight);
+        diff = spike_x - template;
+        distances(i) = normConst * sqrt(sum(weights .* (diff .^ 2)));
+    end
+end
+
+function [normConst, weights] = compute_weight_vector(n, spike_width, template_width, algo, par, template_weight)
+    spike_mask = false(1, n);
+    template_mask = false(1, n);
+
+    if ~isnan(spike_width.left) && ~isnan(spike_width.right)
+        spike_mask(spike_width.left:min(spike_width.right, n)) = true;
+    end
+    if ~isnan(template_width.left) && ~isnan(template_width.right)
+        template_mask(template_width.left:min(template_width.right, n)) = true;
+    end
+
+    spike_wt = par.pk_weight;
+    if isempty(template_weight)
+        xor_wt = par.xor_weight;
+    else
+        xor_wt = template_weight;
+    end
+
+    weights = ones(1, n);
+    overlap = spike_mask & template_mask;
+    xor_region = (spike_mask | template_mask) & ~overlap;
+
+    % Preserve the algo switch behavior used by template matching experiments.
+    switch algo
+        case 'algo0'
+            % Baseline: no extra weighting.
+        case 'algo1'
+            weights(spike_mask) = spike_wt;
+        case 'algo2'
+            weights(overlap) = spike_wt;
+        case 'algo3'
+            weights(overlap) = spike_wt;
+            weights(xor_region) = xor_wt;
+        case 'algo4'
+            weights(spike_mask | template_mask) = spike_wt;
+        case 'algo5'
+            weights(template_mask) = spike_wt;
+        otherwise
+            % Unknown mode falls back to baseline behavior.
+    end
+
+    normConst = sqrt(n) / sqrt(sum(weights));
+end
+
+function width_struct = get_peak_width(spike_x, amp_dir)
     if strcmp(amp_dir, 'neg')
         wav = -spike_x;
     else
         wav = spike_x;
     end
-    [pks, locs, w, p] = findpeaks(wav);
-    
+    [pks, locs, ~, p] = findpeaks(wav);
+
     if ~isempty(pks)
         [pk, peak_loc] = max(pks);
         pk_loc = locs(peak_loc);
         prom_max = p(peak_loc);
 
-        level = pk - prom_max/2;
+        level = pk - prom_max / 2;
         above_level = find(wav >= level);
+
         if ~isempty(above_level)
-            % Find connected components
             diff_above = diff(above_level);
             breaks = find(diff_above > 1);
             segments = {};
             start_idx = 1;
             for b = 1:length(breaks)
-                segments{end+1} = above_level(start_idx:breaks(b));
+                segments{end + 1} = above_level(start_idx:breaks(b)); %#ok<AGROW>
                 start_idx = breaks(b) + 1;
             end
-            segments{end+1} = above_level(start_idx:end);
-            % Find segment containing peak_loc
+            segments{end + 1} = above_level(start_idx:end); %#ok<AGROW>
+
             peak_segment = [];
             for s = 1:length(segments)
                 if any(segments{s} == pk_loc)
@@ -164,6 +193,7 @@ function width_struct = compute_peak_width(spike_x, amp_dir)
                     break;
                 end
             end
+
             if ~isempty(peak_segment)
                 left_width = min(peak_segment);
                 right_width = max(peak_segment);
@@ -175,6 +205,7 @@ function width_struct = compute_peak_width(spike_x, amp_dir)
             left_width = NaN;
             right_width = NaN;
         end
+
         if left_width <= 0
             left_width = 1;
         end
@@ -185,7 +216,7 @@ function width_struct = compute_peak_width(spike_x, amp_dir)
         left_width = NaN;
         right_width = NaN;
     end
-    
+
     width_struct.left = left_width;
     width_struct.right = right_width;
 end
