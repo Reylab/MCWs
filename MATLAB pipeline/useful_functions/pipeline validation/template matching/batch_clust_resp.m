@@ -8,10 +8,12 @@ function batch_clust_resp(input,varargin)
     p = inputParser;
     addParameter(p, 'par', struct, @isstruct);
     addParameter(p, 'parallel', false, @islogical);
+    addParameter(p, 'class', [], @(x) isnumeric(x) || ischar(x));
     parse(p, varargin{:});
     
     par_input = p.Results.par;
     parallel = p.Results.parallel;
+    target_class = p.Results.class;
     filenames = {};
     
     if isnumeric(input) || any(strcmp(input,'all'))  %cases for numeric or 'all' input
@@ -199,11 +201,17 @@ function batch_clust_resp(input,varargin)
     
     
     %% Now you can run your different template matching algorithms in the respective folders
+    base_dir = pwd;
 
-    for i = 1:length(all_algo_folders)
+    % Optional: open parallel pool if user passed parallel=true
+    if parallel && isempty(gcp('nocreate'))
+        parpool;
+    end
+
+    % Use parfor to process the different algorithm folders in parallel
+    parfor i = 1:length(all_algo_folders)
         fprintf('\n=== Processing folder %d/%d: %s ===\n', i, length(all_algo_folders), all_algo_folders{i});
-        old_dir = pwd;
-        cd(all_algo_folders{i});
+        cd(fullfile(base_dir, all_algo_folders{i}));
         fprintf('  Current directory: %s\n', pwd);
         
         % Build the correct times filename based on input channel
@@ -221,7 +229,7 @@ function batch_clust_resp(input,varargin)
         
         if isempty(times_file)
             warning('No times file found matching pattern %s in %s. Skipping.', times_pattern, all_algo_folders{i});
-            cd(old_dir);
+            cd(base_dir);
             continue
         end
         fname_times = times_file(1).name;
@@ -229,7 +237,7 @@ function batch_clust_resp(input,varargin)
         data = load(fname_times);
         if ~isfield(data, 'spikes') || ~isfield(data, 'cluster_class')
             warning('Missing required variables in %s. Skipping.', fname_times);
-            cd(old_dir);
+            cd(base_dir);
             continue
         end
         spikes = data.spikes;
@@ -239,7 +247,7 @@ function batch_clust_resp(input,varargin)
         else
             forced = [];
         end
-
+        
         % Start each trial from original clustering by undoing previously forced assignments.
         % Extract classes from cluster_class (first column has cluster IDs)
         classes = cluster_class(:,1)';
@@ -247,14 +255,16 @@ function batch_clust_resp(input,varargin)
             forced_mask = logical(forced(:))';
             classes(forced_mask) = 0;
         end
-
+        
         f_in  = spikes(classes~=0,:);
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
+        
+        local_par = par; % Avoid modifying broadcast variable 'par' in parfor
         if contains(all_algo_folders{i}, 'sd1') || contains(all_algo_folders{i}, 'sdnum_1')
-            par.template_sdnum = 1;
+            local_par.template_sdnum = 1;
         else
-            par.template_sdnum = 3;
+            local_par.template_sdnum = 3;
         end
         
         if contains(all_algo_folders{i}, 'algo1')
@@ -273,10 +283,10 @@ function batch_clust_resp(input,varargin)
         
         % Apply force membership with tracking
         try
-            class_out = force_membership_wc(f_in, class_in, f_out, par, algo);
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
         catch ME
             fprintf('ERROR in force_membership_wc for %s: %s\n', all_algo_folders{i}, ME.message);
-            cd(old_dir);
+            cd(base_dir);
             continue
         end
         forced = classes==0;  % Mark which were originally unclassified
@@ -300,17 +310,17 @@ function batch_clust_resp(input,varargin)
         Do_clustering(input,'parallel',false,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
         fprintf('  Calling compute_metrics_batch...\n');
-        compute_metrics_batch(input,'parallel',parallel, 'save',true);
+        % Pass 'parallel', false to inner functions since outer loop is parallelized
+        compute_metrics_batch(input,'parallel',false, 'save',true);
         fprintf('  Done with algorithms in this folder.\n');
-        cd(old_dir);
+        cd(base_dir);
     end
 
     %% need to do response profile still then comparisons can be made visually across all methods by
     % comparing images
     all_folders = [orig_cluster_temp, all_algo_folders];
-    for i = 1:length(all_folders)
-        old_dir = pwd;
-        cd(all_folders{i});
+    parfor i = 1:length(all_folders)
+        cd(fullfile(base_dir, all_folders{i}));
         
         % DELTE ANY LEFTOVER GRAPES FILES TO PREVENT REPEATED RASTERS
         if exist('grapes_blanks.mat', 'file')
@@ -337,9 +347,47 @@ function batch_clust_resp(input,varargin)
                                 'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
                                 'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
                                 'circshiftblanks', false);
-        cd(old_dir);
+        cd(base_dir);
     end
 
+    %% Collect comparison images for requested class
+    if ~isempty(target_class)
+        if isnumeric(target_class)
+            class_str = num2str(target_class(1));
+        else
+            class_str = target_class;
+        end
+        
+        comp_folder = fullfile(base_dir, sprintf('Comparison_Class_%s', class_str));
+        if ~exist(comp_folder, 'dir')
+            mkdir(comp_folder);
+        end
+        
+        fprintf('\n=== Collecting comparison images for Class %s ===\n', class_str);
+        for i = 1:length(all_folders)
+            algo_name = all_folders{i};
+            % Use recursive search (**) to find files in any subfolder with "classX"
+            search_pattern = fullfile(base_dir, algo_name, '**', sprintf('*class*%s*.*', class_str));
+            found_images = dir(search_pattern);
+            
+            for f = 1:length(found_images)
+                % Filter out folders and non-images
+                [~, ~, ext] = fileparts(found_images(f).name);
+                valid_exts = {'.png', '.fig', '.jpg', '.jpeg', '.pdf', '.tif', '.bmp', '.emf'};
+                
+                % Strictly ensure it is pulling from the plot_grapes results folders
+                if found_images(f).isdir || ~any(strcmpi(ext, valid_exts)) || ~contains(lower(found_images(f).folder), 'grapes')
+                    continue;
+                end
+                
+                src_file = fullfile(found_images(f).folder, found_images(f).name);
+                % Prepend algorithm/SD folder name to prevent overwriting
+                dest_name = sprintf('%s_%s', algo_name, found_images(f).name);
+                copyfile(src_file, fullfile(comp_folder, dest_name));
+            end
+        end
+        fprintf('Saved copied comparison images to: %s\n', comp_folder);
+    end
 
 end
 
@@ -375,18 +423,7 @@ if ~exist(source, 'file')
     return
 end
 
-% Prefer hard links for large shared files to avoid redundant storage.
-if ispc
-    cmd = sprintf('cmd /c mklink /H "%s" "%s"', dest, source);
-    [status, ~] = system(cmd);
-    did_link = (status == 0);
-else
-    cmd = sprintf('ln "%s" "%s"', source, dest);
-    [status, ~] = system(cmd);
-    did_link = (status == 0);
-end
-
-if ~did_link
-    copyfile(source, dest);
-end
+% Create true copies for each folder to ensure independent processing
+% and proper OneDrive syncing.
+copyfile(source, dest);
 end
