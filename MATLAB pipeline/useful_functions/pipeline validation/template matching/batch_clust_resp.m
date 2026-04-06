@@ -87,8 +87,8 @@ function batch_clust_resp(input,varargin)
 
     % Stage shared files once per sd folder. Spike files are included so
     % downstream response-profile code can load *_spikes.mat locally.
-    shared_patterns = {'*times*.mat', '*NSx*.mat', '*stimulus*.mat', ...
-                       '*finalevents*.mat', '*experiment_properties_online3*.mat', '*.dg_01*'};
+    shared_patterns = {'times_*.mat', 'NSx.mat', 'NSX.mat', 'stimulus*.mat', ...
+                       'finalevents*.mat', 'experiment_properties_online3*.mat', '*.dg_01*'};
     shared_files = collect_files_from_patterns(shared_patterns);
     if isempty(shared_files)
         error('No shared pipeline files found in top-level directory');
@@ -100,6 +100,10 @@ function batch_clust_resp(input,varargin)
     end
     if ~isempty(spike_files)
         shared_files = unique([shared_files, spike_files], 'stable');
+    end
+    keep_times_files = cell(1, numel(filenames));
+    for k = 1:numel(filenames)
+        keep_times_files{k} = ['times_' filenames{k}(1:end-11) '.mat'];
     end
 
     for i = 1:length(orig_cluster_temp)
@@ -227,6 +231,11 @@ function batch_clust_resp(input,varargin)
         times_pattern = sprintf('times*%s*.mat', input_str);
         times_file = dir(times_pattern);
         
+        if ~isempty(times_file)
+            keep_idx = ~contains(lower({times_file.name}), '(run1)');
+            times_file = times_file(keep_idx);
+        end
+        
         if isempty(times_file)
             warning('No times file found matching pattern %s in %s. Skipping.', times_pattern, all_algo_folders{i});
             cd(base_dir);
@@ -251,7 +260,7 @@ function batch_clust_resp(input,varargin)
         % Start each trial from original clustering by undoing previously forced assignments.
         % Extract classes from cluster_class (first column has cluster IDs)
         classes = cluster_class(:,1)';
-        if exist('forced', 'var') && numel(forced) == numel(classes)
+        if ~isempty(forced) && numel(forced) == numel(classes)
             forced_mask = logical(forced(:))';
             classes(forced_mask) = 0;
         end
@@ -289,25 +298,27 @@ function batch_clust_resp(input,varargin)
             cd(base_dir);
             continue
         end
-        forced = classes==0;  % Mark which were originally unclassified
+        % Mark which were originally unclassified
+        forced_out = classes==0;  
         classes(classes==0) = class_out;
-        forced(classes==0) = 0;  % Unmark the newly classified ones
+        forced_out(classes==0) = 0;  % Unmark the newly classified ones
         
         % Update cluster_class with new classifications
         cluster_class(:,1) = classes(:);
         
-        % Save updated results to times file
-        save(fname_times, 'classes', 'cluster_class', 'forced', '-append');
+        % Save updated results to times file using a helper function to avoid parfor transparency issues
+        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
+        parsave_times(fname_times, save_data);
         fprintf('  Calling Do_clustering...\n');
-        param.min_clus = 15;
-        param.max_spk = 30000;
-        param.mintemp = 0.00;                  % minimum temperature for SPC
-        param.maxtemp = 0.251;                 % maximum temperature for SPC
-        param.tempstep = 0.01;
-        param.max_std_templates = 3;
-        param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
-        
-        Do_clustering(input,'parallel',false,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
+        % param.min_clus = 15;
+        % param.max_spk = 30000;
+        % param.mintemp = 0.00;                  % minimum temperature for SPC
+        % param.maxtemp = 0.251;                 % maximum temperature for SPC
+        % param.tempstep = 0.01;
+        % param.max_std_templates = 3;
+        % param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
+        % 
+        % Do_clustering(input,'parallel',false,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
         fprintf('  Calling compute_metrics_batch...\n');
         % Pass 'parallel', false to inner functions since outer loop is parallelized
@@ -322,31 +333,82 @@ function batch_clust_resp(input,varargin)
     parfor i = 1:length(all_folders)
         cd(fullfile(base_dir, all_folders{i}));
         
-        % DELTE ANY LEFTOVER GRAPES FILES TO PREVENT REPEATED RASTERS
-        if exist('grapes_blanks.mat', 'file')
-            delete 'grapes_blanks.mat'
+        % RENAME ANY LEFTOVER GRAPES FILES TO PRESERVE PREVIOUS RUNS AND AVOID REPEATS
+        c = 1;
+        while exist(fullfile(pwd, sprintf('grapes_blanks%d.mat', c)), 'file') || exist(fullfile(pwd, sprintf('grapes%d.mat', c)), 'file') || exist(fullfile(pwd, sprintf('grapes_offline%d', c)), 'dir')
+            c = c + 1;
         end
-        if exist('grapes.mat', 'file')
-            delete 'grapes.mat'
+        
+        if isfile(fullfile(pwd, 'grapes_blanks.mat'))
+            movefile(fullfile(pwd, 'grapes_blanks.mat'), fullfile(pwd, sprintf('grapes_blanks%d.mat', c)));
+        end
+        
+        if isfile(fullfile(pwd, 'grapes.mat'))
+            movefile(fullfile(pwd, 'grapes.mat'), fullfile(pwd, sprintf('grapes%d.mat', c)));
+        end
+        
+        if isfolder(fullfile(pwd, 'grapes_offline'))
+            movefile(fullfile(pwd, 'grapes_offline'), fullfile(pwd, sprintf('grapes_offline%d', c)));
         end
 
         do_structure_mu_BCM_online3(input,'RSVP_online', true, false,false)
 
         do_structure_sorted_BCM_online3(input, true,false, false)
 
-        stimlist = [7	8	12	25	28	39	43	49	81	82	86	95	96	103	125	150	176	177	204	228	236	266	292	324	414	420	472	482	503	531	587	611	613	615	696	738	744	770	785];
+        stimlist = [615	66	823	516	239	265	408	6	44	524	643	842	87	195	745	37	368	384	581	270];
         plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', stimlist, 'order_by_rank', false, ...
                                 'is_online', false, 'plot_best_stims_only', false, ...
                                 'copy2miniscrfolder',false, 'show_sel_count', true, ...
                                 'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
                                 'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
                                 'circshiftblanks', false);
-        plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', 'all', 'order_by_rank', true, ...
-                                'is_online', false, 'plot_best_stims_only', false, ...
-                                'copy2miniscrfolder',false, 'show_sel_count', true, ...
-                                'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
-                                'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
-                                'circshiftblanks', false);
+        % plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', 'all', 'order_by_rank', true, ...
+        %                         'is_online', false, 'plot_best_stims_only', false, ...
+        %                         'copy2miniscrfolder',false, 'show_sel_count', true, ...
+        %                         'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
+        %                         'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
+        %                         'circshiftblanks', false);
+        
+        cd(base_dir);
+    end
+
+    % Cleanup copied shared files after response profiling, but keep and
+    % label the requested channel times file(s) as (RUN1).
+    for i = 1:length(all_folders)
+        folder_path = fullfile(base_dir, all_folders{i});
+        cd(folder_path);
+
+        for k = 1:numel(keep_times_files)
+            keep_name = keep_times_files{k};
+            if exist(keep_name, 'file')
+                [~, keep_base, keep_ext] = fileparts(keep_name);
+                run1_name = [keep_base '(RUN1)' keep_ext];
+                if exist(run1_name, 'file')
+                    run1_idx = 2;
+                    while exist([keep_base '(RUN1)_' num2str(run1_idx) keep_ext], 'file')
+                        run1_idx = run1_idx + 1;
+                    end
+                    run1_name = [keep_base '(RUN1)_' num2str(run1_idx) keep_ext];
+                end
+                movefile(keep_name, run1_name);
+            end
+        end
+
+        for sf_idx = 1:length(shared_files)
+            src_name = shared_files{sf_idx};
+            if any(strcmp(src_name, keep_times_files))
+                continue
+            end
+            
+            % EXTRA FAIL-SAFE: Never delete ANY file that already has (RUN1) 
+            if contains(upper(src_name), '(RUN1)')
+                continue
+            end
+            
+            if exist(src_name, 'file')
+                delete(src_name);
+            end
+        end
         cd(base_dir);
     end
 
@@ -396,6 +458,14 @@ files = {};
 for k = 1:numel(patterns)
     d = dir(patterns{k});
     d = d(~[d.isdir]);
+    
+    % Explicitly filter out any backup, copy, or RUN1 files
+    if ~isempty(d)
+        names_lower = lower({d.name});
+        keep = ~contains(names_lower, 'copy') & ~contains(names_lower, '(run1)');
+        d = d(keep);
+    end
+    
     if isempty(d)
         continue
     end
@@ -426,4 +496,9 @@ end
 % Create true copies for each folder to ensure independent processing
 % and proper OneDrive syncing.
 copyfile(source, dest);
+end
+
+function parsave_times(fname, dataStruct)
+% Helper function for parfor transparency
+save(fname, '-struct', 'dataStruct', '-append');
 end
