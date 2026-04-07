@@ -212,22 +212,28 @@ function batch_clust_resp(input,stimlist,varargin)
         parpool;
     end
 
-    % Use parfor to process the different algorithm folders in parallel
-    parfor i = 1:length(all_algo_folders)
-        fprintf('\n=== Processing folder %d/%d: %s ===\n', i, length(all_algo_folders), all_algo_folders{i});
-        cd(fullfile(base_dir, all_algo_folders{i}));
+    % Separate folders: single-pass (sdnum_1, sdnum_3) vs double-pass (everything else)
+    single_pass_folders = orig_cluster_temp;  % {sdnum_1, sdnum_3}
+    double_pass_folders = setdiff(all_algo_folders, single_pass_folders, 'stable');
+    
+    % Helper function to get first pass template_sdnum based on folder name
+    get_first_pass_sdnum = @(foldername) ...
+        iif(contains(foldername, 'strt_sd1') || contains(foldername, 'sdnum_1'), 1, 3);
+    
+    % SINGLE-PASS processing (sdnum_1, sdnum_3):
+    parfor i = 1:length(single_pass_folders)
+        folder = single_pass_folders{i};
+        fprintf('\n=== Processing SINGLE-PASS folder %d/%d: %s ===\n', i, length(single_pass_folders), folder);
+        cd(fullfile(base_dir, folder));
         fprintf('  Current directory: %s\n', pwd);
         
         % Build the correct times filename based on input channel
-        % input is the channel number, construct the filename
         if isnumeric(input)
-            % Convert to string representation to search for times file
-            input_str = num2str(input(1)); % if input is array, use first element
+            input_str = num2str(input(1));
         else
             input_str = input;
         end
         
-        % Search for the specific times file matching this channel
         times_pattern = sprintf('times*%s*.mat', input_str);
         times_file = dir(times_pattern);
         
@@ -237,7 +243,7 @@ function batch_clust_resp(input,stimlist,varargin)
         end
         
         if isempty(times_file)
-            warning('No times file found matching pattern %s in %s. Skipping.', times_pattern, all_algo_folders{i});
+            warning('No times file found matching pattern %s in %s. Skipping.', times_pattern, folder);
             cd(base_dir);
             continue
         end
@@ -257,8 +263,6 @@ function batch_clust_resp(input,stimlist,varargin)
             forced = [];
         end
         
-        % Start each trial from original clustering by undoing previously forced assignments.
-        % Extract classes from cluster_class (first column has cluster IDs)
         classes = cluster_class(:,1)';
         if ~isempty(forced) && numel(forced) == numel(classes)
             forced_mask = logical(forced(:))';
@@ -269,61 +273,170 @@ function batch_clust_resp(input,stimlist,varargin)
         f_out = spikes(classes==0,:);
         class_in = classes(classes~=0);
         
-        local_par = par; % Avoid modifying broadcast variable 'par' in parfor
-        if contains(all_algo_folders{i}, 'sd1') || contains(all_algo_folders{i}, 'sdnum_1')
+        local_par = par;
+        if contains(folder, 'sdnum_1')
             local_par.template_sdnum = 1;
         else
             local_par.template_sdnum = 3;
         end
         
-        if contains(all_algo_folders{i}, 'algo1')
+        algo = 'algo0';
+        
+        try
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
+        catch ME
+            fprintf('ERROR in force_membership_wc for %s: %s\n', folder, ME.message);
+            cd(base_dir);
+            continue
+        end
+        forced_out = classes==0;
+        classes(classes==0) = class_out;
+        forced_out(classes==0) = 0;
+        
+        cluster_class(:,1) = classes(:);
+        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
+        parsave_times(fname_times, save_data);
+        
+        fprintf('  Calling compute_metrics_batch...\n');
+        compute_metrics_batch(input,'parallel',false, 'save',true);
+        fprintf('  Done with single-pass processing.\n');
+        cd(base_dir);
+    end
+    
+    % DOUBLE-PASS processing (sdnum_1_t_3, algo*_strt_sd1, algo*_strt_sd3):
+    parfor i = 1:length(double_pass_folders)
+        folder = double_pass_folders{i};
+        fprintf('\n=== Processing DOUBLE-PASS folder %d/%d: %s ===\n', i, length(double_pass_folders), folder);
+        cd(fullfile(base_dir, folder));
+        fprintf('  Current directory: %s\n', pwd);
+        
+        % Build the correct times filename based on input channel
+        if isnumeric(input)
+            input_str = num2str(input(1));
+        else
+            input_str = input;
+        end
+        
+        times_pattern = sprintf('times*%s*.mat', input_str);
+        times_file = dir(times_pattern);
+        
+        if ~isempty(times_file)
+            keep_idx = ~contains(lower({times_file.name}), '(run1)');
+            times_file = times_file(keep_idx);
+        end
+        
+        if isempty(times_file)
+            warning('No times file found matching pattern %s in %s. Skipping.', times_pattern, folder);
+            cd(base_dir);
+            continue
+        end
+        fname_times = times_file(1).name;
+        fprintf('  Found times file: %s\n', fname_times);
+        
+        % Determine algorithm for both passes
+        if contains(folder, 'algo1')
             algo = 'algo1';
-        elseif contains(all_algo_folders{i}, 'algo2')
+        elseif contains(folder, 'algo2')
             algo = 'algo2';
-        elseif contains(all_algo_folders{i}, 'algo3')
+        elseif contains(folder, 'algo3')
             algo = 'algo3';
-        elseif contains(all_algo_folders{i}, 'algo4')
+        elseif contains(folder, 'algo4')
             algo = 'algo4';
-        elseif contains(all_algo_folders{i}, 'algo5')
+        elseif contains(folder, 'algo5')
             algo = 'algo5';
         else
             algo = 'algo0';
         end
         
-        % Apply force membership with tracking
-        try
-            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
-        catch ME
-            fprintf('ERROR in force_membership_wc for %s: %s\n', all_algo_folders{i}, ME.message);
+        % Determine first pass template_sdnum
+        first_pass_sdnum = get_first_pass_sdnum(folder);
+        
+        % ===== PASS 1 =====
+        fprintf('  [PASS 1 - sdnum=%d]\n', first_pass_sdnum);
+        data = load(fname_times);
+        if ~isfield(data, 'spikes') || ~isfield(data, 'cluster_class')
+            warning('Missing required variables in %s. Skipping.', fname_times);
             cd(base_dir);
             continue
         end
-        % Mark which were originally unclassified
-        forced_out = classes==0;  
+        spikes = data.spikes;
+        cluster_class = data.cluster_class;
+        if isfield(data, 'forced')
+            forced = data.forced;
+        else
+            forced = [];
+        end
+        
+        classes = cluster_class(:,1)';
+        if ~isempty(forced) && numel(forced) == numel(classes)
+            forced_mask = logical(forced(:))';
+            classes(forced_mask) = 0;
+        end
+        
+        f_in  = spikes(classes~=0,:);
+        f_out = spikes(classes==0,:);
+        class_in = classes(classes~=0);
+        
+        local_par = par;
+        local_par.template_sdnum = first_pass_sdnum;
+        
+        try
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
+        catch ME
+            fprintf('ERROR in force_membership_wc for %s (Pass 1): %s\n', folder, ME.message);
+            cd(base_dir);
+            continue
+        end
+        forced_out = classes==0;
         classes(classes==0) = class_out;
-        forced_out(classes==0) = 0;  % Unmark the newly classified ones
+        forced_out(classes==0) = 0;
         
-        % Update cluster_class with new classifications
         cluster_class(:,1) = classes(:);
-        
-        % Save updated results to times file using a helper function to avoid parfor transparency issues
         save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
         parsave_times(fname_times, save_data);
-        fprintf('  Calling Do_clustering...\n');
-        % param.min_clus = 15;
-        % param.max_spk = 30000;
-        % param.mintemp = 0.00;                  % minimum temperature for SPC
-        % param.maxtemp = 0.251;                 % maximum temperature for SPC
-        % param.tempstep = 0.01;
-        % param.max_std_templates = 3;
-        % param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
-        % 
-        % Do_clustering(input,'parallel',false,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
-
-        fprintf('  Calling compute_metrics_batch...\n');
-        % Pass 'parallel', false to inner functions since outer loop is parallelized
+        
+        % ===== PASS 2 (always with sdnum=3) =====
+        fprintf('  [PASS 2 - sdnum=3, starting from Pass 1 classifications]\n');
+        data = load(fname_times);  % Reload to get Pass 1 results
+        spikes = data.spikes;
+        cluster_class = data.cluster_class;
+        if isfield(data, 'forced')
+            forced = data.forced;
+        else
+            forced = [];
+        end
+        
+        classes = cluster_class(:,1)';
+        if ~isempty(forced) && numel(forced) == numel(classes)
+            forced_mask = logical(forced(:))';
+            classes(forced_mask) = 0;
+        end
+        
+        f_in  = spikes(classes~=0,:);
+        f_out = spikes(classes==0,:);
+        class_in = classes(classes~=0);
+        
+        local_par = par;
+        local_par.template_sdnum = 3;  % Pass 2 always uses sdnum=3
+        
+        try
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
+        catch ME
+            fprintf('ERROR in force_membership_wc for %s (Pass 2): %s\n', folder, ME.message);
+            cd(base_dir);
+            continue
+        end
+        forced_out = classes==0;
+        classes(classes==0) = class_out;
+        forced_out(classes==0) = 0;
+        
+        cluster_class(:,1) = classes(:);
+        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
+        parsave_times(fname_times, save_data);
+        
+        fprintf('  Calling compute_metrics_batch (after both passes)...\n');
         compute_metrics_batch(input,'parallel',false, 'save',true);
-        fprintf('  Done with algorithms in this folder.\n');
+        fprintf('  Done with double-pass processing.\n');
         cd(base_dir);
     end
 
