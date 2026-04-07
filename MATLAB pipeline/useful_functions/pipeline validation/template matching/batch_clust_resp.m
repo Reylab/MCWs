@@ -1,4 +1,4 @@
-function batch_clust_resp(input,varargin)
+function batch_clust_resp(input,stimlist,varargin)
 % this function will test a given channel over various
 % methods of doing the template matching
 % comparisons will be made via response profiling
@@ -355,7 +355,7 @@ function batch_clust_resp(input,varargin)
 
         do_structure_sorted_BCM_online3(input, true,false, false)
 
-        stimlist = [615	66	823	516	239	265	408	6	44	524	643	842	87	195	745	37	368	384	581	270];
+        %stimlist = [107 36 121 172 149 70 598 120 163 180 48 106 521 61 64 166 176 96 58 53];
         plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', stimlist, 'order_by_rank', false, ...
                                 'is_online', false, 'plot_best_stims_only', false, ...
                                 'copy2miniscrfolder',false, 'show_sel_count', true, ...
@@ -429,7 +429,7 @@ function batch_clust_resp(input,varargin)
         for i = 1:length(all_folders)
             algo_name = all_folders{i};
             % Use recursive search (**) to find files in any subfolder with "classX"
-            search_pattern = fullfile(base_dir, algo_name, '**', sprintf('*class*%s*.*', class_str));
+            search_pattern = fullfile(base_dir, algo_name, '**', sprintf('*class%s*', class_str));
             found_images = dir(search_pattern);
             
             for f = 1:length(found_images)
