@@ -17,9 +17,9 @@ function index = nearest_neighbor(spike_x, tmplt_vect, maxdist, par_or_pointdist
     end
 
     par = par_or_pointdist;
-    if ~isfield(par, 'pk_weight'), par.pk_weight = 1; end
+    if ~isfield(par, 'pk_weight'), par.pk_weight = 50; end
     if ~isfield(par, 'amp_dir'), par.amp_dir = 'neg'; end
-    if ~isfield(par, 'xor_weight'), par.xor_weight = 3; end
+    if ~isfield(par, 'xor_weight'), par.xor_weight = 5; end
 
     % Support positional algo argument, e.g. nearest_neighbor(..., par, 'algo3').
     algo = 'algo0';

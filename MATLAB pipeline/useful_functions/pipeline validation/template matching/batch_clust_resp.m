@@ -130,6 +130,11 @@ function batch_clust_resp(input,stimlist,varargin)
     if ~exist(folder_algo1_strt_sd3, 'dir')
         mkdir(folder_algo1_strt_sd3);
     end 
+
+    folder_algo1_strt_sd3_t_1 = sprintf('algo1_strt_sd3_t_1');
+    if ~exist(folder_algo1_strt_sd3_t_1, 'dir')
+        mkdir(folder_algo1_strt_sd3_t_1);
+    end
     
     folder_algo2_strt_sd1 = sprintf('algo2_strt_sd1');
     if ~exist(folder_algo2_strt_sd1, 'dir')
@@ -139,6 +144,11 @@ function batch_clust_resp(input,stimlist,varargin)
     folder_algo2_strt_sd3 = sprintf('algo2_strt_sd3');
     if ~exist(folder_algo2_strt_sd3, 'dir')
         mkdir(folder_algo2_strt_sd3);
+    end
+
+    folder_algo2_strt_sd3_t_1 = sprintf('algo2_strt_sd3_t_1');
+    if ~exist(folder_algo2_strt_sd3_t_1, 'dir')
+        mkdir(folder_algo2_strt_sd3_t_1);
     end
 
     folder_algo3_strt_sd1 = sprintf('algo3_strt_sd1');
@@ -151,6 +161,11 @@ function batch_clust_resp(input,stimlist,varargin)
         mkdir(folder_algo3_strt_sd3);
     end
 
+    folder_algo3_strt_sd3_t_1 = sprintf('algo3_strt_sd3_t_1');
+    if ~exist(folder_algo3_strt_sd3_t_1, 'dir')
+        mkdir(folder_algo3_strt_sd3_t_1);
+    end
+
     folder_algo4_strt_sd1 = sprintf('algo4_strt_sd1');
     if ~exist(folder_algo4_strt_sd1, 'dir')
         mkdir(folder_algo4_strt_sd1);
@@ -159,6 +174,11 @@ function batch_clust_resp(input,stimlist,varargin)
     folder_algo4_strt_sd3 = sprintf('algo4_strt_sd3');
     if ~exist(folder_algo4_strt_sd3, 'dir')
         mkdir(folder_algo4_strt_sd3);
+    end
+
+    folder_algo4_strt_sd3_t_1 = sprintf('algo4_strt_sd3_t_1');
+    if ~exist(folder_algo4_strt_sd3_t_1, 'dir')
+        mkdir(folder_algo4_strt_sd3_t_1);
     end
 
     folder_algo5_strt_sd1 = sprintf('algo5_strt_sd1');
@@ -171,10 +191,16 @@ function batch_clust_resp(input,stimlist,varargin)
         mkdir(folder_algo5_strt_sd3);
     end
 
+    folder_algo5_strt_sd3_t_1 = sprintf('algo5_strt_sd3_t_1');
+    if ~exist(folder_algo5_strt_sd3_t_1, 'dir')
+        mkdir(folder_algo5_strt_sd3_t_1);
+    end
+
     %% Copy clustering results to appropriate folders
     % Copy sd_1 results to folders that start with sd_1
     sd1_folders = {folder_sd_1, folder_sd_1_t_3, folder_algo1_strt_sd1, folder_algo2_strt_sd1, folder_algo3_strt_sd1, folder_algo4_strt_sd1, folder_algo5_strt_sd1};
-    sd3_folders = {folder_sd_3, folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3};
+    sd3_folders = {folder_sd_3, folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3, ...
+        folder_algo1_strt_sd3_t_1, folder_algo2_strt_sd3_t_1, folder_algo3_strt_sd3_t_1, folder_algo4_strt_sd3_t_1, folder_algo5_strt_sd3_t_1};
     all_algo_folders = [sd1_folders, sd3_folders];
     
     required_names = unique(shared_files, 'stable');
@@ -215,10 +241,6 @@ function batch_clust_resp(input,stimlist,varargin)
     % Separate folders: single-pass (sdnum_1, sdnum_3) vs double-pass (everything else)
     single_pass_folders = orig_cluster_temp;  % {sdnum_1, sdnum_3}
     double_pass_folders = setdiff(all_algo_folders, single_pass_folders, 'stable');
-    
-    % Helper function to get first pass template_sdnum based on folder name
-    get_first_pass_sdnum = @(foldername) ...
-        iif(contains(foldername, 'strt_sd1') || contains(foldername, 'sdnum_1'), 1, 3);
     
     % SINGLE-PASS processing (sdnum_1, sdnum_3):
     parfor i = 1:length(single_pass_folders)
@@ -294,8 +316,10 @@ function batch_clust_resp(input,stimlist,varargin)
         forced_out(classes==0) = 0;
         
         cluster_class(:,1) = classes(:);
-        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
-        parsave_times(fname_times, save_data);
+        data.classes = classes;
+        data.cluster_class = cluster_class;
+        data.forced = forced_out;
+        parsave_times(fname_times, data);
         
         fprintf('  Calling compute_metrics_batch...\n');
         compute_metrics_batch(input,'parallel',false, 'save',true);
@@ -333,23 +357,27 @@ function batch_clust_resp(input,stimlist,varargin)
         fname_times = times_file(1).name;
         fprintf('  Found times file: %s\n', fname_times);
         
-        % Determine algorithm for both passes
+        % Determine algorithm for Pass 2 (Pass 1 always uses algo0)
         if contains(folder, 'algo1')
-            algo = 'algo1';
+            algo_pass2 = 'algo1';
         elseif contains(folder, 'algo2')
-            algo = 'algo2';
+            algo_pass2 = 'algo2';
         elseif contains(folder, 'algo3')
-            algo = 'algo3';
+            algo_pass2 = 'algo3';
         elseif contains(folder, 'algo4')
-            algo = 'algo4';
+            algo_pass2 = 'algo4';
         elseif contains(folder, 'algo5')
-            algo = 'algo5';
+            algo_pass2 = 'algo5';
         else
-            algo = 'algo0';
+            algo_pass2 = 'algo0';
         end
         
-        % Determine first pass template_sdnum
-        first_pass_sdnum = get_first_pass_sdnum(folder);
+        % Determine first pass template_sdnum from folder naming.
+        if contains(folder, 'strt_sd1') || contains(folder, 'sdnum_1')
+            first_pass_sdnum = 1;
+        else
+            first_pass_sdnum = 3;
+        end
         
         % ===== PASS 1 =====
         fprintf('  [PASS 1 - sdnum=%d]\n', first_pass_sdnum);
@@ -379,9 +407,10 @@ function batch_clust_resp(input,stimlist,varargin)
         
         local_par = par;
         local_par.template_sdnum = first_pass_sdnum;
+        algo_pass1 = 'algo0';  % Pass 1 always uses baseline algorithm
         
         try
-            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo_pass1);
         catch ME
             fprintf('ERROR in force_membership_wc for %s (Pass 1): %s\n', folder, ME.message);
             cd(base_dir);
@@ -392,11 +421,17 @@ function batch_clust_resp(input,stimlist,varargin)
         forced_out(classes==0) = 0;
         
         cluster_class(:,1) = classes(:);
-        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
-        parsave_times(fname_times, save_data);
+        data.classes = classes;
+        data.cluster_class = cluster_class;
+        data.forced = forced_out;
+        parsave_times(fname_times, data);
         
-        % ===== PASS 2 (always with sdnum=3) =====
-        fprintf('  [PASS 2 - sdnum=3, starting from Pass 1 classifications]\n');
+        % ===== PASS 2 =====
+        pass2_sdnum = 3;
+        if contains(folder, '_t_1')
+            pass2_sdnum = 1;
+        end
+        fprintf('  [PASS 2 - sdnum=%d, starting from Pass 1 classifications]\n', pass2_sdnum);
         data = load(fname_times);  % Reload to get Pass 1 results
         spikes = data.spikes;
         cluster_class = data.cluster_class;
@@ -417,10 +452,10 @@ function batch_clust_resp(input,stimlist,varargin)
         class_in = classes(classes~=0);
         
         local_par = par;
-        local_par.template_sdnum = 3;  % Pass 2 always uses sdnum=3
+        local_par.template_sdnum = pass2_sdnum;
         
         try
-            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
+            class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo_pass2);
         catch ME
             fprintf('ERROR in force_membership_wc for %s (Pass 2): %s\n', folder, ME.message);
             cd(base_dir);
@@ -431,8 +466,10 @@ function batch_clust_resp(input,stimlist,varargin)
         forced_out(classes==0) = 0;
         
         cluster_class(:,1) = classes(:);
-        save_data = struct('classes', classes, 'cluster_class', cluster_class, 'forced', forced_out);
-        parsave_times(fname_times, save_data);
+        data.classes = classes;
+        data.cluster_class = cluster_class;
+        data.forced = forced_out;
+        parsave_times(fname_times, data);
         
         fprintf('  Calling compute_metrics_batch (after both passes)...\n');
         compute_metrics_batch(input,'parallel',false, 'save',true);
@@ -442,7 +479,7 @@ function batch_clust_resp(input,stimlist,varargin)
 
     %% need to do response profile still then comparisons can be made visually across all methods by
     % comparing images
-    all_folders = [orig_cluster_temp, all_algo_folders];
+    all_folders = unique([orig_cluster_temp, all_algo_folders], 'stable');
     parfor i = 1:length(all_folders)
         cd(fullfile(base_dir, all_folders{i}));
         
@@ -464,17 +501,23 @@ function batch_clust_resp(input,stimlist,varargin)
             movefile(fullfile(pwd, 'grapes_offline'), fullfile(pwd, sprintf('grapes_offline%d', c)));
         end
 
-        do_structure_mu_BCM_online3(input,'RSVP_online', true, false,false)
+        try
+            do_structure_mu_BCM_online3(input,'RSVP_online', true, false,false)
 
-        do_structure_sorted_BCM_online3(input, true,false, false)
+            do_structure_sorted_BCM_online3(input, true,false, false)
 
-        %stimlist = [107 36 121 172 149 70 598 120 163 180 48 106 521 61 64 166 176 96 58 53];
-        plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', stimlist, 'order_by_rank', false, ...
-                                'is_online', false, 'plot_best_stims_only', false, ...
-                                'copy2miniscrfolder',false, 'show_sel_count', true, ...
-                                'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
-                                'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
-                                'circshiftblanks', false);
+            %stimlist = [107 36 121 172 149 70 598 120 163 180 48 106 521 61 64 166 176 96 58 53];
+            plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', stimlist, 'order_by_rank', false, ...
+                                    'is_online', false, 'plot_best_stims_only', false, ...
+                                    'copy2miniscrfolder',false, 'show_sel_count', true, ...
+                                    'show_best_stims_wins', true, 'best_stims_nwins', 8, ...
+                                    'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', true, ...
+                                    'circshiftblanks', false);
+        catch ME
+            warning('Response profiling failed in folder %s: %s', all_folders{i}, ME.message);
+            cd(base_dir);
+            continue
+        end
         % plot_grapes_as_online('grapes_offline',true,'channels2plot',input, 'stim_list', 'all', 'order_by_rank', true, ...
         %                         'is_online', false, 'plot_best_stims_only', false, ...
         %                         'copy2miniscrfolder',false, 'show_sel_count', true, ...
@@ -612,6 +655,49 @@ copyfile(source, dest);
 end
 
 function parsave_times(fname, dataStruct)
-% Helper function for parfor transparency
-save(fname, '-struct', 'dataStruct', '-append');
+% Avoid -append in parallel jobs because some synced/networked filesystems
+% do not support the random-access write pattern MATLAB uses for append.
+target_dir = fileparts(fname);
+if isempty(target_dir)
+    target_dir = pwd;
+end
+
+is_remote_path = contains(lower(target_dir), '/gvfs/') || contains(lower(target_dir), 'smb-share:');
+if is_remote_path
+    % GVFS/SMB can fail even when creating temporary MAT files in-place.
+    temp_root = tempdir;
+else
+    temp_root = target_dir;
+end
+
+tmp_file = [tempname(temp_root) '.mat'];
+
+try
+    save(tmp_file, '-struct', 'dataStruct', '-v7');
+catch
+    % Fallback for larger variables that require HDF5 MAT format.
+    save(tmp_file, '-struct', 'dataStruct', '-v7.3');
+end
+
+dest_tmp = [fname '.new'];
+if exist(dest_tmp, 'file')
+    delete(dest_tmp);
+end
+[ok, msg] = copyfile(tmp_file, dest_tmp, 'f');
+
+if exist(tmp_file, 'file')
+    delete(tmp_file);
+end
+
+if ~ok
+    error('parsave_times:WriteFailed', 'Unable to write file %s: %s', fname, msg);
+end
+
+if exist(fname, 'file')
+    delete(fname);
+end
+[ok2, msg2] = movefile(dest_tmp, fname, 'f');
+if ~ok2
+    error('parsave_times:WriteFailed', 'Unable to finalize file %s: %s', fname, msg2);
+end
 end

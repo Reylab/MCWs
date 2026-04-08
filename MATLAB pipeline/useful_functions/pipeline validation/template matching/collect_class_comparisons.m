@@ -24,7 +24,7 @@ function collect_class_comparisons(channel, classes)
     % Define the target folders to search (matching batch_clust_resp.m)
     orig_clusters = {'sdnum_1', 'sdnum_3', 'sdnum_1_t_3'};
     algo_bases = {'algo1', 'algo2', 'algo3', 'algo4', 'algo5'};
-    sd_bases = {'sd1', 'sd3'};
+    sd_bases = {'sd1', 'sd3', 'sd3_t_1'};
     
     algo_folders = orig_clusters;
     for i = 1:length(algo_bases)
