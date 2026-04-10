@@ -27,6 +27,13 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     spike_times_ms = double(cluster_class(:,2));
     unique_clusters = unique(cluster_ids);
     recording_duration_ms = max(spike_times_ms);
+    
+    % Extract forced field if available (indicates which spikes were force-classified)
+    if isfield(data, 'forced') && ~isempty(data.forced)
+        forced = logical(data.forced);
+    else
+        forced = false(size(cluster_ids));
+    end
 
     if p.Results.calc_metrics
         [df_metrics, SS] = compute_cluster_metrics(data, 'exclude_cluster_0', p.Results.exclude_cluster_0, ...
@@ -41,37 +48,73 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     figs = {};
     leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; 0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; 0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
     
-    % --- Paging Logic ---
+    % ========== PRE-CALCULATE GLOBAL Y-LIMITS (ALL CLUSTERS) ==========
+    % Compute y-limits from ALL clusters (matches Do_clustering & wave_clus)
+    ylimit_global = [];
+    for all_c_idx = 1:numel(unique_clusters)
+        cid_temp = unique_clusters(all_c_idx);
+        mask_temp = (cluster_ids == cid_temp);
+        W_temp = waveforms(mask_temp, :);
+        if ~isempty(W_temp)
+            ylim_temp = [min(W_temp(:)), max(W_temp(:))];
+            if isempty(ylimit_global)
+                ylimit_global = ylim_temp;
+            else
+                ylimit_global = [min(ylimit_global(1), ylim_temp(1)), max(ylimit_global(2), ylim_temp(2))];
+            end
+        end
+    end
+    % Apply padding to global y-limits
+    if ~isempty(ylimit_global)
+        y_padding = 0.1 * (ylimit_global(2) - ylimit_global(1));
+        ylimit_global = [ylimit_global(1) - y_padding, ylimit_global(2) + y_padding];
+    end
+    
+    % --- Paging Logic (max 5 clusters per page = 3x6 grid with summary col) ---
+    clusters_per_page = 5;  % Fixed to match 3x6 grid: 1 summary + 5 cluster cols
     pages = {};
     K = numel(unique_clusters);
-    for i = 1:p.Results.clusters_per_page:K
-        pages{end+1} = unique_clusters(i:min(i+p.Results.clusters_per_page-1,K));
+    for i = 1:clusters_per_page:K
+        pages{end+1} = unique_clusters(i:min(i+clusters_per_page-1,K));
     end
 
     % --- Summary + per-page plotting ---
     for page_i = 1:length(pages)
         page = pages{page_i};
 
-        % Reorder page 1 to put cluster 0 last
+        % Reorder page 1: put cluster 0 at the END (rightmost position on page 1)
         if page_i == 1
             idx_0 = find(page == 0, 1);
             if ~isempty(idx_0)
                 page(idx_0) = []; 
-                page(end+1) = 0;
+                page = [page, 0];  % Append cluster 0 to the right
             end
         end
 
         nclusters_on_page = numel(page);
-        ncols = 1 + nclusters_on_page; % 1 summary + clusters
+        ncols = 6;  % FIXED: 1 summary + 5 cluster columns (3x6 grid)
 
         if p.Results.show_figures
             visstr = 'on';
         end
-        fig = figure('Visible', visstr, 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
+        fig = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
+                    'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                    'RendererMode', 'manual', 'Renderer', 'painters');
 
-        % grid 3 rows x ncols
+        % Use pre-computed GLOBAL y-limits (matches Do_clustering & wave_clus)
+        ylimit = ylimit_global;
+
+        % grid 3 rows x 6 columns (fixed layout)
         for col = 1:ncols
-            if col == 1
+            % Leave empty subplots for unused cluster positions on this page
+            if col > (1 + nclusters_on_page)
+                subplot(3, ncols, col);
+                axis off;
+                subplot(3, ncols, col + ncols);
+                axis off;
+                subplot(3, ncols, col + 2*ncols);
+                axis off;
+            elseif col == 1
                 % --- SUMMARY COLUMN ---
                 ax1 = subplot(3, ncols, 1);
                 hold(ax1,'on');
@@ -150,13 +193,23 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 xlabel_str = 'Samples';
                 
                 plot(axW, tvec, W(idx,:)', 'Color', [colc, 0.15], 'LineWidth', 0.8); 
-                plot(axW, tvec, mean(W,1), 'Color', 'k', 'LineWidth', 2.4); 
-                title(axW, sprintf('Cluster %d (n=%d)', cid, sum(mask)), 'FontSize', 10);
+                plot(axW, tvec, mean(W,1), 'Color', 'k', 'LineWidth', 2.4);
+                
+                % Calculate unforced spike count (spikes that weren't force-classified)
+                n_unforced = sum(mask & ~forced');
+                
+                % Updated title format matching Do_clustering
+                title(axW, sprintf('Cluster %d: # %d (%d)', cid, n_here, n_unforced), 'FontSize', 10);
                 xlabel(axW, xlabel_str);
                 ylabel(axW, 'Amplitude');
                 grid(axW, 'on');
                 box(axW, 'off');
                 set(axW, 'GridAlpha', 0.25, 'LineWidth', 0.8);
+                
+                % Apply uniform y-axis scaling to all cluster waveforms
+                if ~isempty(ylimit)
+                    ylim(axW, ylimit);
+                end
 
                 % Density image (row2) - match Python layout
                 axD = subplot(3,ncols, col + ncols);
@@ -207,7 +260,9 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             % layout: try square-ish grid
             ncols = ceil(sqrt(npairs));
             nrows = ceil(npairs / ncols);
-            fig_corr = figure('Visible', visstr, 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
+            fig_corr = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
+                             'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                             'RendererMode', 'manual', 'Renderer', 'painters');
             for pi = 1:npairs
                 ax = subplot(nrows, ncols, pi);
                 a = cluster_list(pairs(pi,1));
@@ -342,7 +397,9 @@ end
 
 function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids)
     % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
-    figM = figure('Visible', visstr, 'Units','normalized','Position',[0.1 0.1 0.8 0.8]);
+    figM = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
+                 'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                 'RendererMode', 'manual', 'Renderer', 'painters');
 
     exclude = {'cluster_id', 'snr', 'SNR', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
     cols = df_metrics.Properties.VariableNames;
@@ -630,16 +687,14 @@ function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duratio
     xt_idx = max(1, min(time_pixels, xt_idx));
     xt_vals_min = t_grid_min(xt_idx); 
 
-    scale_factor = 10;
-    xt_lbls = arrayfun(@(v) sprintf('%.2f', v * scale_factor), xt_vals_min, 'UniformOutput', false);
-    if numel(unique(xt_lbls)) < numel(xt_lbls)
-        xt_lbls = arrayfun(@(v) sprintf('%.3f', v * scale_factor), xt_vals_min, 'UniformOutput', false);
-    end
+    % Use %g format to avoid unnecessary decimals
+    xt_lbls = arrayfun(@(v) sprintf('%g', v), xt_vals_min, 'UniformOutput', false);
     set(ax, 'XTick', xt_idx, 'XTickLabel', xt_lbls, 'XColor', [0 0 0]);
+    set(ax, 'DataAspectRatio', [1 1 1]);
 
     set(ax, 'YTick', 1:K, 'YTickLabel', arrayfun(@(c)sprintf('%d', c), clusters, 'UniformOutput', false), 'YColor', [0 0 0]);
 
-    xlabel(ax, 'Time (min) \times10', 'Color', [0 0 0]);
+    xlabel(ax, 'Time (min)', 'Color', [0 0 0]);
     ylabel(ax, 'Cluster', 'Color', [0 0 0]);
     set(ax, 'YDir', 'reverse');
     set(ax, 'Visible', 'on');
