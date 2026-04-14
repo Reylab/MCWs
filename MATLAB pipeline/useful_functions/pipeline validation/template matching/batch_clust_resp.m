@@ -121,19 +121,19 @@ function batch_clust_resp(input,stimlist,varargin)
         mkdir(folder_sd_1_t_3);
     end
 
-    folder_algo1_strt_sd1 = sprintf('algo1_strt_sd1');
-    if ~exist(folder_algo1_strt_sd1, 'dir')
-        mkdir(folder_algo1_strt_sd1);
-    end 
-    
     folder_algo1_strt_sd3 = sprintf('algo1_strt_sd3');
     if ~exist(folder_algo1_strt_sd3, 'dir')
         mkdir(folder_algo1_strt_sd3);
     end 
+    
+    folder_algo1_strt_sd1 = sprintf('algo1_strt_sd1');
+    if ~exist(folder_algo1_strt_sd1, 'dir')
+        mkdir(folder_algo1_strt_sd1);
+    end 
 
-    folder_algo1_strt_sd3_t_1 = sprintf('algo1_strt_sd3_t_1');
-    if ~exist(folder_algo1_strt_sd3_t_1, 'dir')
-        mkdir(folder_algo1_strt_sd3_t_1);
+    folder_algo2_strt_sd3 = sprintf('algo2_strt_sd3');
+    if ~exist(folder_algo2_strt_sd3, 'dir')
+        mkdir(folder_algo2_strt_sd3);
     end
     
     folder_algo2_strt_sd1 = sprintf('algo2_strt_sd1');
@@ -141,66 +141,40 @@ function batch_clust_resp(input,stimlist,varargin)
         mkdir(folder_algo2_strt_sd1);
     end
 
-    folder_algo2_strt_sd3 = sprintf('algo2_strt_sd3');
-    if ~exist(folder_algo2_strt_sd3, 'dir')
-        mkdir(folder_algo2_strt_sd3);
-    end
-
-    folder_algo2_strt_sd3_t_1 = sprintf('algo2_strt_sd3_t_1');
-    if ~exist(folder_algo2_strt_sd3_t_1, 'dir')
-        mkdir(folder_algo2_strt_sd3_t_1);
-    end
-
-    folder_algo3_strt_sd1 = sprintf('algo3_strt_sd1');
-    if ~exist(folder_algo3_strt_sd1, 'dir')
-        mkdir(folder_algo3_strt_sd1);
-    end
-
     folder_algo3_strt_sd3 = sprintf('algo3_strt_sd3');
     if ~exist(folder_algo3_strt_sd3, 'dir')
         mkdir(folder_algo3_strt_sd3);
     end
-
-    folder_algo3_strt_sd3_t_1 = sprintf('algo3_strt_sd3_t_1');
-    if ~exist(folder_algo3_strt_sd3_t_1, 'dir')
-        mkdir(folder_algo3_strt_sd3_t_1);
-    end
-
-    folder_algo4_strt_sd1 = sprintf('algo4_strt_sd1');
-    if ~exist(folder_algo4_strt_sd1, 'dir')
-        mkdir(folder_algo4_strt_sd1);
+    
+    folder_algo3_strt_sd1 = sprintf('algo3_strt_sd1');
+    if ~exist(folder_algo3_strt_sd1, 'dir')
+        mkdir(folder_algo3_strt_sd1);
     end
 
     folder_algo4_strt_sd3 = sprintf('algo4_strt_sd3');
     if ~exist(folder_algo4_strt_sd3, 'dir')
         mkdir(folder_algo4_strt_sd3);
     end
-
-    folder_algo4_strt_sd3_t_1 = sprintf('algo4_strt_sd3_t_1');
-    if ~exist(folder_algo4_strt_sd3_t_1, 'dir')
-        mkdir(folder_algo4_strt_sd3_t_1);
-    end
-
-    folder_algo5_strt_sd1 = sprintf('algo5_strt_sd1');
-    if ~exist(folder_algo5_strt_sd1, 'dir')
-        mkdir(folder_algo5_strt_sd1);
+    
+    folder_algo4_strt_sd1 = sprintf('algo4_strt_sd1');
+    if ~exist(folder_algo4_strt_sd1, 'dir')
+        mkdir(folder_algo4_strt_sd1);
     end
 
     folder_algo5_strt_sd3 = sprintf('algo5_strt_sd3');
     if ~exist(folder_algo5_strt_sd3, 'dir')
         mkdir(folder_algo5_strt_sd3);
     end
-
-    folder_algo5_strt_sd3_t_1 = sprintf('algo5_strt_sd3_t_1');
-    if ~exist(folder_algo5_strt_sd3_t_1, 'dir')
-        mkdir(folder_algo5_strt_sd3_t_1);
+    
+    folder_algo5_strt_sd1 = sprintf('algo5_strt_sd1');
+    if ~exist(folder_algo5_strt_sd1, 'dir')
+        mkdir(folder_algo5_strt_sd1);
     end
 
     %% Copy clustering results to appropriate folders
     % Copy sd_1 results to folders that start with sd_1
     sd1_folders = {folder_sd_1, folder_sd_1_t_3, folder_algo1_strt_sd1, folder_algo2_strt_sd1, folder_algo3_strt_sd1, folder_algo4_strt_sd1, folder_algo5_strt_sd1};
-    sd3_folders = {folder_sd_3, folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3, ...
-        folder_algo1_strt_sd3_t_1, folder_algo2_strt_sd3_t_1, folder_algo3_strt_sd3_t_1, folder_algo4_strt_sd3_t_1, folder_algo5_strt_sd3_t_1};
+    sd3_folders = {folder_sd_3, folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3};
     all_algo_folders = [sd1_folders, sd3_folders];
     
     required_names = unique(shared_files, 'stable');
@@ -238,9 +212,9 @@ function batch_clust_resp(input,stimlist,varargin)
         parpool;
     end
 
-    % Separate folders: single-pass (sdnum_1, sdnum_3) vs double-pass (everything else)
-    single_pass_folders = orig_cluster_temp;  % {sdnum_1, sdnum_3}
-    double_pass_folders = setdiff(all_algo_folders, single_pass_folders, 'stable');
+    % Separate folders: single-pass vs double-pass
+    single_pass_folders = {folder_sd_1, folder_sd_3, folder_algo1_strt_sd3, folder_algo2_strt_sd3, folder_algo3_strt_sd3, folder_algo4_strt_sd3, folder_algo5_strt_sd3};
+    double_pass_folders = {folder_sd_1_t_3, folder_algo1_strt_sd1, folder_algo2_strt_sd1, folder_algo3_strt_sd1, folder_algo4_strt_sd1, folder_algo5_strt_sd1};
     
     % SINGLE-PASS processing (sdnum_1, sdnum_3):
     parfor i = 1:length(single_pass_folders)
@@ -302,7 +276,19 @@ function batch_clust_resp(input,stimlist,varargin)
             local_par.template_sdnum = 3;
         end
         
-        algo = 'algo0';
+        if contains(folder, 'algo1')
+            algo = 'algo1';
+        elseif contains(folder, 'algo2')
+            algo = 'algo2';
+        elseif contains(folder, 'algo3')
+            algo = 'algo3';
+        elseif contains(folder, 'algo4')
+            algo = 'algo4';
+        elseif contains(folder, 'algo5')
+            algo = 'algo5';
+        else
+            algo = 'algo0';
+        end
         
         try
             class_out = force_membership_wc(f_in, class_in, f_out, local_par, algo);
@@ -327,7 +313,7 @@ function batch_clust_resp(input,stimlist,varargin)
         cd(base_dir);
     end
     
-    % DOUBLE-PASS processing (sdnum_1_t_3, algo*_strt_sd1, algo*_strt_sd3):
+    % DOUBLE-PASS processing (sdnum1 -> sdnum3):
     parfor i = 1:length(double_pass_folders)
         folder = double_pass_folders{i};
         fprintf('\n=== Processing DOUBLE-PASS folder %d/%d: %s ===\n', i, length(double_pass_folders), folder);
