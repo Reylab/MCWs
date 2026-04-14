@@ -181,10 +181,10 @@ function width_struct = get_peak_width(spike_x, amp_dir)
             segments = {};
             start_idx = 1;
             for b = 1:length(breaks)
-                segments{end + 1} = above_level(start_idx:breaks(b)); %#ok<AGROW>
+                segments{end + 1} = above_level(start_idx:breaks(b)); 
                 start_idx = breaks(b) + 1;
             end
-            segments{end + 1} = above_level(start_idx:end); %#ok<AGROW>
+            segments{end + 1} = above_level(start_idx:end); 
 
             peak_segment = [];
             for s = 1:length(segments)
