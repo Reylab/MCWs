@@ -48,8 +48,8 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     figs = {};
     leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; 0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; 0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
     
-    % --- Paging Logic (max 5 clusters per page = 3x6 grid with summary col) ---
-    clusters_per_page = 5;  % Fixed to match 3x6 grid: 1 summary + 5 cluster cols
+    % --- Paging Logic (4 clusters per page) ---
+    clusters_per_page = 4;
     pages = {};
     K = numel(unique_clusters);
     for i = 1:clusters_per_page:K
@@ -97,7 +97,8 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         ylimit = ylimit_shared;
 
         nclusters_on_page = numel(page);
-        ncols = 6;  % FIXED: 1 summary + 5 cluster columns (3x6 grid)
+        show_summary_col = (page_i == 1);
+        ncols = clusters_per_page + double(show_summary_col);
 
         if p.Results.show_figures
             visstr = 'on';
@@ -106,17 +107,9 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     'PaperUnits', 'inches', 'PaperType', '<custom>', 'PaperSize', [16 8], 'PaperPosition', [0 0 16 8], 'PaperPositionMode', 'manual', ...
                     'RendererMode', 'manual', 'Renderer', 'painters');
 
-        % grid 3 rows x 6 columns (fixed layout)
+        % grid 3 rows x ncols (summary column only on page 1)
         for col = 1:ncols
-            % Leave empty subplots for unused cluster positions on this page
-            if col > (1 + nclusters_on_page)
-                axEmpty1 = report_subplot(3, ncols, col);
-                axis(axEmpty1, 'off');
-                axEmpty2 = report_subplot(3, ncols, col + ncols);
-                axis(axEmpty2, 'off');
-                axEmpty3 = report_subplot(3, ncols, col + 2*ncols);
-                axis(axEmpty3, 'off');
-            elseif col == 1
+            if show_summary_col && col == 1
                 % --- SUMMARY COLUMN ---
                 ax1 = report_subplot(3, ncols, 1);
                 hold(ax1,'on');
@@ -168,8 +161,21 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     axis(ax3,'off');
                 end
             else
+                page_col_idx = col - double(show_summary_col);
+
+                % Leave empty subplots for unused cluster positions on this page
+                if page_col_idx > nclusters_on_page
+                    axEmpty1 = report_subplot(3, ncols, col);
+                    axis(axEmpty1, 'off');
+                    axEmpty2 = report_subplot(3, ncols, col + ncols);
+                    axis(axEmpty2, 'off');
+                    axEmpty3 = report_subplot(3, ncols, col + 2*ncols);
+                    axis(axEmpty3, 'off');
+                    continue;
+                end
+
                 % --- CLUSTER COLUMNS ---
-                cid = page(col-1);
+                cid = page(page_col_idx);
                 
                 % waveform panel (row1)
                 axW = report_subplot(3, ncols, col);
@@ -679,16 +685,25 @@ function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duratio
         axis(ax,'off'); return;
     end
 
-    T = double(recording_duration_ms); 
+    T = double(recording_duration_ms);
+    valid_spike_mask = (spike_times_ms >= 0) & (spike_times_ms < T);
     t_grid_min = linspace(0, T/60000.0, time_pixels); 
     kde_matrix = zeros(K, time_pixels);
 
     for r = 1:K
         cid = clusters(r);
-        t = spike_times_ms(cluster_ids == cid) / 60000.0; 
+        t = spike_times_ms((cluster_ids == cid) & valid_spike_mask) / 60000.0;
         if numel(t) > 1
             try
-                f = ksdensity(t, t_grid_min);
+                % Match scipy gaussian_kde default (Scott's rule) more closely.
+                n_t = numel(t);
+                sd_t = std(t);
+                if isfinite(sd_t) && sd_t > 0
+                    bw = sd_t * n_t^(-1/5);
+                    f = ksdensity(t, t_grid_min, 'Bandwidth', bw);
+                else
+                    f = ksdensity(t, t_grid_min);
+                end
                 kde_matrix(r,:) = f;
             catch
                 kde_matrix(r,:) = zeros(1, time_pixels);
@@ -705,12 +720,15 @@ function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duratio
     end
 
     imagesc(ax, 1:time_pixels, 1:K, kde_matrix);
-    try colormap(ax, cmapname); catch, colormap(ax, 'hot'); end
+    colormap(ax, get_named_colormap(cmapname, 256));
 
-    vmax = quantile(kde_matrix(:), 0.98);
-    if vmax <= 0, vmax = max(kde_matrix(:)); end
-    if vmax == 0, vmax = 1; end
-    caxis(ax, [0, vmax]);
+    % Match seaborn heatmap behavior more closely by scaling to data min/max.
+    vmin = min(kde_matrix(:));
+    vmax = max(kde_matrix(:));
+    if vmax <= vmin
+        vmax = vmin + eps;
+    end
+    caxis(ax, [vmin, vmax]);
 
     set(ax, 'XColor', [0 0 0], 'YColor', [0 0 0], 'Box', 'off');
 
@@ -729,6 +747,38 @@ function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duratio
     ylabel(ax, 'Cluster', 'Color', [0 0 0]);
     set(ax, 'YDir', 'reverse');
     set(ax, 'Visible', 'on');
+end
+
+function cmap = get_named_colormap(cmapname, n)
+    if nargin < 2 || isempty(n)
+        n = 256;
+    end
+
+    if strcmpi(cmapname, 'inferno')
+        % Approximation of Matplotlib inferno anchors in RGB [0..255].
+        anchors = [
+              0,   0,   4;
+             31,  12,  72;
+             85,  15, 109;
+            136,  34, 106;
+            186,  54,  85;
+            227,  89,  51;
+            249, 140,  10;
+            249, 201,  50;
+            252, 255, 164
+        ] / 255;
+        x = linspace(0, 1, size(anchors, 1));
+        xi = linspace(0, 1, n);
+        cmap = interp1(x, anchors, xi, 'linear');
+        return;
+    end
+
+    try
+        cmap_fun = str2func(lower(cmapname));
+        cmap = cmap_fun(n);
+    catch
+        cmap = parula(n);
+    end
 end
 
 % Helper: compute cross-correlogram between two spike-time lists (ms)
