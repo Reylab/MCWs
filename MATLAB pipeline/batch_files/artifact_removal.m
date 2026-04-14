@@ -121,19 +121,18 @@ function [quarantine_mask] = analyze_spike_waveforms(spikes, par)
         idx = spikes_to_check(i);
         waveform = spikes(idx, :);
         
-        % 1. Determine Polarity (Identify the main extremum: max magnitude point)
-        [min_val, min_idx] = min(waveform);
-        [max_val, max_idx] = max(waveform);
+        % 1. Determine Polarity based on sample 20 (1-indexed in MATLAB)
+        sample_20_idx = 20;
+        sample_20_value = waveform(sample_20_idx);
         
-        if abs(min_val) >= abs(max_val)
+        if sample_20_value < 0
             % Primary feature is a trough (negative deflection). Analyze -waveform to treat trough as a positive peak.
             signal_for_analysis = -waveform;
-            main_extremum_index = min_idx;
         else
             % Primary feature is a peak (positive deflection). Analyze +waveform.
             signal_for_analysis = waveform;
-            main_extremum_index = max_idx;
         end
+        main_extremum_index = sample_20_idx;
         
         % 2. Get Features using findpeaks on the signed signal
         [pks, locs, w, p] = findpeaks(signal_for_analysis); 
@@ -178,12 +177,14 @@ function [quarantine_mask] = analyze_spike_waveforms(spikes, par)
                 end
             else
                 % Test 4: Final Prominence Ratio and Width Test (for truly complex, multi-peaked shapes)
-                
+                % Compare main peak prominence to highest secondary peak prominence
+                max_other_prominence = max(secondary_peaks_p);    
+
                 has_desired_width = main_pk_width >= par.min_width_idx && main_pk_width <= par.max_width_idx;
                 
-                % Check if width is sufficient AND Prominence/Amplitude is high enough to pass
-                final_prominence_ratio_pass = (main_pk_prominence / main_pk_amp) > par.final_prominence_ratio_pass;
-                
+                % Check if width is sufficient AND main peak is significantly more prominent than secondary peaks
+                final_prominence_ratio_pass = (main_pk_prominence / max_other_prominence) > par.final_prominence_ratio_pass;
+                        
                 if ~(has_desired_width && final_prominence_ratio_pass)
                     quarantine_mask(idx) = true; % Fails width or final prominence test
                 end

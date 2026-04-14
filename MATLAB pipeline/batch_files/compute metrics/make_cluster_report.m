@@ -48,34 +48,37 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     figs = {};
     leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; 0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; 0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
     
-    % ========== PRE-CALCULATE GLOBAL Y-LIMITS (ALL CLUSTERS) ==========
-    % Compute y-limits from ALL clusters (matches Do_clustering & wave_clus)
-    ylimit_global = [];
-    for all_c_idx = 1:numel(unique_clusters)
-        cid_temp = unique_clusters(all_c_idx);
-        mask_temp = (cluster_ids == cid_temp);
-        W_temp = waveforms(mask_temp, :);
-        if ~isempty(W_temp)
-            ylim_temp = [min(W_temp(:)), max(W_temp(:))];
-            if isempty(ylimit_global)
-                ylimit_global = ylim_temp;
-            else
-                ylimit_global = [min(ylimit_global(1), ylim_temp(1)), max(ylimit_global(2), ylim_temp(2))];
-            end
-        end
-    end
-    % Apply padding to global y-limits
-    if ~isempty(ylimit_global)
-        y_padding = 0.1 * (ylimit_global(2) - ylimit_global(1));
-        ylimit_global = [ylimit_global(1) - y_padding, ylimit_global(2) + y_padding];
-    end
-    
     % --- Paging Logic (max 5 clusters per page = 3x6 grid with summary col) ---
     clusters_per_page = 5;  % Fixed to match 3x6 grid: 1 summary + 5 cluster cols
     pages = {};
     K = numel(unique_clusters);
     for i = 1:clusters_per_page:K
         pages{end+1} = unique_clusters(i:min(i+clusters_per_page-1,K));
+    end
+
+    % Compute shared y-limits from page 1 real clusters (exclude cluster 0).
+    % This shared scale is used on all pages for nonzero clusters.
+    ylimit_shared = [];
+    if ~isempty(pages)
+        page1_clusters_for_limits = pages{1};
+        page1_clusters_for_limits = page1_clusters_for_limits(page1_clusters_for_limits ~= 0);
+        for page1_c_idx = 1:numel(page1_clusters_for_limits)
+            cid_temp = page1_clusters_for_limits(page1_c_idx);
+            mask_temp = (cluster_ids == cid_temp);
+            W_temp = waveforms(mask_temp, :);
+            if ~isempty(W_temp)
+                ylim_temp = [min(W_temp(:)), max(W_temp(:))];
+                if isempty(ylimit_shared)
+                    ylimit_shared = ylim_temp;
+                else
+                    ylimit_shared = [min(ylimit_shared(1), ylim_temp(1)), max(ylimit_shared(2), ylim_temp(2))];
+                end
+            end
+        end
+    end
+    if ~isempty(ylimit_shared)
+        y_padding = 0.1 * (ylimit_shared(2) - ylimit_shared(1));
+        ylimit_shared = [ylimit_shared(1) - y_padding, ylimit_shared(2) + y_padding];
     end
 
     % --- Summary + per-page plotting ---
@@ -87,9 +90,11 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             idx_0 = find(page == 0, 1);
             if ~isempty(idx_0)
                 page(idx_0) = []; 
-                page = [page, 0];  % Append cluster 0 to the right
+                page = [page(:); 0];  % Append cluster 0 while preserving vector shape
             end
         end
+
+        ylimit = ylimit_shared;
 
         nclusters_on_page = numel(page);
         ncols = 6;  % FIXED: 1 summary + 5 cluster columns (3x6 grid)
@@ -98,25 +103,22 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             visstr = 'on';
         end
         fig = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
-                    'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                    'PaperUnits', 'inches', 'PaperType', '<custom>', 'PaperSize', [16 8], 'PaperPosition', [0 0 16 8], 'PaperPositionMode', 'manual', ...
                     'RendererMode', 'manual', 'Renderer', 'painters');
-
-        % Use pre-computed GLOBAL y-limits (matches Do_clustering & wave_clus)
-        ylimit = ylimit_global;
 
         % grid 3 rows x 6 columns (fixed layout)
         for col = 1:ncols
             % Leave empty subplots for unused cluster positions on this page
             if col > (1 + nclusters_on_page)
-                subplot(3, ncols, col);
-                axis off;
-                subplot(3, ncols, col + ncols);
-                axis off;
-                subplot(3, ncols, col + 2*ncols);
-                axis off;
+                axEmpty1 = report_subplot(3, ncols, col);
+                axis(axEmpty1, 'off');
+                axEmpty2 = report_subplot(3, ncols, col + ncols);
+                axis(axEmpty2, 'off');
+                axEmpty3 = report_subplot(3, ncols, col + 2*ncols);
+                axis(axEmpty3, 'off');
             elseif col == 1
                 % --- SUMMARY COLUMN ---
-                ax1 = subplot(3, ncols, 1);
+                ax1 = report_subplot(3, ncols, 1);
                 hold(ax1,'on');
                 T = size(waveforms,2);
                 
@@ -140,11 +142,11 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 set(ax1, 'GridAlpha', 0.25, 'LineWidth', 0.8);
 
                 % presence KDE (row2)
-                ax2 = subplot(3, ncols, ncols+1);
+                ax2 = report_subplot(3, ncols, ncols+1);
                 cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax2, 100, 'inferno');
 
                 % SNR bar (row3)
-                ax3 = subplot(3, ncols, 2*ncols+1);
+                ax3 = report_subplot(3, ncols, 2*ncols+1);
                 if istable(df_metrics) && all(ismember({'cluster_id','snr'}, df_metrics.Properties.VariableNames))
                     [lia, ~] = ismember(df_metrics.cluster_id, unique_clusters);
                     table_clusters = df_metrics.cluster_id(lia);
@@ -170,7 +172,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 cid = page(col-1);
                 
                 % waveform panel (row1)
-                axW = subplot(3,ncols, col);
+                axW = report_subplot(3, ncols, col);
                 mask = (cluster_ids==cid);
                 W = waveforms(mask,:);
                 if isempty(W)
@@ -202,23 +204,38 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 title(axW, sprintf('Cluster %d: # %d (%d)', cid, n_here, n_unforced), 'FontSize', 10);
                 xlabel(axW, xlabel_str);
                 ylabel(axW, 'Amplitude');
+                xlim(axW, [1, size(W,2)]);
+                if size(W,2) >= 20
+                    set(axW, 'XTick', 20, 'XTickLabel', {'20'});
+                else
+                    set(axW, 'XTick', size(W,2), 'XTickLabel', {sprintf('%d', size(W,2))});
+                end
                 grid(axW, 'on');
                 box(axW, 'off');
                 set(axW, 'GridAlpha', 0.25, 'LineWidth', 0.8);
                 
-                % Apply uniform y-axis scaling to all cluster waveforms
-                if ~isempty(ylimit)
+                % Cluster 0 is noise, so scale it by itself instead of the page.
+                if cid == 0
+                    ylimit_noise = [min(W(:)), max(W(:))];
+                    if ylimit_noise(1) == ylimit_noise(2)
+                        ylimit_noise = ylimit_noise + [-1, 1];
+                    else
+                        y_padding_noise = 0.1 * (ylimit_noise(2) - ylimit_noise(1));
+                        ylimit_noise = [ylimit_noise(1) - y_padding_noise, ylimit_noise(2) + y_padding_noise];
+                    end
+                    ylim(axW, ylimit_noise);
+                elseif ~isempty(ylimit)
                     ylim(axW, ylimit);
                 end
 
                 % Density image (row2) - match Python layout
-                axD = subplot(3,ncols, col + ncols);
+                axD = report_subplot(3, ncols, col + ncols);
                 
                 % FIX 3: Density Plot -> SAMPLES (pass [] for samplerate)
                 density_image_matlab(W, axD, [], 'cmap', 'inferno');
                 
                 % ISI histogram (row3)
-                axI = subplot(3,ncols, col + 2*ncols);
+                axI = report_subplot(3, ncols, col + 2*ncols);
                 plot_isi_histogram(axI, spike_times_ms(mask), p.Results.refractory_ms, 60, colc);
             end
         end
@@ -261,7 +278,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             ncols = ceil(sqrt(npairs));
             nrows = ceil(npairs / ncols);
             fig_corr = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
-                             'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                             'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                              'RendererMode', 'manual', 'Renderer', 'painters');
             for pi = 1:npairs
                 ax = subplot(nrows, ncols, pi);
@@ -398,7 +415,7 @@ end
 function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids)
     % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
     figM = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
-                 'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperPositionMode', 'auto', ...
+                 'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                  'RendererMode', 'manual', 'Renderer', 'painters');
 
     exclude = {'cluster_id', 'snr', 'SNR', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
@@ -544,6 +561,21 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
     end
 end
 
+function ax = report_subplot(nrows, ncols, idx)
+    fig = gcf;
+    if isappdata(fig, 'cluster_report_layout')
+        tl = getappdata(fig, 'cluster_report_layout');
+        if ~isvalid(tl) || tl.GridSize(1) ~= nrows || tl.GridSize(2) ~= ncols
+            tl = tiledlayout(fig, nrows, ncols, 'TileSpacing', 'compact', 'Padding', 'compact');
+            setappdata(fig, 'cluster_report_layout', tl);
+        end
+    else
+        tl = tiledlayout(fig, nrows, ncols, 'TileSpacing', 'compact', 'Padding', 'compact');
+        setappdata(fig, 'cluster_report_layout', tl);
+    end
+    ax = nexttile(tl, idx);
+end
+
 % -----------------------
 % Helper: 2D waveform density image
 function density_image_matlab(W, ax, samplerate_hz, varargin)
@@ -614,20 +646,20 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
 
     set(ax, 'Color', 'white', 'XColor', [0 0 0], 'YColor', [0 0 0], 'Box', 'off');
 
-    nx = min(5, max(2, ceil((x_max - x_min)/max(1, round((T)/10)))));
-    xt_pos = round(linspace(x_min, x_max, nx));
-    xt_pos = unique(max(0, min(T-1, xt_pos)));
-    if ~isempty(xt_pos)
-        set(ax, 'XTick', xt_pos);
-        if ~isempty(samplerate_hz)
+    if ~isempty(samplerate_hz)
+        nx = min(5, max(2, ceil((x_max - x_min)/max(1, round((T)/10)))));
+        xt_pos = round(linspace(x_min, x_max, nx));
+        xt_pos = unique(max(0, min(T-1, xt_pos)));
+        if ~isempty(xt_pos)
+            set(ax, 'XTick', xt_pos);
             xtlbls = arrayfun(@(x) sprintf('%.0f', x/samplerate_hz*1e3), xt_pos, 'UniformOutput', false);
             set(ax, 'XTickLabel', xtlbls, 'XColor', [0 0 0]);
             xlabel(ax, 'Time (ms)', 'Color', [0 0 0]);
-        else
-            xtlbls = arrayfun(@(x) sprintf('%d', x), xt_pos, 'UniformOutput', false);
-            set(ax, 'XTickLabel', xtlbls, 'XColor', [0 0 0]);
-            xlabel(ax, 'Sample', 'Color', [0 0 0]);
         end
+    else
+        % For report heatmaps in sample mode, hide x ticks/labels to reduce clutter.
+        set(ax, 'XTick', [], 'XTickLabel', {}, 'XColor', [0 0 0]);
+        xlabel(ax, '');
     end
 
     axis(ax, 'tight');
@@ -687,10 +719,9 @@ function cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duratio
     xt_idx = max(1, min(time_pixels, xt_idx));
     xt_vals_min = t_grid_min(xt_idx); 
 
-    % Use %g format to avoid unnecessary decimals
-    xt_lbls = arrayfun(@(v) sprintf('%g', v), xt_vals_min, 'UniformOutput', false);
+    % Use whole-minute labels to avoid clutter on the presence plot.
+    xt_lbls = arrayfun(@(v) sprintf('%.0f', v), xt_vals_min, 'UniformOutput', false);
     set(ax, 'XTick', xt_idx, 'XTickLabel', xt_lbls, 'XColor', [0 0 0]);
-    set(ax, 'DataAspectRatio', [1 1 1]);
 
     set(ax, 'YTick', 1:K, 'YTickLabel', arrayfun(@(c)sprintf('%d', c), clusters, 'UniformOutput', false), 'YColor', [0 0 0]);
 
