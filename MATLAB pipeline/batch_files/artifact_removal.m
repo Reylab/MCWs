@@ -96,9 +96,10 @@ function artifact_removal(channels, do_save)
             if do_save
                 fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
                 fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
+                % Remove -append to fully overwrite file, ensuring old unfiltered spikes don't persist
                 save(spike_file, ...
                      'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
-                     'mask_non_quarantine', 'quarantine_properties', '-append')
+                     'mask_non_quarantine', 'quarantine_properties','-append');
             else
                 fprintf('ch.%d/%d %s: do_save=false, skipping save\n', k, num_channels_proc, ch_lbl);
             end

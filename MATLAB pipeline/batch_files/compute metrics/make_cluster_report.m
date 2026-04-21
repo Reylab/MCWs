@@ -124,7 +124,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     c = unique_clusters(k);
                     Wc = waveforms(cluster_ids==c, :);
                     if isempty(Wc), continue; end
-                    colc = leicolors(mod(k-1,size(leicolors,1))+1,:);
+                    colc = leicolors(mod(c, size(leicolors,1))+1,:);
                     plot(ax1, tvec, mean(Wc,1), 'Color', colc, 'LineWidth', 1.8);
                 end
                 title(ax1, sprintf('Means (total n = %d)', total_spikes));
@@ -146,7 +146,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     table_snrs = df_metrics.snr(lia);
                     
                     [~, color_indices] = ismember(table_clusters, unique_clusters);
-                    bar_colors = leicolors(mod(color_indices-1, size(leicolors,1))+1, :);
+                    bar_colors = leicolors(mod(table_clusters, size(leicolors,1))+1, :);
 
                     h = bar(ax3, 1:numel(table_clusters), table_snrs, 'FaceColor', 'flat', 'BarWidth', 0.9);
                     h.CData = bar_colors; 
@@ -194,7 +194,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 end
                 
                 hold(axW,'on');
-                colc = leicolors(mod(find(unique_clusters==cid, 1)-1,size(leicolors,1))+1,:);
+                colc = leicolors(mod(cid, size(leicolors,1))+1,:);
                 
                 % FIX 2: Individual Cluster Plots -> SAMPLES (ignore samplerate)
                 tvec = 1:size(W,2);
