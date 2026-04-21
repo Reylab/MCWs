@@ -133,7 +133,13 @@ function plot_channel_grapes(varargin)
                     data_to_plot = data_to_plot(isstim_list, :);
                 else
                     [~, idx] = ismember(stim_list, data_to_plot.stim_number);
+                    idx(idx == 0) = []; 
                     data_to_plot = data_to_plot(idx, :);
+                end
+                
+                % Check for empty AFTER both filtering methods
+                if isempty(data_to_plot)
+                    continue;
                 end
             end
             channel_grapes.rasters.(labels{i}).details = grapes.rasters.(labels{i}).details;
