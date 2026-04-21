@@ -95,13 +95,13 @@ end
 
 
 function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spikes, par)
-    % Analyzes a matrix of spikes using polarity-aware prominence and width.
-    % Returns a logical mask (quarantine_mask) where TRUE means the spike is an artifact.
+    % Analyzes spikes using decision tree: amplitude -> peak count -> prominence -> width.
+    % Single-pass vectorized processing for efficiency with large spike counts.
     
     num_spikes = size(spikes, 1);
     sample_20_idx = 20;
 
-    quarantine_mask = false(1,num_spikes);
+    quarantine_mask = false(1, num_spikes);
 
     % Per-spike metrics for quarantine_properties
     prominence_ratio = nan(num_spikes, 1);
@@ -113,123 +113,140 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     other_peak_loc = nan(num_spikes, 1);
     peak_pos_max = nan(num_spikes, 1);
     prominence_pos_max = nan(num_spikes, 1);
-
-    amplitudes = max(spikes, [], 2) - min(spikes, [], 2);
+    low_low_amp_spike = false(num_spikes, 1);
     
-    % Test 1: Amplitude Threshold (Quarantine if P2P amplitude is too low)
-    amp_threshold = prctile(amplitudes, par.min_amplitude_percentile);
-    is_low_amplitude = amplitudes < amp_threshold;
-    quarantine_mask(is_low_amplitude) = true;
+    % Store peak info for each spike to avoid recalculating findpeaks
+    peak_info = cell(num_spikes, 1);
     
-    spikes_to_check = find(~quarantine_mask);
-    
-    for i = 1:numel(spikes_to_check)
-        idx = spikes_to_check(i);
-        waveform = spikes(idx, :);
-
-        % Determine polarity from sample 20
+    % SINGLE PASS: Extract peaks and metrics for all spikes
+    for i = 1:num_spikes
+        waveform = spikes(i, :);
         sample_20_value = waveform(sample_20_idx);
 
+        % Invert if trough at sample 20
         if sample_20_value < 0
-            % Trough at sample 20: invert so trough is analyzed as a peak.
             signal_for_analysis = -waveform;
         else
-            % Peak at sample 20: analyze waveform directly.
             signal_for_analysis = waveform;
         end
 
-        % Extract peaks, locations, widths, and prominences
-        [pks, locs, w, p] = findpeaks(signal_for_analysis); 
+        [pks, locs, w, p] = findpeaks(signal_for_analysis);
         
+        % Also compute positive peaks for properties (on original waveform)
+        [pos_peaks, ~, ~, pos_prominences] = findpeaks(waveform);
+        
+        % Store peak info and basic metrics
+        peak_info{i} = struct('pks', pks, 'locs', locs, 'w', w, 'p', p, ...
+                              'pos_peaks', pos_peaks, 'pos_prominences', pos_prominences, ...
+                              'has_peak_at_20', any(locs == sample_20_idx), ...
+                              'peak_sample_20_raw', sample_20_value, ...
+                              'waveform', waveform);
+        
+        num_peaks_arr(i) = length(pks);
+        
+        % Pre-identify spikes with no peaks
         if isempty(pks)
-            quarantine_mask(idx) = true; 
+            quarantine_mask(i) = true;
             continue;
         end
         
-        % Find the primary peak within the peaks list
+        % Extract peak at sample 20 if it exists
+        if peak_info{i}.has_peak_at_20
+            peak_sample_20(i) = sample_20_value;
+        end
+    end
+    
+    % Calculate amplitude threshold from 5th percentile
+    abs_peak_amps = abs(peak_sample_20);
+    valid_peak_amps = abs_peak_amps(isfinite(abs_peak_amps));
+    
+    amp_threshold = prctile(valid_peak_amps, par.min_amplitude_percentile);
+    
+    % DECISION TREE: Apply all decisions (minimal reprocessing)
+    for i = 1:num_spikes
+        % Skip already-quarantined spikes
+        if quarantine_mask(i)
+            continue;
+        end
+        
+        info = peak_info{i};
+        pks = info.pks;
+        locs = info.locs;
+        w = info.w;
+        p = info.p;
+        pos_peaks = info.pos_peaks;
+        pos_prominences = info.pos_prominences;
+        waveform = info.waveform;
+        
+        % No peak at sample 20: quarantine
+        if ~info.has_peak_at_20
+            quarantine_mask(i) = true;
+            continue;
+        end
+        
+        % DECISION 1: Amplitude threshold check
+        if abs(peak_sample_20(i)) < amp_threshold
+            quarantine_mask(i) = true;
+            low_low_amp_spike(i) = true;
+            continue;
+        end
+        
+        % Get main peak index
         is_main_feature = (locs == sample_20_idx);
         main_peak_idx = find(is_main_feature, 1, 'first');
-        target_peak_found = any(is_main_feature);
-        num_peaks_arr(idx) = length(pks);
-
-        % Do not re-anchor to any other peak if sample 20 is not the main feature.
-        if ~target_peak_found
-            quarantine_mask(idx) = true;
-            [other_prominence(idx), max_prom_idx_local] = max(p);
-            other_peak_loc(idx) = locs(max_prom_idx_local);
-            continue;
-        end
-
+        
+        % Extract main peak metrics
         main_pk_amp = pks(main_peak_idx);
         main_pk_width = w(main_peak_idx);
         main_pk_prominence = p(main_peak_idx);
-        width(idx) = main_pk_width;
-
-        peak_sample_20(idx) = waveform(sample_20_idx);
-        prominence_sample_20(idx) = main_pk_prominence;
-        if num_peaks_arr(idx) > 1
+        width(i) = main_pk_width;
+        prominence_sample_20(i) = main_pk_prominence;
+        
+        % Calculate positive peaks for properties (already computed in first pass)
+        if ~isempty(pos_peaks)
+            [peak_pos_max(i), max_pos_amp_idx] = max(pos_peaks);
+            prominence_pos_max(i) = pos_prominences(max_pos_amp_idx);
+        end
+        
+        % DECISION 2 & 3: Peak count and secondary prominence
+        if length(pks) == 1
+            % Single peak: proceed to width check
+            
+        elseif length(pks) > 1
+            % Multi-peak case
             other_prominences_arr = p(~is_main_feature);
             other_peaks_arr = locs(~is_main_feature);
-
+            
             if ~isempty(other_prominences_arr)
                 [max_other_prominence, max_prom_idx_local] = max(other_prominences_arr);
-                other_prominence(idx) = max_other_prominence;
-                other_peak_loc(idx) = other_peaks_arr(max_prom_idx_local);
-
-                if isnan(max_other_prominence)
-                    prominence_ratio(idx) = nan;
-                elseif max_other_prominence > 0
-                    prominence_ratio(idx) = main_pk_prominence / max_other_prominence;
-                else
-                    prominence_ratio(idx) = inf;
+                other_prominence(i) = max_other_prominence;
+                other_peak_loc(i) = other_peaks_arr(max_prom_idx_local);
+                
+                % DECISION 3a: Check if secondary < 1% of main peak amplitude
+                if max_other_prominence >= (par.prominence_ratio_threshold * main_pk_amp)
+                    % Secondary is significant: check prominence ratio
+                    if max_other_prominence > 0
+                        prominence_ratio(i) = main_pk_prominence / max_other_prominence;
+                    else
+                        prominence_ratio(i) = inf;
+                    end
+                    
+                    % DECISION 3b: Prominence ratio must be > 2 to proceed
+                    if prominence_ratio(i) <= par.final_prominence_ratio_pass
+                        quarantine_mask(i) = true;
+                        continue;
+                    end
                 end
             end
         end
-
-        % Calculate positive peaks and prominences for quarantine properties
-        [pos_peaks, ~, ~, pos_prominences] = findpeaks(waveform);
-        if ~isempty(pos_peaks)
-            [peak_pos_max(idx), max_pos_amp_idx] = max(pos_peaks);
-            prominence_pos_max(idx) = pos_prominences(max_pos_amp_idx);
-        end
-
-        % Test 2: Single Peak vs. Multi-Peak Analysis
-        if length(pks) == 1
-            % Single Peak: Quarantine if width is outside the desired range
-            if main_pk_width < par.min_width_idx || main_pk_width > par.max_width_idx
-                quarantine_mask(idx) = true;
-            end
-            
-        elseif length(pks) > 1 % Multi-Peak Case (length(pks) > 1)
-
-            % Secondary-peak logic:
-            % 1) If largest secondary prominence is < 1% of main peak amplitude -> pass
-            % 2) Else if main prominence / largest secondary prominence > 2 -> pass
-            % 3) Otherwise -> quarantine
-            secondary_peaks_p = p;
-            secondary_peaks_p(main_peak_idx) = 0; % Ignore the main feature's prominence
-
-            max_secondary_prominence = max(secondary_peaks_p);
-            secondary_is_tiny = max_secondary_prominence < (par.prominence_ratio_threshold * main_pk_amp);
-
-            if secondary_is_tiny
-                quarantine_mask(idx) = false;
-            else
-                prominence_ratio_pass = (main_pk_prominence / max_secondary_prominence) > par.final_prominence_ratio_pass;
-                if ~prominence_ratio_pass
-                    quarantine_mask(idx) = true;
-                end
-            end
+        
+        % DECISION 4: Width check (final test)
+        if width(i) < par.min_width_idx || width(i) > par.max_width_idx
+            quarantine_mask(i) = true;
         end
     end
-
-    valid_peaks = peak_sample_20(isfinite(peak_sample_20));
-    if ~isempty(valid_peaks)
-        low_amp_threshold = prctile(abs(valid_peaks), par.min_amplitude_percentile);
-        low_low_amp_spike = abs(peak_sample_20) < low_amp_threshold;
-    else
-        low_low_amp_spike = false(num_spikes, 1);
-    end
+    
+    % Handle NaN values
     low_low_amp_spike(~isfinite(low_low_amp_spike)) = false;
 
     quarantine_properties = struct();
