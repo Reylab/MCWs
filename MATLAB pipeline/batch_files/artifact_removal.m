@@ -1,10 +1,14 @@
-function artifact_removal(channels)
+function artifact_removal(channels, do_save)
     % Function: artifact_removal
     % Description: Filters spikes based on waveform characteristics (amplitude, width, multi-peak structure)
     %              using a robust, polarity-aware method. The resulting mask is combined with an existing
     %              collision mask for cumulative filtering.
     % Channels: The list of microelectrode channels (channel IDs) to process.
     
+    if nargin < 2
+        do_save = true;
+    end
+
     artifact_removal_tic = tic;
     
     % Define Quality Control (QC) parameters for spike shape analysis
@@ -25,9 +29,11 @@ function artifact_removal(channels)
     for k = 1:num_channels_proc
         ch_info = NSx_proc(k);
         ch_lbl = ch_info.output_name;
+        spike_file = sprintf('%s_spikes.mat', ch_lbl);
                 
         try
-            SPK = load(sprintf('%s_spikes.mat', ch_lbl));
+            fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
+            SPK = load(spike_file);
             
             % Load full spike set
             if isfield(SPK,'spikes_all')
@@ -53,14 +59,27 @@ function artifact_removal(channels)
                 mask_taskspks = true(size(index_all));
             end
 
+            % Normalize orientation to avoid implicit expansion (Nx1 & 1xN -> NxN).
+            index_all = index_all(:);
+            mask_non_collision = logical(mask_non_collision(:));
+            mask_taskspks = logical(mask_taskspks(:));
+
             % map the loaded mask back to the original variable name for saving
             mask_nonart = mask_non_collision;
 
             % mask_quarantine_local is TRUE for spikes that FAIL the shape/amplitude QC test
+            fprintf('ch.%d/%d %s: running waveform QC\n', k, num_channels_proc, ch_lbl);
             [mask_quarantine_local, quarantine_properties] = analyze_spike_waveforms(spikes_all, par.qc_params);
+            mask_quarantine_local = logical(mask_quarantine_local(:));
             
             % mask_non_quarantine is TRUE for spikes that PASS the shape/amplitude QC test
             mask_non_quarantine = ~mask_quarantine_local;
+
+            if numel(mask_non_collision) ~= numel(mask_non_quarantine) || numel(mask_taskspks) ~= numel(mask_non_quarantine)
+                error('ArtifactRemoval:MaskLengthMismatch', ...
+                    'Mask lengths differ for %s (collision=%d, quarantine=%d, task=%d).', ...
+                    ch_lbl, numel(mask_non_collision), numel(mask_non_quarantine), numel(mask_taskspks));
+            end
             
             % Combine Masks: Spike must pass collision check AND quarantine check
             mask_total_pass = mask_non_collision & mask_non_quarantine & mask_taskspks;
@@ -74,15 +93,24 @@ function artifact_removal(channels)
             par = SPK.par;
 
             % Save updated masks and quarantine properties
-            save(sprintf('%s_spikes.mat', ch_lbl), ...
-                 "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", ...
-                 "mask_non_quarantine", "quarantine_properties", "-append") 
+            if do_save
+                fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
+                fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
+                save(spike_file, ...
+                     'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
+                     'mask_non_quarantine', 'quarantine_properties', '-append')
+            else
+                fprintf('ch.%d/%d %s: do_save=false, skipping save\n', k, num_channels_proc, ch_lbl);
+            end
             
             num_removed_this_step = sum(mask_non_collision) - sum(mask_total_pass);
             num_total_spikes = numel(index_all);
             
             fprintf('ch.%d of %d: %s. Masks used (%d): quarantined %d spikes. Remaining: %d/%d (%.2f%%)\n', ...
                 k, num_channels_proc, ch_lbl, mask_used, num_removed_this_step, sum(mask_total_pass), num_total_spikes, sum(mask_total_pass)/num_total_spikes*100);
+
+            % Release channel-local data before next channel.
+            clear SPK spikes_all index_all index spikes mask_non_collision mask_nonart mask_non_quarantine mask_taskspks mask_total_pass quarantine_properties mask_quarantine_local;
 
         catch ME
             fprintf('  -> FAILED to process channel %s: %s\n', ch_lbl, ME.message);
@@ -101,7 +129,7 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     num_spikes = size(spikes, 1);
     sample_20_idx = 20;
 
-    quarantine_mask = false(1, num_spikes);
+    quarantine_mask = false(num_spikes, 1);
 
     % Per-spike metrics for quarantine_properties
     prominence_ratio = nan(num_spikes, 1);
@@ -117,6 +145,25 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     
     % Store peak info for each spike to avoid recalculating findpeaks
     peak_info = cell(num_spikes, 1);
+
+    if size(spikes, 2) < sample_20_idx
+        warning('ArtifactRemoval:ShortWaveform', ...
+            'Waveform length (%d) is shorter than sample_20_idx (%d). Quarantining all spikes.', ...
+            size(spikes, 2), sample_20_idx);
+        quarantine_mask(:) = true;
+        quarantine_properties = struct();
+        quarantine_properties.prominence_ratio = prominence_ratio(:);
+        quarantine_properties.num_peaks = num_peaks_arr(:);
+        quarantine_properties.prominence_sample_20 = prominence_sample_20(:);
+        quarantine_properties.other_prominence = other_prominence(:);
+        quarantine_properties.width = width(:);
+        quarantine_properties.peak_sample_20 = peak_sample_20(:);
+        quarantine_properties.other_peak_loc = other_peak_loc(:);
+        quarantine_properties.peak_pos_max = peak_pos_max(:);
+        quarantine_properties.prominence_pos_max = prominence_pos_max(:);
+        quarantine_properties.low_low_amp_spike = low_low_amp_spike(:);
+        return;
+    end
     
     % SINGLE PASS: Extract peaks and metrics for all spikes
     for i = 1:num_spikes
@@ -139,8 +186,7 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
         peak_info{i} = struct('pks', pks, 'locs', locs, 'w', w, 'p', p, ...
                               'pos_peaks', pos_peaks, 'pos_prominences', pos_prominences, ...
                               'has_peak_at_20', any(locs == sample_20_idx), ...
-                              'peak_sample_20_raw', sample_20_value, ...
-                              'waveform', waveform);
+                              'peak_sample_20_raw', sample_20_value);
         
         num_peaks_arr(i) = length(pks);
         
@@ -159,8 +205,13 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     % Calculate amplitude threshold from 5th percentile
     abs_peak_amps = abs(peak_sample_20);
     valid_peak_amps = abs_peak_amps(isfinite(abs_peak_amps));
-    
-    amp_threshold = prctile(valid_peak_amps, par.min_amplitude_percentile);
+
+    if isempty(valid_peak_amps)
+        quarantine_mask(:) = true;
+        amp_threshold = inf;
+    else
+        amp_threshold = prctile(valid_peak_amps, par.min_amplitude_percentile);
+    end
     
     % DECISION TREE: Apply all decisions (minimal reprocessing)
     for i = 1:num_spikes
@@ -176,7 +227,6 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
         p = info.p;
         pos_peaks = info.pos_peaks;
         pos_prominences = info.pos_prominences;
-        waveform = info.waveform;
         
         % No peak at sample 20: quarantine
         if ~info.has_peak_at_20
