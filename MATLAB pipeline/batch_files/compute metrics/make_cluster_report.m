@@ -21,9 +21,17 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         error('data must contain cluster_class, spikes, inspk, and spikes_all');
     end
     cluster_class = data.cluster_class;
+
+    if isfield(data,'cluster_class_pre_rescue')
+        cluster_class_pre = data.cluster_class_pre_rescue;
+        cluster_ids_pre = int32(cluster_class_pre(:,1));
+    end
+
     waveforms = double(data.spikes);
     features = double(data.inspk);
     cluster_ids = int32(cluster_class(:,1));
+
+
     spike_times_ms = double(cluster_class(:,2));
     unique_clusters = unique(cluster_ids);
     recording_duration_ms = max(spike_times_ms);
@@ -41,8 +49,14 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     else
         mask_art_chan = false(size(index_all));
     end    
+    
+    if isfield(data,'mask_taskspks')
+        mask_tsk = ~data.mask_taskspks;
+    else
+        mask_tsk = false(size(index_all));
+    end
 
-    mask_quarantine = mask_art_chan | mask_bund;
+    mask_quarantine = mask_art_chan(:) | mask_bund(:) | mask_tsk(:);
     tot_quar = sum(mask_quarantine);
     tot_spikes = numel(index_all);
 
@@ -56,10 +70,29 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     data.spike_summary = struct('total', tot_spikes, 'quarantined', tot_quar, 'rescued', rescued, 'final', final_count);
 
     % Extract forced  if available (indicates which spikes were force-classified)
-    if isfield(data, 'forced') && ~isempty(data.forced)
+    % Match forced to pre-rescue cluster_ids if rescue happened
+    if isfield(data,'cluster_class_pre_rescue') && isfield(data, 'forced') && ~isempty(data.forced)
+        % Rescue happened: forced should match pre-rescue spike count
         forced = logical(data.forced);
+        forced = forced(:);
+        if numel(forced) ~= numel(cluster_ids_pre)
+            % If sizes still don't match, fallback to false array
+            forced = false(size(cluster_ids_pre));
+        end
+    elseif isfield(data, 'forced') && ~isempty(data.forced)
+        % No rescue: forced should match post-rescue spike count
+        forced = logical(data.forced);
+        forced = forced(:);
+        if numel(forced) ~= numel(cluster_ids)
+            forced = false(size(cluster_ids));
+        end
     else
-        forced = false(size(cluster_ids));
+        % No forced information: default based on what exists
+        if isfield(data,'cluster_class_pre_rescue')
+            forced = false(size(cluster_ids_pre));
+        else
+            forced = false(size(cluster_ids));
+        end
     end
 
     if p.Results.calc_metrics
@@ -154,7 +187,17 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     colc = leicolors(mod(c, size(leicolors,1))+1,:);
                     plot(ax1, tvec, mean(Wc,1), 'Color', colc, 'LineWidth', 1.8);
                 end
-                title(ax1, sprintf('Means (clustered n = %d) total=%d', tot_clust_spikes,tot_spikes));
+                
+                rescued_all = 0;
+                if isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask)
+                    rescued_all = sum(data.rescue_mask);
+                end
+                
+                if rescued_all > 0
+                    title(ax1, sprintf('Means (clust n = %d) tot.=%d R=%d', tot_clust_spikes, tot_spikes, rescued_all));
+                else
+                    title(ax1, sprintf('Means (clustered n = %d) total=%d', tot_clust_spikes, tot_spikes));
+                end
                 xlabel(ax1, xlabel_str); ylabel(ax1,'Amplitude'); grid(ax1,'on');
                 
                 % Style Update (Match Python)
@@ -206,8 +249,12 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 
                 % waveform panel (row1)
                 axW = report_subplot(3, ncols, col);
-                mask = (cluster_ids==cid);
-                W = waveforms(mask,:);
+                if isfield(data,'rescue_mask')
+                    mask = (cluster_ids_pre==cid);
+                else
+                    mask = (cluster_ids==cid);
+                end
+                    W = waveforms(mask,:);
                 if isempty(W)
                     axis(axW,'off'); continue;
                 end
@@ -231,10 +278,28 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 plot(axW, tvec, mean(W,1), 'Color', 'k', 'LineWidth', 2.4);
                 
                 % Calculate unforced spike count (spikes that weren't force-classified)
-                n_unforced = sum(mask & ~forced');
+                n_unforced = sum(mask(:) & ~forced(:));
                 
                 % Updated title format matching Do_clustering
-                title(axW, sprintf('Cluster %d: # %d (%d)', cid, n_here, n_unforced), 'FontSize', 10);
+                tot_cluster_spikes = sum(cluster_ids == cid);
+                
+                has_rescued = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask) && cid ~= 0;
+                if has_rescued
+                    cluster_spike_times = spike_times_ms(cluster_ids == cid);
+                    rescued_here = 0;
+                    for st = cluster_spike_times(:)'
+                        idx_in_all = find(index_all == st, 1);
+                        if ~isempty(idx_in_all) && idx_in_all <= numel(data.rescue_mask)
+                            if data.rescue_mask(idx_in_all)
+                                rescued_here = rescued_here + 1;
+                            end
+                        end
+                    end
+                    title(axW, sprintf('Cluster %d: # %d (%d) R: %d', cid, tot_cluster_spikes, n_unforced, rescued_here), 'FontSize', 10);
+                else
+                    title(axW, sprintf('Cluster %d: # %d (%d)', cid, tot_cluster_spikes, n_unforced), 'FontSize', 10);
+                end
+                
                 xlabel(axW, xlabel_str);
                 ylabel(axW, 'Amplitude');
                 xlim(axW, [1, size(W,2)]);
@@ -451,6 +516,15 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
                  'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                  'RendererMode', 'manual', 'Renderer', 'painters');
 
+    % Extract cluster info from data for spike counting
+    if isfield(data, 'cluster_class')
+        cluster_ids = int32(data.cluster_class(:,1));
+        spike_times_ms = double(data.cluster_class(:,2));
+    else
+        cluster_ids = [];
+        spike_times_ms = [];
+    end
+
     exclude = {'cluster_id', 'snr', 'SNR', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
     cols = df_metrics.Properties.VariableNames;
     metrics_cols = cols(~ismember(cols, exclude));
@@ -467,7 +541,7 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
     cols_per_row = 6;
     
     % Define supplementary visualizations (add new ones here, grid auto-adjusts)
-    supplementary = {'silhouette', 'spike_counts'};
+    supplementary = {'silhouette', 'spike_counts', 'spikes_per_cluster_rescued'};
     n_supplementary = numel(supplementary);
     n_total_slots = n_metrics + n_supplementary;
     n_rows = max(1, ceil(n_total_slots / cols_per_row));
@@ -603,10 +677,89 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
         bar(ax_spike, 1:4, spike_counts, 'FaceColor', [0.2 0.6 0.8]);
         set(ax_spike, 'XTick', 1:4, 'XTickLabel', spike_labels, 'XTickLabelRotation', 45);
         ylabel(ax_spike, 'Spike Count');
-        title(ax_spike, 'Spike Counts Summary');
+        title(ax_spike, 'Spike Counts');
         grid(ax_spike, 'on');
         box(ax_spike, 'off');
         set(ax_spike, 'GridAlpha', 0.25, 'LineWidth', 0.8);
+    end
+    
+    % Plot spikes per cluster with rescue overlay if requested
+    if ismember('spikes_per_cluster_rescued', supplementary) && ~isempty(cluster_ids) && ~isempty(spike_times_ms)
+        rescue_slot = slot_map('spikes_per_cluster_rescued');
+        ax_rescue = axes_handles(ceil(rescue_slot/cols_per_row), mod(rescue_slot-1, cols_per_row) + 1);
+        
+        cluster_list = double(df_metrics.cluster_id(:));
+        n_clusters = numel(cluster_list);
+        
+        % Count spikes per cluster (base) and rescued per cluster
+        base_spikes = zeros(n_clusters, 1);
+        rescued_spikes = zeros(n_clusters, 1);
+        
+        has_rescue = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask);
+        index_all_vec = data.index_all(:);
+        
+        for ci = 1:n_clusters
+            cid = cluster_list(ci);
+            cluster_spike_times = spike_times_ms(cluster_ids == cid);
+            base_spikes(ci) = numel(cluster_spike_times);
+            
+            if has_rescue
+                rescued_count = 0;
+                for st = cluster_spike_times(:)'
+                    idx_in_all = find(index_all_vec == st, 1);
+                    if ~isempty(idx_in_all) && idx_in_all <= numel(data.rescue_mask)
+                        if data.rescue_mask(idx_in_all)
+                            rescued_count = rescued_count + 1;
+                        end
+                    end
+                end
+                rescued_spikes(ci) = rescued_count;
+            end
+        end
+        
+        x_pos = 1:n_clusters;
+        bar_colors = leicolors(mod(cluster_list, size(leicolors,1))+1, :);
+        
+        % Plot full bar (total spikes) in dark color (rescued portion)
+        bar_colors_dark = bar_colors * 0.6;
+        if has_rescue && any(rescued_spikes > 0)
+            % Plot the full height in dark
+            b_total = bar(ax_rescue, x_pos, base_spikes, 0.6, 'FaceColor', 'flat', 'EdgeColor', 'k');
+            b_total.CData = bar_colors_dark;
+            hold(ax_rescue, 'on');
+            
+            % Plot the unrescued height over it in normal color
+            unrescued_spikes = max(0, base_spikes - rescued_spikes);
+            b_base = bar(ax_rescue, x_pos, unrescued_spikes, 0.6, 'FaceColor', 'flat', 'EdgeColor', 'k');
+            b_base.CData = bar_colors;
+            hold(ax_rescue, 'off');
+            
+            % Create legend with custom patches for clarity
+            % Create invisible objects for legend (since bars have multiple colors)
+            hold(ax_rescue, 'on');
+            h1 = bar(ax_rescue, NaN, NaN, 'FaceColor', [0.5 0.5 0.5], 'EdgeColor', 'k', 'DisplayName', 'Rescued Spikes');
+            h2 = bar(ax_rescue, NaN, NaN, 'FaceColor', [0.8 0.8 0.8], 'EdgeColor', 'k', 'DisplayName', 'Original Clusters');
+            legend(ax_rescue, [h2, h1], 'Location', 'northeast', 'Box', 'on', 'FontSize', 8);
+            hold(ax_rescue, 'off');
+            
+        else
+            % Just plot the base spikes in normal color
+            b_base = bar(ax_rescue, x_pos, base_spikes, 0.6, 'FaceColor', 'flat', 'EdgeColor', 'k');
+            b_base.CData = bar_colors;
+            
+            % Simple legend for no rescue case
+            %legend(ax_rescue, 'Original Clusters', 'Location', 'northeast', 'Box', 'on');
+        end
+        
+        set(ax_rescue, 'XTick', x_pos);
+        tick_labels = arrayfun(@(c) sprintf('c%d', c), cluster_list, 'UniformOutput', false);
+        set(ax_rescue, 'XTickLabel', tick_labels, 'XTickLabelRotation', 45);
+        title(ax_rescue,'Cluster Spikes')
+
+        ylabel(ax_rescue, 'Spike Count');
+        grid(ax_rescue, 'on');
+        box(ax_rescue, 'off');
+        set(ax_rescue, 'GridAlpha', 0.25, 'LineWidth', 0.8, 'XGrid', 'off');
     end
 
     try
