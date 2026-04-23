@@ -17,8 +17,8 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     % --- Setup ---
     visstr = 'off'; % Default to off (prevents pop-ups)
     
-    if ~isstruct(data) || ~isfield(data,'cluster_class') || ~isfield(data,'spikes') || ~isfield(data,'inspk')
-        error('data must contain cluster_class, spikes, inspk');
+    if ~isstruct(data) || ~isfield(data,'cluster_class') || ~isfield(data,'spikes') || ~isfield(data,'inspk') ||  ~isfield(data,'spikes_all')
+        error('data must contain cluster_class, spikes, inspk, and spikes_all');
     end
     cluster_class = data.cluster_class;
     waveforms = double(data.spikes);
@@ -27,8 +27,35 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     spike_times_ms = double(cluster_class(:,2));
     unique_clusters = unique(cluster_ids);
     recording_duration_ms = max(spike_times_ms);
-    
-    % Extract forced field if available (indicates which spikes were force-classified)
+    spikes_all = data.spikes_all;
+    index_all = data.index_all;
+
+    if isfield(data,'mask_nonart')
+        mask_bund = ~data.mask_nonart;
+    else
+        mask_bund = false(size(index_all));
+    end
+
+    if isfield(data,'mask_non_quarantine')
+        mask_art_chan = ~data.mask_non_quarantine;
+    else
+        mask_art_chan = false(size(index_all));
+    end    
+
+    mask_quarantine = mask_art_chan | mask_bund;
+    tot_quar = sum(mask_quarantine);
+    tot_spikes = numel(index_all);
+
+    rescued = 0;
+    if isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask)
+        rescued = sum(data.rescue_mask);
+    end
+    final_count = tot_spikes - tot_quar + rescued;
+
+    % Store as fields in data for passing to overview page
+    data.spike_summary = struct('total', tot_spikes, 'quarantined', tot_quar, 'rescued', rescued, 'final', final_count);
+
+    % Extract forced  if available (indicates which spikes were force-classified)
     if isfield(data, 'forced') && ~isempty(data.forced)
         forced = logical(data.forced);
     else
@@ -119,7 +146,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 tvec = 1:T;
                 xlabel_str = 'Samples';
                 
-                total_spikes = numel(cluster_ids);
+                tot_clust_spikes = numel(cluster_ids);
                 for k = 1:numel(unique_clusters)
                     c = unique_clusters(k);
                     Wc = waveforms(cluster_ids==c, :);
@@ -127,7 +154,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     colc = leicolors(mod(c, size(leicolors,1))+1,:);
                     plot(ax1, tvec, mean(Wc,1), 'Color', colc, 'LineWidth', 1.8);
                 end
-                title(ax1, sprintf('Means (total n = %d)', total_spikes));
+                title(ax1, sprintf('Means (clustered n = %d) total=%d', tot_clust_spikes,tot_spikes));
                 xlabel(ax1, xlabel_str); ylabel(ax1,'Amplitude'); grid(ax1,'on');
                 
                 % Style Update (Match Python)
@@ -263,7 +290,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             end
         end
 
-        fig_metrics = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_wfs, cluster_list_for_metrics);
+        fig_metrics = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_wfs, cluster_list_for_metrics, data);
         figs{end+1} = fig_metrics;
     end
 
@@ -418,7 +445,7 @@ function str = format_metric(val)
     end
 end
 
-function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids)
+function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids, data)
     % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
     figM = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
                  'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
@@ -438,7 +465,15 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
 
     n_metrics = numel(metrics_cols);
     cols_per_row = 6;
-    n_rows = max(1, ceil((n_metrics + 1) / cols_per_row)); 
+    
+    % Define supplementary visualizations (add new ones here, grid auto-adjusts)
+    supplementary = {'silhouette', 'spike_counts'};
+    n_supplementary = numel(supplementary);
+    n_total_slots = n_metrics + n_supplementary;
+    n_rows = max(1, ceil(n_total_slots / cols_per_row));
+    
+    % Create slot assignment map for clean access without magic offsets
+    slot_map = containers.Map(supplementary, n_metrics + (1:n_supplementary));
 
     axes_handles = gobjects(n_rows, cols_per_row);
     idx = 1;
@@ -487,8 +522,9 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
         end
     end
 
-    sil_slot = n_metrics + 1;
-    if sil_slot <= n_rows * cols_per_row
+    % Plot supplementary visualizations using systematic slot assignment
+    if ismember('silhouette', supplementary)
+        sil_slot = slot_map('silhouette');
         ax_sil = axes_handles(ceil(sil_slot/cols_per_row), mod(sil_slot-1, cols_per_row) + 1);
         if nargin >= 6 && ~isempty(mean_waveforms)
             ids = mean_waveform_cluster_ids(:)';
@@ -517,7 +553,7 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
                 ax_sil.XTickLabel = labels;
                 xtickangle(ax_sil, 90);
                 ylabel(ax_sil, 'L1 distance (sum |A-B|)');
-                title(ax_sil, 'Pairwise L1 distances between mean waveforms');
+                title(ax_sil, 'Pairwise L1 dist, between mean plots');
                 grid(ax_sil, 'on');
                 box(ax_sil, 'off');
             end
@@ -555,6 +591,22 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
                 box(ax_sil, 'off');
             end
         end
+    end
+    
+    % Plot spike counts summary if available
+    if ismember('spike_counts', supplementary) && isfield(data, 'spike_summary')
+        spike_slot = slot_map('spike_counts');
+        ax_spike = axes_handles(ceil(spike_slot/cols_per_row), mod(spike_slot-1, cols_per_row) + 1);
+        s = data.spike_summary;
+        spike_counts = [s.total, s.quarantined, s.rescued, s.final];
+        spike_labels = {'Total', 'Quarantined', 'Rescued', 'Final'};
+        bar(ax_spike, 1:4, spike_counts, 'FaceColor', [0.2 0.6 0.8]);
+        set(ax_spike, 'XTick', 1:4, 'XTickLabel', spike_labels, 'XTickLabelRotation', 45);
+        ylabel(ax_spike, 'Spike Count');
+        title(ax_spike, 'Spike Counts Summary');
+        grid(ax_spike, 'on');
+        box(ax_spike, 'off');
+        set(ax_spike, 'GridAlpha', 0.25, 'LineWidth', 0.8);
     end
 
     try
