@@ -168,6 +168,7 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     
     % SINGLE PASS: Extract peaks and metrics for all spikes
     for i = 1:num_spikes
+
         waveform = spikes(i, :);
         sample_20_value = waveform(sample_20_idx);
 
@@ -216,11 +217,16 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     
     % DECISION TREE: Apply all decisions (minimal reprocessing)
     for i = 1:num_spikes
+        % Retrieve the original waveform for this spike
+        waveform = spikes(i, :);
+        
         % Skip already-quarantined spikes
         if quarantine_mask(i)
             continue;
         end
-        
+        if i == 3643 || 5298
+            i
+        end
         info = peak_info{i};
         pks = info.pks;
         locs = info.locs;
@@ -238,7 +244,6 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
         % DECISION 1: Amplitude threshold check
         if abs(peak_sample_20(i)) < amp_threshold
             quarantine_mask(i) = true;
-            low_low_amp_spike(i) = true;
             continue;
         end
         
@@ -248,7 +253,7 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
         
         % Extract main peak metrics
         main_pk_amp = pks(main_peak_idx);
-        main_pk_width = w(main_peak_idx);
+        main_pk_width = calc_baseline_width(waveform, sample_20_idx);
         main_pk_prominence = p(main_peak_idx);
         width(i) = main_pk_width;
         prominence_sample_20(i) = main_pk_prominence;
@@ -283,7 +288,11 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
                     end
                     
                     % DECISION 3b: Prominence ratio must be > 2 to proceed
-                    if prominence_ratio(i) <= par.final_prominence_ratio_pass
+                    % Allow NaN ratios (exceptions: single-peak, weak secondary) and computed ratios > 2
+                    if isnan(prominence_ratio(i)) || prominence_ratio(i) > par.final_prominence_ratio_pass
+                        % Ratio is good (or NaN exception), continue to width check
+                    else
+                        % Ratio is bad, quarantine
                         quarantine_mask(i) = true;
                         continue;
                     end
@@ -292,13 +301,44 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
         end
         
         % DECISION 4: Width check (final test)
-        if width(i) < par.min_width_idx || width(i) > par.max_width_idx
+        % Preserve if width is valid (NaN ratio from exceptions already passed here)
+        if isnan(width(i)) || width(i) < par.min_width_idx || width(i) > par.max_width_idx
             quarantine_mask(i) = true;
         end
     end
     
     % Handle NaN values
     low_low_amp_spike(~isfinite(low_low_amp_spike)) = false;
+    
+    % RETROACTIVE: Mark ALL spikes that are low-amplitude, regardless of quarantine reason
+    % This matches Python's behavior of flagging amplitude separately from quarantine reason
+    abs_peak_amps = abs(peak_sample_20);
+    valid_peak_amps = abs_peak_amps(isfinite(abs_peak_amps));
+    if ~isempty(valid_peak_amps)
+        low_amp_threshold = prctile(valid_peak_amps, par.min_amplitude_percentile);
+        low_low_amp_spike = abs(peak_sample_20) < low_amp_threshold;
+        low_low_amp_spike(~isfinite(low_low_amp_spike)) = false;
+    end
+
+    % DEBUG TRACKING
+    n_single_peak = sum(num_peaks_arr == 1);
+    n_multi_peak = sum(num_peaks_arr > 1);
+    n_nan_ratio = sum(isnan(prominence_ratio));
+    n_inf_ratio = sum(isinf(prominence_ratio));
+    n_good_ratio = sum(prominence_ratio > par.final_prominence_ratio_pass & isfinite(prominence_ratio));
+    n_bad_ratio = sum(prominence_ratio <= par.final_prominence_ratio_pass & isfinite(prominence_ratio));
+    n_nan_width = sum(isnan(width));
+    n_good_width = sum(width >= par.min_width_idx & width <= par.max_width_idx);
+    n_bad_width = sum((width < par.min_width_idx | width > par.max_width_idx) & ~isnan(width));
+    
+    fprintf('\n[DEBUG] Decision tree stats:\n');
+    fprintf('  Single-peak spikes: %d\n', n_single_peak);
+    fprintf('  Multi-peak spikes: %d\n', n_multi_peak);
+    fprintf('  Ratios: NaN=%d, Inf=%d, Good(>%.1f)=%d, Bad(<=%.1f)=%d\n', ...
+        n_nan_ratio, n_inf_ratio, par.final_prominence_ratio_pass, n_good_ratio, par.final_prominence_ratio_pass, n_bad_ratio);
+    fprintf('  Width: NaN=%d, Good=[%.1f-%.1f]=%d, Bad=%d\n', ...
+        n_nan_width, par.min_width_idx, par.max_width_idx, n_good_width, n_bad_width);
+    fprintf('  Total quarantined: %d / %d\n\n', sum(quarantine_mask), num_spikes);
 
     quarantine_properties = struct();
     quarantine_properties.prominence_ratio = prominence_ratio(:);
@@ -311,4 +351,69 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     quarantine_properties.peak_pos_max = peak_pos_max(:);
     quarantine_properties.prominence_pos_max = prominence_pos_max(:);
     quarantine_properties.low_low_amp_spike = low_low_amp_spike(:);
+end
+
+
+function width_val = calc_baseline_width(waveform, peak_idx)
+    % Measure width using a baseline-to-peak half-height rule.
+    % This mirrors the Python helper instead of using findpeaks' built-in width.
+    width_val = nan;
+
+    if numel(waveform) < peak_idx
+        return;
+    end
+
+    % Use the same 0-based interpolation approach as the Python implementation
+    n = numel(waveform);
+    peak_voltage = waveform(peak_idx);
+
+    % baseline computed from first/last up-to-5 samples (matches Python behavior)
+    h = min(5, n);
+    first_seg = waveform(1:h);
+    last_seg = waveform(max(1, n-h+1):n);
+    baseline = mean([first_seg, last_seg]);
+
+    half_amplitude = baseline + (peak_voltage - baseline) / 2;
+
+    % Match Python's width calculation exactly
+    peak_idx_0based = peak_idx - 1;  % Convert 1-based peak_idx to 0-based
+    
+    % LEFT crossing: find last sample > half before the peak
+    left_idx = nan;
+    left_candidates = find(waveform(1:peak_idx) > half_amplitude);
+    if ~isempty(left_candidates)
+        ci_1based = left_candidates(end);  % 1-based MATLAB index
+        ci_0based = ci_1based - 1;         % Convert to 0-based
+        % Python: y0=w[ci+1], y1=w[ci]; x0=ci+1, x1=ci
+        % MATLAB: y0=waveform(ci_1based+1), y1=waveform(ci_1based); x0=ci_0based+1, x1=ci_0based
+        if (ci_0based < peak_idx_0based) && (ci_1based + 1 <= peak_idx)
+            y0 = waveform(ci_1based + 1);
+            y1 = waveform(ci_1based);
+            x0 = ci_0based + 1;
+            x1 = ci_0based;
+            left_idx = interp1([y0, y1], [x0, x1], half_amplitude, 'linear', 'extrap');
+        end
+    end
+    
+    % RIGHT crossing: find first sample > half at/after the peak
+    right_idx = nan;
+    seg = waveform(peak_idx:end);
+    right_candidates = find(seg > half_amplitude);
+    if ~isempty(right_candidates)
+        ci_local_1based = right_candidates(1);  % 1-based index within waveform(peak_idx:end)
+        ci_local_0based = ci_local_1based - 1;
+        ci_global_0based = peak_idx_0based + ci_local_0based;  % 0-based global index
+        ci_global_1based = ci_global_0based + 1;  % Convert to 1-based for MATLAB access
+        % Python: y_vals=w[ci_global-1:ci_global+1]; x_vals=[ci_global-1, ci_global]
+        % MATLAB: waveform(ci_global_1based-1:ci_global_1based) gets 0-based positions [ci_global_0based-1, ci_global_0based]
+        if (ci_global_0based - 1 >= 0) && (ci_global_1based <= n)
+            y_vals = waveform(ci_global_1based - 1 : ci_global_1based);
+            x_vals = [ci_global_0based - 1, ci_global_0based];
+            right_idx = interp1(y_vals, x_vals, half_amplitude, 'linear', 'extrap');
+        end
+    end
+
+    if ~isnan(left_idx) && ~isnan(right_idx)
+        width_val = right_idx - left_idx;
+    end
 end

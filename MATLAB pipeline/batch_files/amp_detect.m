@@ -9,11 +9,12 @@ sr = par.sr;
 w_pre = par.w_pre;
 w_post = par.w_post;
 
-if isfield(par,'ref_ms')
-    ref = floor(par.ref_ms * par.sr/1000);
-else
-    ref = par.ref; %for retrocompatibility
-end
+% 
+% if isfield(par,'ref_ms')
+%     ref = floor(par.ref_ms * par.sr/1000);
+% else
+%     ref = par.ref; %for retrocompatibility
+% end
 
 detect = par.detection;
 stdmin = par.stdmin;
@@ -52,17 +53,19 @@ thr = stdmin * noise_std_detect;        %thr for detection is based on detect se
 thrmax = stdmax * noise_std_sorted;     %thrmax for artifact removal is based on sorted settings.
 
 index = [];
-sample_ref = floor(ref/2);
+% sample_ref = floor(ref/2);
 % LOCATE SPIKE TIMES
 switch detect
     case 'pos'
         nspk = 0;
-        xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) > thr) +w_pre+1;
+        % xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) > thr) +w_pre+1;
+        xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) > thr) +w_pre+1;        
         xaux0 = 0;
         for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
+            if xaux(i) >= xaux0 %+ ref
                 %[aux_unused, iaux] = max((xf(xaux(i):xaux(i)+sample_ref-1)));    %introduces alignment
-                [pks,locs] = findpeaks(xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
+                % [pks,locs] = findpeaks(xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
+                [pks,locs] = findpeaks(xf(xaux(i)-10:xaux(i)+10-1));
                 if isempty(pks)
                     continue
                 end
@@ -75,13 +78,16 @@ switch detect
         end
     case 'neg'
         nspk = 0;
+        % xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) < -thr) +w_pre+1;
         xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) < -thr) +w_pre+1;
+     
         xaux0 = 0;
         for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
+            if xaux(i) >= xaux0 %+ ref
                 % [aux_unused, iaux] = min((xf(xaux(i):xaux(i)+sample_ref-1)));    %introduces alignment
                 % [aux_unused, iaux] = min((xf(xaux(i)-10:xaux(i)+sample_ref+10-1)));    %introduces alignment
-                [pks,locs] = findpeaks(-xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
+                % [pks,locs] = findpeaks(-xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
+                [pks,locs] = findpeaks(-xf(xaux(i)-10:xaux(i)+10-1));
                 if isempty(pks)
                     continue
                 end
@@ -112,13 +118,15 @@ switch detect
         %     end
         % end
         nspk = 0;
-        xaux = find(abs(xf_detect(w_pre+2:end-w_post-2-sample_ref)) > thr) +w_pre+1;
+        % xaux = find(abs(xf_detect(w_pre+2:end-w_post-2-sample_ref)) > thr) +w_pre+1;
+        xaux = find(abs(xf_detect(w_pre+2:end-w_post-2)) > thr) +w_pre+1;
         xaux0 = 0;
         
         for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
+            if xaux(i) >= xaux0 %+ ref
                 % Define the alignment window
-                sig_window = xf(xaux(i)-10:xaux(i)+sample_ref+10-1);
+                % sig_window = xf(xaux(i)-10:xaux(i)+sample_ref+10-1);
+                sig_window = xf(xaux(i)-10:xaux(i)+10-1);
                 
                 local_baseline = median(sig_window);
                 
