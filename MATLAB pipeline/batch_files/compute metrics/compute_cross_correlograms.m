@@ -39,16 +39,12 @@ function [cross_correlograms, l1_matrix] = compute_cross_correlograms(spike_time
     cross_correlograms = [];
     pair_count = 0;
     
-    % Calculate all pairwise cross-correlograms
+    % Calculate all pairwise cross-correlograms and auto-correlograms
     for i = 1:n_clusters
         ref_cluster = unique_clusters(i);
         ref_spikes = spike_times_ms(cluster_ids == ref_cluster);
         
         for j = 1:n_clusters
-            if i == j
-                continue; % Skip auto-correlograms for now
-            end
-            
             target_cluster = unique_clusters(j);
             target_spikes = spike_times_ms(cluster_ids == target_cluster);
             

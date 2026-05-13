@@ -369,31 +369,42 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             cluster_list = unique_clusters;
         end
         Kc = numel(cluster_list);
-        if Kc >= 2
-            pairs = nchoosek(1:Kc,2);
-            npairs = size(pairs,1);
-            % layout: try square-ish grid
-            ncols = ceil(sqrt(npairs));
-            nrows = ceil(npairs / ncols);
+        if Kc >= 1
+            % Create Kc x Kc grid: diagonal = auto-correlograms, off-diagonal = cross-correlograms
+            ncols = Kc;
+            nrows = Kc;
             fig_corr = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
                              'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                              'RendererMode', 'manual', 'Renderer', 'painters');
-            for pi = 1:npairs
-                ax = subplot(nrows, ncols, pi);
-                a = cluster_list(pairs(pi,1));
-                b = cluster_list(pairs(pi,2));
-                times_a = spike_times_ms(cluster_ids == a);
-                times_b = spike_times_ms(cluster_ids == b);
-                if isempty(times_a) || isempty(times_b)
-                    axis(ax,'off'); continue;
+            for i = 1:Kc
+                for j = 1:Kc
+                    ax = subplot(nrows, ncols, (i-1)*ncols + j);
+                    a = cluster_list(i);
+                    b = cluster_list(j);
+                    times_a = spike_times_ms(cluster_ids == a);
+                    times_b = spike_times_ms(cluster_ids == b);
+                    if isempty(times_a) || isempty(times_b)
+                        axis(ax,'off'); continue;
+                    end
+                    [lags, counts] = compute_cross_correlogram(times_a, times_b, 1.0, 50.0); % bin=1ms, maxlag=50ms
+                    if i == j
+                        bar_color = [0.05 0.05 0.4]; % Darker blue for auto-correlograms
+                    else
+                        bar_color = [0.2 0.2 0.7]; % Lighter blue for cross-correlograms
+                    end
+                    bar(ax, lags, counts, 'FaceColor', bar_color, 'EdgeColor','none');
+                    xlabel(ax,'Lag (ms)', 'FontSize', 8); 
+                    ylabel(ax,'Count', 'FontSize', 8);
+                    if i == j
+                        title(ax, sprintf('C%d (auto)', a), 'FontSize', 9, 'FontWeight', 'bold');
+                    else
+                        title(ax, sprintf('C%d → C%d', a, b), 'FontSize', 9);
+                    end
+                    box(ax,'off'); grid(ax,'on');
+                    set(ax, 'FontSize', 7);
                 end
-                [lags, counts] = compute_cross_correlogram(times_a, times_b, 1.0, 50.0); % bin=1ms, maxlag=50ms
-                bar(ax, lags, counts, 'FaceColor', [0.2 0.2 0.7], 'EdgeColor','none');
-                xlabel(ax,'Lag (ms)'); ylabel(ax,'Count');
-                title(ax, sprintf('C%d vs C%d', a, b), 'FontSize', 9);
-                box(ax,'off'); grid(ax,'on');
             end
-            sgtitle(sprintf('Cross-correlograms (%d pairs)', npairs), 'FontSize', 14);
+            sgtitle(sprintf('Correlograms (diagonal: auto, off-diagonal: cross)', Kc), 'FontSize', 14);
             figs{end+1} = fig_corr;
         end
     catch ME_corr
