@@ -1,202 +1,192 @@
 function [spikes,thr,index,remove_counter] = amp_detect(x, par)
-% Detect spikes with amplitude thresholding. Uses median estimation.
-% Detection is done with filters set by fmin_detect and fmax_detect. Spikes
-% are stored for sorting using fmin_sort and fmax_sort. This trick can
-% eliminate noise in the detection but keeps the spikes shapes for sorting.
 
+    x = double(x);
+    if size(x,2) > size(x,1); x = x(:); end
 
-sr = par.sr;
-w_pre = par.w_pre;
-w_post = par.w_post;
+    sr     = par.sr;
+    w_pre  = par.w_pre;
+    w_post = par.w_post;
 
-if isfield(par,'ref_ms')
-    ref = floor(par.ref_ms * par.sr/1000);
-else
-    ref = par.ref; %for retrocompatibility
-end
-
-detect = par.detection;
-stdmin = par.stdmin;
-stdmax = par.stdmax;
-
-if ~isfield(par,'detection')
-    par.detection = 'neg';
-end
-
-
-
-if par.sort_order > 0
-    xf = filt_signal(x,par.sort_order,par.sort_fmin,par.sort_fmax,par.sr,par);
-else
-    if par.preprocessing && ~isempty(par.process_info)
-        xf = fast_filtfilt(par.process_info.SOS,par.process_info.G,x);
+    if isfield(par,'ref_ms')
+        ref = floor(par.ref_ms * par.sr / 1000);
     else
-        xf = x;
+        ref = par.ref;
     end
-end
-if par.detect_order > 0
-    xf_detect = filt_signal(x,par.detect_order,par.detect_fmin,par.detect_fmax,par.sr,par);
-else
-    if par.preprocessing && ~isempty(par.process_info)
-       xf_detect = fast_filtfilt(par.process_info.SOS,par.process_info.G,x);
-    else
-        xf_detect = x;
-    end    
-end
 
-%guarda(xf,xf_detect);
-
-noise_std_detect = median(abs(xf_detect))/0.6745;
-noise_std_sorted = median(abs(xf))/0.6745;
-thr = stdmin * noise_std_detect;        %thr for detection is based on detect settings.
-thrmax = stdmax * noise_std_sorted;     %thrmax for artifact removal is based on sorted settings.
-
-index = [];
-sample_ref = floor(ref/2);
-% LOCATE SPIKE TIMES
-switch detect
-    case 'pos'
-        nspk = 0;
-        xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) > thr) +w_pre+1;
-        xaux0 = 0;
-        for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
-                %[aux_unused, iaux] = max((xf(xaux(i):xaux(i)+sample_ref-1)));    %introduces alignment
-                [pks,locs] = findpeaks(xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
-                if isempty(pks)
-                    continue
-                end
-                [~,iM] = max(pks);                
-                nspk = nspk + 1;
-                %index(nspk) = iaux + xaux(i) -1;
-                index(nspk) = minLoc(iM) + xaux(i) -10 -1;
-                xaux0 = index(nspk);
-            end
-        end
-    case 'neg'
-        nspk = 0;
-        xaux = find(xf_detect(w_pre+2:end-w_post-2-sample_ref) < -thr) +w_pre+1;
-        xaux0 = 0;
-        for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
-                % [aux_unused, iaux] = min((xf(xaux(i):xaux(i)+sample_ref-1)));    %introduces alignment
-                % [aux_unused, iaux] = min((xf(xaux(i)-10:xaux(i)+sample_ref+10-1)));    %introduces alignment
-                [pks,locs] = findpeaks(-xf(xaux(i)-10:xaux(i)+sample_ref+10-1));
-                if isempty(pks)
-                    continue
-                end
-                [maxp,iM] = max(pks);                
-                nspk = nspk + 1;
-                % index(nspk) = iaux + xaux(i) -1;
-                % index(nspk) = iaux + xaux(i) -10 -1;
-                index(nspk) = locs(iM) + xaux(i) -10 -1;
-                % plot(index(nspk),-maxp,'r*')
-                % if nspk==72
-                %     figure
-                %     plot(xf(index(nspk)-w_pre:index(nspk)+w_post));
-                % end
-                xaux0 = index(nspk);
-            end
-        end
-    case 'both' % fixME need more info on spike set up
-        % nspk = 0;
-        % xaux = find(abs(xf_detect(w_pre+2:end-w_post-2-sample_ref)) > thr) +w_pre+1;
-        % xaux0 = 0;
-        % for i=1:length(xaux)
-        %     if xaux(i) >= xaux0 + ref
-        %        % [aux_unused, iaux] = max(abs(xf(xaux(i):xaux(i)+sample_ref-1)));    %introduces alignment
-        % 
-        %         nspk = nspk + 1;
-        %         index(nspk) = iaux + xaux(i) -1;
-        %         xaux0 = index(nspk);
-        %     end
-        % end
-        nspk = 0;
-        xaux = find(abs(xf_detect(w_pre+2:end-w_post-2-sample_ref)) > thr) +w_pre+1;
-        xaux0 = 0;
-        
-        for i=1:length(xaux)
-            if xaux(i) >= xaux0 + ref
-                % Define the alignment window
-                sig_window = xf(xaux(i)-10:xaux(i)+sample_ref+10-1);
-                
-                local_baseline = median(sig_window);
-                
-                sig_corrected = sig_window - local_baseline;
-                
-                [pks_pos, locs_pos] = findpeaks(sig_corrected);
-                if ~isempty(pks_pos)
-                    [max_p_true, idx_p] = max(pks_pos); % This is the true peak height
-                    loc_p = locs_pos(idx_p);
-                else
-                    max_p_true = 0;
-                    loc_p = 0;
-                end
-                
-                [pks_neg, locs_neg] = findpeaks(-sig_corrected);
-                if ~isempty(pks_neg)
-                    [max_n_abs_true, idx_n] = max(pks_neg); % This is the true trough depth
-                    loc_n = locs_neg(idx_n);
-                else
-                    max_n_abs_true = 0;
-                    loc_n = 0;
-                end
-                
-                if max_p_true >= max_n_abs_true 
-                    best_loc = loc_p;
-                elseif max_n_abs_true > max_p_true
-                    best_loc = loc_n;
-                else
-                    continue
-                end
-                
-                if best_loc > 0 
-                    nspk = nspk + 1;
-                    index(nspk) = best_loc + xaux(i) - 10 - 1;
-                    xaux0 = index(nspk);
-                end
-            end
-        end
-end
-
-% SPIKE STORING (with or without interpolation)
-ls = w_pre+w_post;
-spikes = zeros(nspk,ls+4);
-
-xf(length(xf)+1:length(xf)+w_post)=0;
-remove_counter = 0;
-for i=1:nspk                          %Eliminates artifacts
-    if max(abs( xf(index(i)-w_pre:index(i)+w_post) )) < thrmax
-        spikes(i,:)=xf(index(i)-w_pre-1:index(i)+w_post+2);
-    else
-        remove_counter = 1 + remove_counter;
+    if ~isfield(par,'detection')
+        par.detection = 'neg';
     end
-end
+    detect = par.detection;
 
-aux = find(spikes(:,w_pre)==0);       %erases indexes that were artifacts
-spikes(aux,:)=[];
-index(aux)=[];
+    stdmin = par.stdmin;
+    stdmax = par.stdmax;
 
-switch par.interpolation
-    case 'n'
-        spikes(:,end-1:end)=[];       %eliminates borders that were introduced for interpolation
-        spikes(:,1:2)=[];
-    case 'y'
-        %Does interpolation
-        spikes = int_spikes(spikes,par);
-end
-end
+    % check for search back override
+    if isfield(par,'search_back_ms')
+        search_back = max(0, round(par.search_back_ms * sr / 1000));
+    else
+        search_back = round(0.3333 * sr / 1000);
+    end
+    % check for search forward override
+    if isfield(par,'search_forward_ms')
+        search_forward = max(1, round(par.search_forward_ms * sr / 1000));
+    else
+        search_forward = round(0.3333 * sr / 1000);
+    end
 
-function filtered = filt_signal(x,order,fmin,fmax,sr,par)
-    %HIGH-PASS FILTER OF THE DATA
-    [b,a] = ellip(order,0.1,40,[fmin fmax]*2/sr);
-    
+    N        = length(x);
+    pad_samp = min(round(1.0 * sr), floor(N/2));
+
+    x_pad = [x(pad_samp:-1:1); x; x(end:-1:end-pad_samp+1)];
+
+    % filter sort trace
+    if par.sort_order > 0
+        xf_pad = filt_signal(x_pad, par.sort_order, par.sort_fmin, par.sort_fmax, sr, par);
+    else
+        if par.preprocessing && ~isempty(par.process_info)
+            xf_pad = fast_filtfilt(par.process_info.SOS, par.process_info.G, x_pad);
+        else
+            xf_pad = x_pad;
+        end
+    end
+
+    % filter detect trace
+    if par.detect_order > 0
+        xfd_pad = filt_signal(x_pad, par.detect_order, par.detect_fmin, par.detect_fmax, sr, par);
+    else
+        if par.preprocessing && ~isempty(par.process_info)
+            xfd_pad = fast_filtfilt(par.process_info.SOS, par.process_info.G, x_pad);
+        else
+            xfd_pad = x_pad;
+        end
+    end
+
+    xf        = xf_pad(pad_samp : pad_samp+N-1);
+    xf_detect = xfd_pad(pad_samp : pad_samp+N-1);
+
+    noise_std_detect = median(abs(xf_detect)) / 0.6745;
+    noise_std_sorted = median(abs(xf))        / 0.6745;
+    thr    = stdmin * noise_std_detect;
+    thrmax = stdmax * noise_std_sorted;
+
+    pre_safe  = w_pre  + 1;
+    post_safe = w_post + 3;
+
+    index = [];
+    last_accepted = -inf;
+
+    switch detect
+        case 'neg'
+            % detect negative crossings
+            above = xf_detect(1:end-1) > -thr;
+            below = xf_detect(2:end)   <= -thr;
+            crossings = find(above & below) + 1;
+
+        case 'pos'
+            % detect positive crossings
+            below_p = xf_detect(1:end-1) < thr;
+            above_p = xf_detect(2:end)   >= thr;
+            crossings = find(below_p & above_p) + 1;
+
+        case 'both'
+            % detect negative and positive crossings
+            above_b  = xf_detect(1:end-1) > -thr;
+            below_b  = xf_detect(2:end)   <= -thr;
+            cross_neg = find(above_b & below_b) + 1;
+
+            below_p2 = xf_detect(1:end-1) < thr;
+            above_p2 = xf_detect(2:end)   >= thr;
+            cross_pos = find(below_p2 & above_p2) + 1;
+
+            crossings = sort([cross_neg; cross_pos]);
+    end
+
+    if isempty(crossings)
+        spikes = zeros(0, w_pre+w_post);
+        remove_counter = 0;
+        return
+    end
+
+    for i = 1:length(crossings)
+        tc = crossings(i);
+
+        % evaluate refractory check
+        if tc <= last_accepted + ref
+            continue
+        end
+
+        s = max(1, tc - search_back);
+        e = min(N, tc + search_forward);
+        if e <= s; continue; end
+
+        win = xf(s:e);
+        switch detect
+            case 'pos'
+                % find maximum peak
+                [~, loc] = max(win);
+            case 'neg'
+                % find minimum peak
+                [~, loc] = min(win);
+            case 'both'
+                % find absolute extremum prioritizing negative troughs
+                [vmax, imax] = max(win);
+                [vmin, imin] = min(win);
+                if abs(vmin) >= vmax; loc = imin; else; loc = imax; end
+        end
+
+        refined = s + loc - 1;
+
+        % enforce window boundary safety
+        if refined - pre_safe < 1 || refined + post_safe > N
+            continue
+        end
+
+        index(end+1) = refined;   
+        last_accepted = refined;
+    end
+
+    nspk = length(index);
+
+    ls     = w_pre + w_post;
+    spikes = zeros(nspk, ls + 4);
+    xf(N+1 : N+w_post+3) = 0;
+
+    remove_counter = 0;
+    for i = 1:nspk
+        p = index(i);
+        % reject artifacts exceeding threshold maximum
+        if max(abs(xf(p-w_pre : p+w_post))) < thrmax
+            spikes(i,:) = xf(p-w_pre-1 : p+w_post+2);
+        else
+            remove_counter = remove_counter + 1;
+        end
+    end
+
+    % drop unwritten zero rows
+    aux = find(spikes(:, w_pre) == 0);
+    spikes(aux,:) = [];
+    index(aux)    = [];
+
+    switch par.interpolation
+        case 'n'
+            % clear edge alignment samples
+            spikes(:, end-1:end) = [];
+            spikes(:, 1:2)       = [];
+        case 'y'
+            spikes = int_spikes(spikes, par);
+    end
+
+end 
+
+
+function filtered = filt_signal(x, order, fmin, fmax, sr, par)
+    [b, a] = ellip(order, 0.1, 40, [fmin fmax]*2/sr);
     if par.preprocessing && ~isempty(par.process_info)
-        [sos,g] = tf2sos(b,a);
-        g = g * par.process_info.G;
+        [sos, g] = tf2sos(b, a);
+        g   = g * par.process_info.G;
         sos = [par.process_info.SOS; sos];
         filtered = fast_filtfilt(sos, g, x);
     else
-        filtered = fast_filtfilt(b, a, x);      
+        filtered = fast_filtfilt(b, a, x);
     end
 end
