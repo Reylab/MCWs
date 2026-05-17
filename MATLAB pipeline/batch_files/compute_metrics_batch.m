@@ -162,7 +162,7 @@ function [metrics_table, SS] = process_single_file(filename, params)
     end
 
     try
-        % Load data
+        % Load times file
         data = load(filename);
         
         % add filename/path fields
@@ -173,8 +173,21 @@ function [metrics_table, SS] = process_single_file(filename, params)
         data.filename = name;
         data.fullpath = fullfile(fullpath, [name ext]);
         
+
         % Extract channel info
         name_clean = regexprep(name, '^times[_\-]*', '', 'ignorecase');
+
+        % Load spike file if it exists
+        spike_file = fullfile(fullpath, [name_clean '_spikes.mat']);
+        if isfile(spike_file)
+            spikes = load(spike_file);
+            % Merge spike fields into data
+            fn = fieldnames(spikes);
+            for k = 1:length(fn)
+                data.(fn{k}) = spikes.(fn{k});
+            end
+        end
+        
         channel_id = NaN;
         tok = regexp(name_clean, '[cC][hH](\d+)', 'tokens', 'once');
         if isempty(tok)
