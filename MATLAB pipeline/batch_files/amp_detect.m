@@ -1,14 +1,28 @@
 function [spikes,thr,index,remove_counter] = amp_detect(x, par, varargin)
 
-x = double(x);
+p = inputParser;
+addRequired(p, 'x');
+addRequired(p, 'par', @isstruct);
+addParameter(p, 'use_ref', false, @(arg) islogical(arg) || isnumeric(arg));
+
+% Handle legacy single string flag
+if numel(varargin) == 1 && (ischar(varargin{1}) || isstring(varargin{1})) && strcmpi(varargin{1}, 'use_ref')
+    varargin = {'use_ref', true};
+end
+
+parse(p, x, par, varargin{:});
+x = double(p.Results.x);
+par = p.Results.par;
+use_ref = p.Results.use_ref;
+
 if size(x,2) > size(x,1); x = x(:); end
 
 sr     = par.sr;
 w_pre  = par.w_pre;
 w_post = par.w_post;
 
-% check for manual override to evaluate refractory period
-if nargin > 2 && any(strcmpi(varargin, 'use_ref'))
+% evaluate refractory period
+if use_ref
     if isfield(par,'ref_ms')
         ref = floor(par.ref_ms * par.sr / 1000);
     else

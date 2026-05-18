@@ -245,15 +245,18 @@ if par.micros
     end
     disp('spike detection DONE.')
 
-    %% 
 
-    %% collision and quarantine within probes
-    disp('separate_collisions BEGIN..')
-    separate_collisions(channels)
+    %% bundle collision and quarantine within probes
+    disp('bundle artifact detection BEGIN..')
+    % separate_collisions(channels)
+    bundle_artifact(channels) 
 
     % quarantine squikes 
-    artifact_removal(channels)
+    % artifact_removal(channels)
+    within_channels(channels)
 
+
+    % refract_viol(channels)
        %% sorting
     if par.do_sorting
         disp('spike sorting BEGIN..')
