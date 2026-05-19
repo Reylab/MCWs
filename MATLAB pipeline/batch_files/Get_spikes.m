@@ -216,7 +216,7 @@ function get_spikes_single(filename, par_input)
     end
 
     timestamp = string(datetime('now'), 'yyyyMMdd_HHmm');
-    folder_spikes = fullfile(pwd, 'spikes_', timestamp);
+    folder_spikes = fullfile(pwd, 'spikes_' + timestamp);
     if ~exist(folder_spikes, 'dir')
         mkdir(folder_spikes);
     end
@@ -242,8 +242,8 @@ end
 function counter = count_new_sp_files(initial_date, filenames)
     counter = 0;
     
-    % Find all directories matching the 'spikes_*' pattern
-    dates = dir(fullfile(pwd, 'spikes_*'));
+    % Find all flat directories matching the 'spikes*' pattern
+    dates = dir(fullfile(pwd, 'spikes*'));
     dates = dates([dates.isdir]);
     
     for i = 1:length(filenames)
@@ -252,18 +252,22 @@ function counter = count_new_sp_files(initial_date, filenames)
         
         FileInfo = [];
         if ~isempty(dates)
-            [~, idx] = max([dates.datenum]); % Find the newest timestamp folder
+            % Identify the most recently created flat timestamp folder
+            [~, idx] = max([dates.datenum]);
             latest_date_folder = fullfile(pwd, dates(idx).name);
+            
+            % Look for the processed spike file inside that specific folder
             FileInfo = dir(fullfile(latest_date_folder, [fname '_spikes.mat']));
         end
         
+        % Fallback to root directory if no timestamp folders exist
         if isempty(FileInfo)
             FileInfo = dir([fname '_spikes.mat']); 
         end
         
+        % If the file exists and its modification time is newer than when the loop started
         if length(FileInfo)==1 && (FileInfo.datenum > initial_date)
             counter = counter + 1;
         end
     end
 end
-
