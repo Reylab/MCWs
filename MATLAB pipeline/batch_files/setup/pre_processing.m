@@ -1,8 +1,14 @@
 function varargout = pre_processing(x,id)
-if ~exist('pre_processing_info.mat','file')
-    error('pre_processing_info.mat not found')
+
+file_preprocess = fullfile(pwd, 'preprocessing', 'pre_processing_info.mat');
+if ~exist(file_preprocess,'file')
+    if ~exist('pre_processing_info.mat', 'file')
+        error('pre_processing_info.mat not found')
+    else
+        file_preprocess = 'pre_processing_info.mat'; % Fallback to current directory for old data
+    end
 end
-load('pre_processing_info.mat','process_info')
+load(file_preprocess,'process_info')
 
 if ischar(id)
     f = regexp(regexp(id,'_\d+(.|$)','match','once'),'\d+','match','once'); %it can parse filename to id

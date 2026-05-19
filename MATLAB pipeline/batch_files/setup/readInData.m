@@ -18,6 +18,32 @@ classdef readInData < handle
         spikes_file     % string. *_spikes file when the times_* file doesn't include the spikes variable.
     end 
 	methods 
+        function file_path = find_latest_spikes(obj, target_name)
+            % Priority: 
+            %  local file if exists in current dir
+            %  files in the newest spikes_YYYYMMDD_HHMM folder
+            if exist(target_name, 'file')
+                file_path = target_name;
+                return;
+            end
+            
+            dates = dir(fullfile(pwd, 'spikes*'));
+            dates = dates([dates.isdir]);
+            
+            if ~isempty(dates)
+                % Sort directory datenums to find the most recently modified folder
+                [~, idx] = max([dates.datenum]);
+                latest_date_folder = fullfile(pwd, dates(idx).name);
+                
+                possible_file = fullfile(latest_date_folder, target_name);
+                if exist(possible_file, 'file')
+                    file_path = possible_file;
+                    return;
+                end
+            end
+            file_path = target_name; % fallback
+        end
+
         function obj = readInData(par_ui)
             [unused, fnam, ext] = fileparts(par_ui.filename);
             ext = lower(ext);
@@ -77,11 +103,11 @@ classdef readInData < handle
             if keep_results || obj.with_wc_spikes
                 %Search for previously detected spikes
                 if isempty(obj.spikes_file)
-                    spikes_file = [obj.nick_name '_spikes.mat'];
+                    spikes_file = obj.find_latest_spikes([obj.nick_name '_spikes.mat']);
                 else
-                    spikes_file = obj.spikes_file;
-                    if ~exist(spikes_file,'file') && exist([obj.nick_name '_spikes.mat'],'file')
-                        spikes_file = [obj.nick_name '_spikes.mat'];
+                    spikes_file = obj.find_latest_spikes(obj.spikes_file);
+                    if ~exist(spikes_file,'file') && exist(obj.find_latest_spikes([obj.nick_name '_spikes.mat']),'file')
+                        spikes_file = obj.find_latest_spikes([obj.nick_name '_spikes.mat']);
                         obj.spikes_file = spikes_file;
                     end
                 end
@@ -165,9 +191,9 @@ classdef readInData < handle
             
             if obj.with_wc_spikes                               %wc data have priority
                 if isempty(obj.spikes_file)
-                    spikes_file = [obj.nick_name '_spikes.mat'];
+                    spikes_file = obj.find_latest_spikes([obj.nick_name '_spikes.mat']);
                 else
-                    spikes_file = obj.spikes_file;
+                    spikes_file = obj.find_latest_spikes(obj.spikes_file);
                 end
                 load(spikes_file,'spikes','index');
                                 
@@ -188,9 +214,9 @@ classdef readInData < handle
             
             if obj.with_wc_spikes                               %wc data have priority
                 if isempty(obj.spikes_file)
-                    spikes_file = [obj.nick_name '_spikes.mat'];
+                    spikes_file = obj.find_latest_spikes([obj.nick_name '_spikes.mat']);
                 else
-                    spikes_file = obj.spikes_file;
+                    spikes_file = obj.find_latest_spikes(obj.spikes_file);
                 end
 %                 load(spikes_file,'spikes','index');
                 SPK=load(spikes_file);
@@ -313,9 +339,9 @@ classdef readInData < handle
         
         function [xd_sub, sr_sub] = get_signal_sample(obj)
             if isempty(obj.spikes_file)
-            	spikes_file = [obj.nick_name '_spikes.mat'];
+            	spikes_file = obj.find_latest_spikes([obj.nick_name '_spikes.mat']);
             else
-                spikes_file = obj.spikes_file;
+                spikes_file = obj.find_latest_spikes(obj.spikes_file);
             end
             if obj.with_psegment
                 load(spikes_file,'psegment','sr_psegment');

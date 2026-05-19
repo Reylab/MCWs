@@ -1,6 +1,7 @@
-function [inspk,coeff] = wave_features(spikes,par)
+function [features] = wave_features(spikes,par)
 %
 %Calculates the spike features
+features = struct();
 scales = par.scales;
 feature = par.features;
 nspk = size(spikes,1);
@@ -103,6 +104,9 @@ switch feature
         
         ks_out(:,1) = coeff;
         ks_out(:,2) = ks(coeff);
+        
+        features.ks = ks;
+        features.ks_out = ks_out;
     case 'pca'
         if exist('pca','file')
         	[C,S] = pca(spikes);
@@ -111,8 +115,12 @@ switch feature
         end
         cc = S;
         coeff = 1:size(S,2);
-        warning('PCA uses 10 features')
-        inputs = 10;
+        if isfield(par, 'inputs') && par.inputs > 0
+            inputs = par.inputs;
+        else
+            warning('PCA uses par.min_inputs features by default');
+            inputs = par.min_inputs;
+        end
     case 'waveform'
         cc = spikes;
         coeff = 1:ls;
@@ -129,4 +137,10 @@ if ~exist('inspk','var')
             inspk(i,j)=cc(i,coeff(j));
         end
     end
+end
+features.inspk = inspk;
+features.coeff = coeff;
+features.inputs = inputs;
+features.method = feature;
+features.cc = cc;
 end

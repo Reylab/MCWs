@@ -329,9 +329,7 @@ function Do_clustering_new(input, varargin)
                         print2file = par_input.print2file;
                     end
                     if print2file
-                        % print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
-                        F = getframe(curr_fig);
-                        imwrite(F.cdata, ['fig2print_' filename '.png'])
+                        print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
                     else
                         print(curr_fig)
                     end
@@ -497,15 +495,9 @@ function Do_clustering_new(input, varargin)
                 figure_created_toc = toc(fig_start_time);
                 save_start_time = tic;
                 if par.print2file
-                    % https://www.mathworks.com/help/matlab/creating_plots/compare-ways-to-export-save-graphics-plots-from-figures.html
-                    % print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
-                    % saveas(curr_fig, ['fig2print_' filename '.png'])
-                    % exportgraphics(curr_fig, ['fig2print_' filename '.png'])
-                    F = getframe(curr_fig);
-                    imwrite(F.cdata, ['fig2print_' filename '.png'])
+                    print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
                     if numclus>3
-                        F = getframe(curr_fig2);
-                        imwrite(F.cdata, ['fig2print_' filename 'a.png'])
+                        print(curr_fig2,'-dpng',['fig2print_' filename 'a.png'],resolution);
                     end
                 else
                     print(curr_fig)
@@ -561,17 +553,17 @@ function Do_clustering_new(input, varargin)
     end
 
     % LOAD PRE-CALCULATED FEATURES (stored in the spikes file)
-    feat = load(filename, 'spikes', 'index', 'inspk', 'coeff', 'spikes_all', 'index_all');
+    feat = load(filename, 'spikes', 'index', 'features', 'spikes_all', 'index_all');
 
-    if ~isfield(feat, 'inspk') || ~isfield(feat, 'coeff')
+    if ~isfield(feat, 'features')
         warning('Features not found in %s. Please run Do_features first.', filename);
         return
     end
 
     spikes = feat.spikes;
     index = feat.index;
-    inspk = feat.inspk;
-    coeff = feat.coeff;
+    inspk = feat.features.inspk;
+    coeff = feat.features.coeff;
 
     % Handle optional fields that might not exist in all files
     if isfield(feat, 'spikes_all')
@@ -707,7 +699,8 @@ function Do_clustering_new(input, varargin)
     cluster_class = zeros(nspk,2);
     cluster_class(:,2)= index';
     cluster_class(:,1)= classes';
-    vars = {'cluster_class','coeff','par','inspk','forced','Temp','gui_status'};
+    features = feat.features;
+    vars = {'cluster_class','features','par','forced','Temp','gui_status'};
 %     if exist('index_all','var')
     if ~isempty(index_all)
         cluster_class_withcollision = zeros(numel(index_all),2);
@@ -716,7 +709,7 @@ function Do_clustering_new(input, varargin)
         cluster_class_withcollision(no_coll,1)=classes';
         max_class = max(classes)+1;
         cluster_class_withcollision(~no_coll,1)=max_class;
-         vars = {'cluster_class', 'cluster_class_withcollision','coeff','par','inspk','forced','Temp','gui_status'};
+         vars = {'cluster_class', 'cluster_class_withcollision','features','par','forced','Temp','gui_status'};
     end
     %%
     

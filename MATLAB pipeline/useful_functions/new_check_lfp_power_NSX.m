@@ -65,8 +65,14 @@ function new_check_lfp_power_NSX(channels, varargin)
         end
     end
     
-    if exist(fullfile(par.direc_raw,'pre_processing_info.mat'),'file')
-        load(fullfile(par.direc_raw,'pre_processing_info.mat'),'process_info')
+    folder_preprocess = fullfile(par.direc_raw, 'preprocessing');
+    if ~exist(folder_preprocess, 'dir')
+        mkdir(folder_preprocess);
+    end
+    file_preprocess = fullfile(folder_preprocess, 'pre_processing_info.mat');
+    
+    if exist(file_preprocess,'file')
+        load(file_preprocess,'process_info')
         process_temp = cell2mat({process_info_out{~cellfun('isempty',process_info_out)}});
         for j=1:length(process_temp)
             if isempty(process_info)
@@ -83,7 +89,7 @@ function new_check_lfp_power_NSX(channels, varargin)
             process_info(ind_preprocess).freqs_notch = process_temp(j).freqs_notch;
             process_info(ind_preprocess).BwHz_notch = process_temp(j).BwHz_notch;
         end
-        save(fullfile(par.direc_raw,'pre_processing_info.mat'),'process_info','-append')
+        save(file_preprocess,'process_info','-append')
     else
         process_info = cell2mat({process_info_out{~cellfun('isempty',process_info_out)}});
 %         for j=1:nchannels
@@ -95,7 +101,7 @@ function new_check_lfp_power_NSX(channels, varargin)
 %                 process_info(1).BwHz_notch = process_info_out{j}{5};
 %             end
 %         end        
-        save(fullfile(par.direc_raw,'pre_processing_info.mat'),'process_info')
+        save(file_preprocess,'process_info')
     end
     
     if par.parallel && poolsize == 0

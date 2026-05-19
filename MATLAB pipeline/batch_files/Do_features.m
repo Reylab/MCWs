@@ -134,13 +134,13 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
         return
     end
 
-    [inspk, coeff] = wave_features(spikes, par);
+    features = wave_features(spikes, par);
 
     % Append features directly to the spikes file instead of a separate file
     try
-        save(filename, 'inspk', 'coeff', '-append');
+        save(filename, 'features', '-append');
     catch
-        save(filename, 'inspk', 'coeff', '-append', '-v7.3');
+        save(filename, 'features', '-append', '-v7.3');
     end
 
     fprintf('Features appended to: %s\n', filename);
