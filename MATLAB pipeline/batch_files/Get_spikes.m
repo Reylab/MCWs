@@ -121,13 +121,19 @@ function Get_spikes(input, varargin)
 
 
     init_date = now;
-
+    
+    % Generate the output folder once per session
+    timestamp = string(datetime('now'), 'yyyyMMdd_HHmm');
+    folder_spikes = char(fullfile(pwd, 'spikes_' + timestamp));
+    if ~exist(folder_spikes, 'dir')
+        mkdir(folder_spikes);
+    end
 
     if run_parfor == true
         parfor fnum = 1:length(filenames)
             filename = filenames{fnum};
             begin_time = tic;
-            get_spikes_single(filename, par_input);
+            get_spikes_single(filename, par_input, folder_spikes);
             time_taken = toc(begin_time);
             fprintf('%d of %d ''spikes'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_sp_files(init_date, filenames),length(filenames), filename, time_taken)
@@ -136,7 +142,7 @@ function Get_spikes(input, varargin)
         for fnum = 1:length(filenames)
             filename = filenames{fnum};
             begin_time = tic;
-            get_spikes_single(filename, par_input);
+            get_spikes_single(filename, par_input, folder_spikes);
             time_taken = toc(begin_time);
             fprintf('%d of %d ''spikes'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_sp_files(init_date, filenames),length(filenames), filename, time_taken)
@@ -162,7 +168,7 @@ function Get_spikes(input, varargin)
 end
 
 
-function get_spikes_single(filename, par_input)
+function get_spikes_single(filename, par_input, folder_spikes)
     
     par = set_parameters();
     par.filename = filename;
@@ -215,11 +221,6 @@ function get_spikes_single(filename, par_input)
         par.process_info = process_info;
     end
 
-    timestamp = string(datetime('now'), 'yyyyMMdd_HHmm');
-    folder_spikes = fullfile(pwd, 'spikes_' + timestamp);
-    if ~exist(folder_spikes, 'dir')
-        mkdir(folder_spikes);
-    end
     file_out_spikes = fullfile(folder_spikes, [data_handler.nick_name '_spikes.mat']);
 
     if par.cont_segment && data_handler.with_raw

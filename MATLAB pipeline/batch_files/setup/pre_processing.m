@@ -1,12 +1,22 @@
 function varargout = pre_processing(x,id)
 
-file_preprocess = fullfile(pwd, 'preprocessing', 'pre_processing_info.mat');
-if ~exist(file_preprocess,'file')
-    if ~exist('pre_processing_info.mat', 'file')
-        error('pre_processing_info.mat not found')
-    else
-        file_preprocess = 'pre_processing_info.mat'; % Fallback to current directory for old data
+potential_paths = {
+    fullfile(pwd, 'preprocessing', 'pre_processing_info.mat'), ...
+    fullfile(pwd, 'preprocessing info', 'pre_processing_info.mat'), ...
+    fullfile(pwd, 'preprocessing_info', 'pre_processing_info.mat'), ...
+    fullfile(pwd, 'pre_processing_info.mat')
+};
+
+file_preprocess = '';
+for i = 1:length(potential_paths)
+    if exist(potential_paths{i}, 'file')
+        file_preprocess = potential_paths{i};
+        break;
     end
+end
+
+if isempty(file_preprocess)
+    error('pre_processing_info.mat not found in any of the expected locations.')
 end
 load(file_preprocess,'process_info')
 
