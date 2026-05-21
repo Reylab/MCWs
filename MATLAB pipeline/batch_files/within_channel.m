@@ -23,10 +23,17 @@ function within_channel(channels)
     num_channels_proc = length(NSx_proc);
     fprintf('Starting robust waveform quality check on %d channels...\n', num_channels_proc);
     
+    dates = dir(fullfile(pwd, 'spikes*'));
+    dates = dates([dates.isdir]);
+    if isempty(dates), error('No spikes folders found.'); end
+    [~, idx] = max([dates.datenum]);
+    active_spikes_dir = fullfile(pwd, dates(idx).name);
+
     for k = 1:num_channels_proc
         ch_info = NSx_proc(k);
         ch_lbl = ch_info.output_name;
-        spike_file = sprintf('%s_spikes.mat', ch_lbl);
+        % Target the file inside our locked directory
+        spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
                 
         try
             fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);

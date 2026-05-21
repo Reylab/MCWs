@@ -19,78 +19,94 @@ function Do_features(input, varargin)
     run_par_for = parallel;
     filenames = {};
 
-    % Get a cell of filenames from the input
-    if isnumeric(input) || any(strcmp(input,'all'))  % cases for numeric or 'all' input
-        
+    dates = dir(fullfile(pwd, 'spikes*'));
+    dates = dates([dates.isdir]);
+    if isempty(dates)
+        error('No folders starting with ''spikes'' found in the current working directory.');
+    end
+    [~, idx] = max([dates.datenum]);
+    target_spikes_folder = fullfile(pwd, dates(idx).name);
+    fprintf('Locking feature extraction to spikes folder: %s\n', dates(idx).name);
+    
+    % Gather and build absolute file paths using the locked target directory
+    if isnumeric(input) || any(strcmp(input,'all'))
         filenames_all = {};
-        dirnames = dir();
+        dirnames = dir(fullfile(target_spikes_folder, '*_spikes.mat'));
         dirnames = {dirnames.name};
     
         for i = 1:length(dirnames)
             fname = dirnames{i};
-    
-            if length(fname) < 12
-                continue
-            end
-            if ~ strcmp(fname(end-10:end),'_spikes.mat')
-                continue
-            end
-            if strcmp(input,'all')
-                filenames = [filenames {fname}];
-            else
-                aux = regexp(fname(1:end-11), '\d+$', 'match');
-                if ~isempty(aux) && ismember(str2num(aux{1}),input)
-                    filenames = [filenames {fname}];
-                end
-            end
-            filenames_all = [filenames_all {fname}];
+            filenames_all{end+1} = fullfile(target_spikes_folder, fname);
         end
-    
-    elseif ischar(input) && length(input) > 4
-        if  strcmp (input(end-3:end),'.txt')   % case for .txt input
-            filenames =  textread(input,'%s');
+        
+        if isnumeric(input)
+            for i=1:length(input)
+                chan_cells = regexp(filenames_all, ['CSC' num2str(input(i)) '_spikes\.mat|NSX' num2str(input(i)) '_spikes\.mat'], 'match');
+                chan_cells = [chan_cells{:}];
+                filenames = [filenames chan_cells];
+            end
         else
-            filenames = {input};               % case for cell input
+            filenames = filenames_all;
         end
-    
-    elseif iscellstr(input)
-        filenames = input;
-    else
-        ME = MException('MyComponent:noValidInput', 'Invalid input arguments');
-        throw(ME)
+        
+    elseif iscell(input)
+        for i = 1:length(input)
+            filenames{i} = fullfile(target_spikes_folder, input{i});
+        end
+    elseif ischar(input) && length(input) > 4 && strcmp(input(end-3:end), '.txt')
+        f_list = fopen(input);
+        while ~feof(f_list)
+            fil = fgetl(f_list);
+            if ischar(fil) && ~isempty(fil)
+                filenames{end+1} = fullfile(target_spikes_folder, fil);
+            end
+        end
+        fclose(f_list);
+    elseif ischar(input) && length(input) > 11 && strcmp(input(end-10:end), '_spikes.mat')
+        filenames{1} = fullfile(target_spikes_folder, input);
     end
-    
+
+    % Get parameters file name
+    if exist('set_parameters.m','file')
+        par_file = 'set_parameters';
+    else
+        par_file = [];
+    end
+
     feature_start_time = tic;
-    par_file = set_parameters();
-    
-    if parallel == true
+    num_files = length(filenames);
+    fprintf('Found %d files to process.\n', num_files);
+
+    % Main execution loop (serial or parallel)
+    if run_par_for == true
         if exist('matlabpool','file')
             try
                 matlabpool('open');
             catch
-                parallel = false;
+                run_par_for = false;
             end
         else
-            poolobj = gcp('nocreate'); % If no pool, do not create new one.
+            poolobj = gcp('nocreate');
             if isempty(poolobj)
-                parpool
-            else
-                parallel = false;
+                try
+                    parpool;
+                catch
+                    run_par_for = false;
+                end
             end
         end
     end
 
-    initial_date = now;
-    Nfiles = length(filenames);
-    
     if run_par_for == true
-        parfor fnum = 1:Nfiles
+        parfor fnum = 1:num_files
             filename = filenames{fnum};
+            fprintf('Processing file %d of %d: %s (Parallel)\n', fnum, num_files, filename);
             do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum);
         end
     else
-        for fnum = 1:Nfiles
+        for fnum = 1:num_files
             filename = filenames{fnum};
+            fprintf('Processing file %d of %d: %s (Serial)\n', fnum, num_files, filename);
             do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum);
         end
     end
@@ -101,7 +117,9 @@ function Do_features(input, varargin)
             matlabpool('close')
         else
             poolobj = gcp('nocreate');
-            delete(poolobj);
+            if ~isempty(poolobj)
+                delete(poolobj);
+            end
         end
     end
 
@@ -117,6 +135,8 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
     par = update_parameters(par,par_input,'clus');
     par.filename = filename;
 
+    % Because readInData will invoke find_latest_spikes, passing an absolute path
+    % ensures readInData loads from the explicitly targeted file immediately.
     data_handler = readInData(par);
     par = data_handler.par;
     
@@ -134,14 +154,14 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
         return
     end
 
-    features = wave_features(spikes, par);
+    [inspk, coeff] = wave_features(spikes, par);
 
-    % Append features directly to the spikes file instead of a separate file
+    % Append features directly back into the targeted spike file
     try
-        save(filename, 'features', '-append');
+        save(filename, 'inspk', 'coeff', '-append');
     catch
-        save(filename, 'features', '-append', '-v7.3');
+        % Fallback if file becomes large or version needs enforcement
+        save(filename, 'inspk', 'coeff', '-append', '-v7.3');
     end
 
-    fprintf('Features appended to: %s\n', filename);
 end

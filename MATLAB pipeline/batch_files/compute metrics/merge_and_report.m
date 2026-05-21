@@ -46,25 +46,34 @@ function [new_data, figs, df_metrics, SS] = merge_and_report(data, merge_list, v
     addParameter(p, 'rescue', false, @islogical);
     parse(p, data, merge_list, varargin{:});
     
-    % --- Load data if filename provided ---
+    dates_times = dir(fullfile(pwd, 'times*'));
+    dates_times = dates_times([dates_times.isdir]);
+    if isempty(dates_times), error('No times folders found.'); end
+    [~, idx_t] = max([dates_times.datenum]);
+    active_times_dir = fullfile(pwd, dates_times(idx_t).name);
+
     if ischar(data) || isstring(data)
         filename = char(data);
+        % Check active times dir if not an absolute path
+        if ~exist(filename, 'file')
+            filename = fullfile(active_times_dir, filename);
+        end
         if ~exist(filename, 'file')
             error('File not found: %s', filename);
         end
         data = load(filename);
         [pathstr, name, ext] = fileparts(filename);
-        if isempty(pathstr), pathstr = pwd; end
+        if isempty(pathstr), pathstr = active_times_dir; end
     else
         % Data is struct - try to get filename from it
         filename = '';
         if isfield(data, 'filename') && ~isempty(data.filename)
             [pathstr, name, ext] = fileparts(data.filename);
-            if isempty(pathstr), pathstr = pwd; end
+            if isempty(pathstr), pathstr = active_times_dir; end
         elseif isfield(data, 'fullpath') && ~isempty(data.fullpath)
             [pathstr, name, ext] = fileparts(data.fullpath);
         else
-            pathstr = pwd;
+            pathstr = active_times_dir;
             name = 'merged_data';
             ext = '.mat';
         end

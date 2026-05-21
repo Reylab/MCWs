@@ -72,6 +72,21 @@ function Do_clustering_new(input, varargin)
 
     sdnum = p.Results.sdnum;
     run_par_for = parallel;
+    timestamp_start = string(datetime('now'), 'yyyyMMdd_HHmm');
+    global_times_folder = fullfile(pwd, 'times_' + timestamp_start);
+    if ~exist(global_times_folder, 'dir')
+        mkdir(global_times_folder);
+    end
+    fprintf('Saving all outputs to: %s\n', 'times_' + timestamp_start);
+
+    dates_spikes = dir(fullfile(pwd, 'spikes*'));
+    dates_spikes = dates_spikes([dates_spikes.isdir]);
+    if isempty(dates_spikes)
+        error('No folders starting with ''spikes'' found in the current working directory.');
+    end
+    [~, idx_spk] = max([dates_spikes.datenum]);
+    target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
+
     filenames = {};
     
     run_par_for = parallel;
@@ -80,7 +95,7 @@ function Do_clustering_new(input, varargin)
     if isnumeric(input) || any(strcmp(input,'all'))  %cases for numeric or 'all' input
         
         filenames_all = {};
-        dirnames = dir();
+        dirnames = dir(target_spikes_folder);
         dirnames = {dirnames.name};
     
         for i = 1:length(dirnames)
@@ -145,20 +160,22 @@ function Do_clustering_new(input, varargin)
         if run_par_for == true
             parfor fnum = 1:Nfiles
                 filename = filenames{fnum};
+                full_spike_path = fullfile(target_spikes_folder, filename);
                 begin_time = tic;
-                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum);
+                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
-                    count_new_times(initial_date, filenames),Nfiles, filename, time_taken)
+                    count_new_times(initial_date, filenames,global_times_folder),Nfiles, filename, time_taken)
             end
         else
             for fnum = 1:length(filenames)
                 filename = filenames{fnum};
+                full_spike_path = fullfile(target_spikes_folder, filename);
                 begin_time = tic;
-                do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum);
+                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
-                    count_new_times(initial_date, filenames),Nfiles, filename, time_taken)
+                    count_new_times(initial_date, filenames,global_times_folder),Nfiles, filename, time_taken)
             end
         end
         if parallel == true
@@ -170,7 +187,7 @@ function Do_clustering_new(input, varargin)
             end
         end
     
-	    log_name = 'spc_log.txt';
+        log_name = fullfile(global_times_folder, 'spc_log.txt');
 	    f = fopen(log_name, 'w');
 	    for fnum = 1:length(filenames)
             filename = filenames{fnum};
@@ -230,10 +247,11 @@ function Do_clustering_new(input, varargin)
             channels(end+1) = str2num(filename(end-2:end));
         end
         max_std = par_input.max_std_templates;
-        save('templates_wc_offline.mat', 'cls_centers', 'cls_maxdist', 'channels', 'max_std')
+        % Save templates directly into the global times folder
+        template_file_path = fullfile(global_times_folder, 'templates_wc_offline.mat');
+        save(template_file_path, 'cls_centers', 'cls_maxdist', 'channels', 'max_std')
         try
-            copyfile('templates_wc_offline.mat', par_input.processing_rec_metadata)
-    
+            copyfile(template_file_path, par_input.processing_rec_metadata)
         catch ME
             disp('Failed to copy templates to rec_metadata.')
             disp(ME.message)
@@ -290,12 +308,12 @@ function Do_clustering_new(input, varargin)
         
                 file_pos_names = {'','a','b','c','d','e','f'};
                 for i=1:length(file_pos_names)
-                    new_file_name = ['fig2print_' filename file_pos_names{i} '.png'];
+                    % Delete old figures from the specific times folder
+                    new_file_name = fullfile(global_times_folder, ['fig2print_' filename file_pos_names{i} '.png']);
                     if exist(new_file_name, 'file')==2
                         delete(new_file_name);
                     end
                 end
-        
         
                 subplot(3,1,1)
                 if par.cont_segment && data_handler.with_psegment
@@ -329,7 +347,7 @@ function Do_clustering_new(input, varargin)
                         print2file = par_input.print2file;
                     end
                     if print2file
-                        print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
+                        print(curr_fig,'-dpng',fullfile(global_times_folder, ['fig2print_' filename '.png']),resolution);
                     else
                         print(curr_fig)
                     end
@@ -480,7 +498,7 @@ function Do_clustering_new(input, varargin)
         
                 features_name = par.features;
         
-                outfileclus='cluster_results.txt';
+                outfileclus = fullfile(global_times_folder, 'cluster_results.txt');
                 fout=fopen(outfileclus,'at+');
                 if isfield(par,'stdmin')
                     stdmin = par.stdmin;
@@ -495,9 +513,9 @@ function Do_clustering_new(input, varargin)
                 figure_created_toc = toc(fig_start_time);
                 save_start_time = tic;
                 if par.print2file
-                    print(curr_fig,'-dpng',['fig2print_' filename '.png'],resolution);
+                    print(curr_fig,'-dpng',fullfile(global_times_folder, ['fig2print_' filename '.png']),resolution);
                     if numclus>3
-                        print(curr_fig2,'-dpng',['fig2print_' filename 'a.png'],resolution);
+                        print(curr_fig2,'-dpng',fullfile(global_times_folder, ['fig2print_' filename 'a.png']),resolution);
                     end
                 else
                     print(curr_fig)
@@ -523,7 +541,7 @@ function Do_clustering_new(input, varargin)
     
     end
     
-    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum)
+    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder)
     
         par = struct;
         par = update_parameters(par,par_file,'clus');
@@ -625,8 +643,9 @@ function Do_clustering_new(input, varargin)
     try
         [clu, tree] = run_cluster(par,true);
         if exist([par.fnamespc '.dg_01.lab'],'file')
-            movefile([par.fnamespc '.dg_01.lab'], [par.fname '.dg_01.lab'], 'f');
-            movefile([par.fnamespc '.dg_01'], [par.fname '.dg_01'], 'f');
+            % Move SPC output files into the global times folder instead of the root
+            movefile([par.fnamespc '.dg_01.lab'], fullfile(global_times_folder, [par.fname '.dg_01.lab']), 'f');
+            movefile([par.fnamespc '.dg_01'], fullfile(global_times_folder, [par.fname '.dg_01']), 'f');
         end
     catch ME
         warning('MyComponent:ERROR_SPC', 'Error in SPC for %s: %s', filename, ME.message);
@@ -723,25 +742,31 @@ function Do_clustering_new(input, varargin)
         vars{end+1} = 'spikes_file';
     end
     
+% TARGET OUTPUT TO THE LOCKED GLOBAL TIMES RUN DIRECTORY
+    file_out_times = fullfile(global_times_folder, ['times_' data_handler.nick_name '.mat']);
     try
-      save(['times_' data_handler.nick_name],vars{:});
+      save(file_out_times, vars{:});
     catch
-      save(['times_' data_handler.nick_name],vars{:},'-v7.3');
+      save(file_out_times, vars{:}, '-v7.3');
     end
 
 
 end
     
-    function counter = count_new_times(initial_date, filenames)
+function counter = count_new_times(initial_date, filenames, global_times_folder)
     counter = 0;
     for i = 1:length(filenames)
         fname = filenames{i};
-        FileInfo = dir(['times_' fname(1:end-11) '.mat']);
+        [~, fname] = fileparts(fname);
+        if length(fname) > 7 && strcmp(fname(end-6:end), '_spikes')
+            fname = fname(1:end-7);
+        end
+        FileInfo = dir(fullfile(global_times_folder, ['times_' fname '.mat']));
         if length(FileInfo)==1 && (FileInfo.datenum > initial_date)
             counter = counter + 1;
         end
     end
-    end
+end
     
     function plot_isi(index, class, line_freq)
         ISI_max = 100;

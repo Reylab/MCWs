@@ -32,11 +32,23 @@ addParameter(p, 'rescue', false, @islogical);  % save to 'metrics rescue/' folde
 parse(p, varargin{:});
 
 % Get file list
+dates_times = dir(fullfile(pwd, 'times*'));
+dates_times = dates_times([dates_times.isdir]);
+if isempty(dates_times), error('No times folders found.'); end
+[~, idx_t] = max([dates_times.datenum]);
+active_times_dir = fullfile(pwd, dates_times(idx_t).name);
+
+dates_spikes = dir(fullfile(pwd, 'spikes*'));
+dates_spikes = dates_spikes([dates_spikes.isdir]);
+if isempty(dates_spikes), error('No spikes folders found.'); end
+[~, idx_s] = max([dates_spikes.datenum]);
+active_spikes_dir = fullfile(pwd, dates_spikes(idx_s).name);
+
 if ischar(file_pattern) || isStringScalar(file_pattern)
     % string pattern or 'all'
     fp = char(file_pattern);
     if strcmp(fp, 'all')
-        file_list_struct = dir('times_*.mat');
+        file_list_struct = dir(fullfile(active_times_dir, 'times_*.mat'));
         file_list = {file_list_struct.name};
     else
         file_list_struct = dir(fp);
@@ -50,7 +62,7 @@ elseif isnumeric(file_pattern) || (iscell(file_pattern) && all(cellfun(@isnumeri
         chans = unique(file_pattern(:)');
     end
     % find all times_*.mat files and match by extracted channel id
-    all_times = dir('times_*.mat');
+    all_times = dir(fullfile(active_times_dir, 'times_*.mat'));
     all_names = {all_times.name};
     file_list = {};
     for ci = chans(:)'
@@ -141,18 +153,18 @@ all_SS = cell(length(file_list), 1);
 % Process files
 if p.Results.parallel
     parfor i = 1:length(file_list)
-        [all_metrics{i}, all_SS{i}] = process_single_file(file_list{i}, p.Results);
+        [all_metrics{i}, all_SS{i}] = process_single_file(fullfile(active_times_dir, file_list{i}), active_spikes_dir, p.Results);
     end
 else
     for i = 1:length(file_list)
-        [all_metrics{i}, all_SS{i}] = process_single_file(file_list{i}, p.Results);
+        [all_metrics{i}, all_SS{i}] = process_single_file(fullfile(active_times_dir, file_list{i}), active_spikes_dir, p.Results);
     end
 end
 
 fprintf('Batch processing complete! Processed %d files\n', length(file_list));
 end
 
-function [metrics_table, SS] = process_single_file(filename, params)
+function [metrics_table, SS] = process_single_file(filename, active_spikes_dir, params)
 % PROCESS_SINGLE_FILE - Process one times file
     try
         prev_vis = get(0, 'DefaultFigureVisible');
@@ -178,7 +190,8 @@ function [metrics_table, SS] = process_single_file(filename, params)
         name_clean = regexprep(name, '^times[_\-]*', '', 'ignorecase');
 
         % Load spike file if it exists
-        spike_file = fullfile(fullpath, [name_clean '_spikes.mat']);
+% Load spike file if it exists from the locked spikes folder
+        spike_file = fullfile(active_spikes_dir, [name_clean '_spikes.mat']);
         if isfile(spike_file)
             spikes = load(spike_file);
             % Merge spike fields into data

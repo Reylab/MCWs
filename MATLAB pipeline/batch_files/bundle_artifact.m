@@ -6,6 +6,12 @@ NSx = NSx(ismember(cell2mat({NSx.chan_ID}),channels));
 t_win = 0.5;
 bundle_min_art = 6;
 
+dates = dir(fullfile(pwd, 'spikes*'));
+dates = dates([dates.isdir]);
+if isempty(dates), error('No spikes folders found.'); end
+[~, idx] = max([dates.datenum]);
+active_spikes_dir = fullfile(pwd, dates(idx).name);
+
 bundles_to_explore = unique({NSx.bundle});
 
 % for ibun = 1:length(bundles_to_explore)
@@ -23,7 +29,8 @@ for ibun = 1:length(bundles_to_explore)
     inds = struct;
 %     SPK=struct;
     for k= 1:length(pos_chans_probe)
-        SPK = load(sprintf('%s_spikes.mat',NSx(pos_chans_probe(k)).output_name));
+        target_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', NSx(pos_chans_probe(k)).output_name));
+        SPK = load(target_file);
         if isfield(SPK,'index_all')
             inds(k).spktimes = SPK.index_all;          
         else
@@ -101,7 +108,8 @@ for ibun = 1:length(bundles_to_explore)
     for k= 1:length(pos_chans_probe)
         ch_lbl = NSx(pos_chans_probe(k)).output_name;
         ch_id  = NSx(pos_chans_probe(k)).chan_ID;
-        SPK = load(sprintf('%s_spikes.mat', ch_lbl));
+        target_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
+        SPK = load(target_file);
         if isfield(SPK,'index_all')
             spikes_all = SPK.spikes_all;
             index_all = SPK.index_all;
@@ -129,9 +137,9 @@ for ibun = 1:length(bundles_to_explore)
         mask_tot = mask_non_quarantine & mask_taskspks & mask_nonart;
         spikes = spikes_all(mask_tot,:);
         index = index_all(mask_tot);
-        % make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
+        % make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel,target_file)
         
-        save(sprintf('%s_spikes.mat', ch_lbl), ...
+        save(target_file, ...
              "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", "-append") 
         fprintf("%d/%d artifact spikes in %s\n", ...
             numel(index_all)-numel(index), numel(index_all), ch_lbl);
@@ -159,7 +167,7 @@ function artifact_idxs = detect_artifacts(split_idx, splitsize, spktimes, ...
     end
 end
 
-function make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
+function make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel, filename)
     % plot the spikes
     f = figure('visible','off');
     for i = 1:size(spikes,1)
@@ -172,7 +180,7 @@ function make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
         ext_lbl = 'nonparallel';
     end
     % save the figure as png
-    saveas(f, sprintf('%s_spikes_%s.jpg', ch_lbl, ext_lbl))
+    saveas(f, fullfile(filename,sprintf('%s_spikes_%s.jpg', ch_lbl, ext_lbl)))
     
 
     % plot the artifacts
@@ -185,6 +193,6 @@ function make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel)
         hold on
     end
     % save the figure
-    saveas(f, sprintf('%s_artifacts_%s.jpg',NSx(pos_chans_probe(k)).output_name, ext_lbl))
+    saveas(f, fullfile(filename,sprintf('%s_artifacts_%s.jpg',NSx(pos_chans_probe(k)).output_name, ext_lbl)));
 end
 
