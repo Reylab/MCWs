@@ -17,7 +17,11 @@ function plot_grapes_as_online(varargin)
     addParameter(ipr, 'extra_lbl', '');
     addParameter(ipr, 'use_blanks', false, @islogical);    
     addParameter(ipr, 'circshiftblanks', false, @islogical);    
-    addParameter(ipr, 'short_win', false, @islogical);    
+    addParameter(ipr, 'short_win', false, @islogical);
+    % Add this parameter at the end of your addParameter list:
+    addParameter(ipr, 'target_dir', ''); 
+    
+    % Add this to your result extraction:
 
     % Check if varargin exists or is empty
     if ~isempty(varargin)
@@ -25,6 +29,7 @@ function plot_grapes_as_online(varargin)
     else
         parse(ipr);
     end
+    target_dir = ipr.Results.target_dir;
     grapes_offline = ipr.Results.grapes_offline;
     channels2plot = ipr.Results.channels2plot;
     is_online = ipr.Results.is_online;
@@ -91,25 +96,37 @@ function plot_grapes_as_online(varargin)
     alpha_gauss = 3.035;
     ifr_resolution = 1;
     
-    
-    if ~grapes_offline
-        folder = 'online_grapes_new_order_results';
-        if is_online
-            folder = [folder filesep 'plots_without_online_best'];
-        end
-        
-    else
-        folder = 'offline_grapes_new_order_results';
-        if is_online
-            folder = [folder filesep 'plots_without_online_best'];
-        end
-        if ~strcmp(channels2plot,'all')
-            if min(channels2plot)>2000
-                channels2plot = channels2plot - 2000;
-            elseif min(channels2plot)>1000
-                channels2plot = channels2plot - 1000;
+    if isempty(target_dir)
+        grapes_filename = [grapes_name '.mat'];
+        % 1. Current Directory
+        if exist(fullfile(pwd, grapes_filename), 'file')
+            target_dir = pwd;
+        else
+            pattern = 'times_*'; 
+            if ~grapes_offline
+                pattern = 'spikes_*';
+            end
+            d = dir(fullfile(pwd, pattern));
+            d = d([d.isdir]);
+            if ~isempty(d)
+                [~, idx] = max([d.datenum]);
+                target_dir = fullfile(pwd, d(idx).name);
             end
         end
+    end
+
+    % Set the output directory as an absolute path
+    folder_suffix = 'offline_grapes_new_order_results';
+    if ~grapes_offline
+        folder_suffix = 'online_grapes_new_order_results';
+    end
+    if is_online
+        folder_suffix = [folder_suffix filesep 'plots_without_online_best'];
+    end
+    
+    output_dir = fullfile(target_dir, folder_suffix);
+    if ~exist(output_dir, 'dir')
+        mkdir(output_dir);
     end
     
     %%
@@ -149,7 +166,6 @@ function plot_grapes_as_online(varargin)
     if ~exist(['.' filesep folder],'dir') 
         mkdir(folder)
     end
-    cd(folder)
     output_dir = pwd;
     if ~contains(grapes.exp_type,'freq_tag')
         all_picsused = unique(cell2mat(cellfun(@(x)x.pics2use, scr_config_cell, 'UniformOutput', false)));
@@ -199,7 +215,6 @@ function plot_grapes_as_online(varargin)
                                                               show_sel_count, show_best_stims_wins, short_win);
             writetable(s4miniscr_tbl, 'offline_miniscr_stims.csv','Delimiter',',');
             disp('Finished plotting best stims offline without online miniscr selections & creating offline_miniscr_stims.csv')
-            cd('..')
         end
 
         % plot best stims without removing any miniscr selections
@@ -229,7 +244,6 @@ function plot_grapes_as_online(varargin)
                                 'parallel_plots', true, 'extra_lbl', extra_lbl, ...
                                 'output_dir', output_dir);
     end
-    cd('..')
     % 
     % isthisclass = cellfun(@(x) strcmp(x,'class1'),data.class);
     % isthischannel = cellfun(@(x) strcmp(x,'chan43'),data.channel);

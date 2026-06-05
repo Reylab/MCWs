@@ -235,7 +235,7 @@ function [metrics_table, SS] = process_single_file(filename, active_spikes_dir, 
                 'plot_params', struct('base_name', name_clean, 'outdir', metrics_dir));
 
         catch ME_cm
-            fprintf('  ✗ compute_cluster_metrics failed for %s: %s\n', filename, ME_cm.message);
+            fprintf(' compute_cluster_metrics failed for %s: %s\n', filename, ME_cm.message);
             try
                 fprintf('%s\n', getReport(ME_cm, 'extended'));
             catch

@@ -9,12 +9,12 @@ function within_channel(channels)
     within_channel_tic = tic;
     
     % Define Quality Control (QC) parameters for spike shape analysis
-    par.qc_params = struct();
-    par.qc_params.min_amplitude_percentile = 5; % Spikes below this P2P amplitude percentile are quarantined
-    par.qc_params.min_width_idx = 3;            % Min width of main feature (in samples)
-    par.qc_params.max_width_idx = 15;           % Max width of main feature (in samples)
-    par.qc_params.prominence_ratio_threshold = 0.01; % Secondary feature prominence must be > 1% of main peak amp
-    par.qc_params.final_prominence_ratio_pass = 2; % Main feature Prominence/Amplitude threshold for complex spikes
+    qc_params = struct();
+    qc_params.min_amplitude_percentile = 5; % Spikes below this P2P amplitude percentile are quarantined
+    qc_params.min_width_idx = 3;            % Min width of main feature (in samples)
+    qc_params.max_width_idx = 15;           % Max width of main feature (in samples)
+    qc_params.prominence_ratio_threshold = 0.01; % Secondary feature prominence must be > 1% of main peak amp
+    qc_params.final_prominence_ratio_pass = 2; % Main feature Prominence/Amplitude threshold for complex spikes
     
     load('NSx','NSx');
     % Filter NSx structure to include only the specified channels
@@ -36,7 +36,7 @@ function within_channel(channels)
         spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
                 
         try
-            fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
+            % fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
             SPK = load(spike_file);
             
             % Load full spike set
@@ -72,8 +72,8 @@ function within_channel(channels)
             mask_nonart = mask_non_collision;
 
             % mask_quarantine_local is TRUE for spikes that FAIL the shape/amplitude QC test
-            fprintf('ch.%d/%d %s: running waveform QC\n', k, num_channels_proc, ch_lbl);
-            [mask_quarantine_local, quarantine_properties] = analyze_spike_waveforms(spikes_all, par.qc_params);
+            % fprintf('ch.%d/%d %s: running waveform QC\n', k, num_channels_proc, ch_lbl);
+            [mask_quarantine_local, quarantine_properties] = analyze_spike_waveforms(spikes_all, qc_params);
             mask_quarantine_local = logical(mask_quarantine_local(:));
             
             % mask_non_quarantine is TRUE for spikes that PASS the shape/amplitude QC test
@@ -95,9 +95,10 @@ function within_channel(channels)
             
             % Update the main 'par' structure with the new QC parameters
             par = SPK.par;
+            par.qc_params = qc_params;
 
-            fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
-            fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
+            % fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
+            % fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
             % Remove -append to fully overwrite file, ensuring old unfiltered spikes don't persist
             save(spike_file, ...
                  'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
@@ -324,14 +325,14 @@ function [quarantine_mask, quarantine_properties] = analyze_spike_waveforms(spik
     n_good_width = sum(width >= par.min_width_idx & width <= par.max_width_idx);
     n_bad_width = sum((width < par.min_width_idx | width > par.max_width_idx) & ~isnan(width));
     
-    fprintf('\n[DEBUG] Decision tree stats:\n');
-    fprintf('  Single-peak spikes: %d\n', n_single_peak);
-    fprintf('  Multi-peak spikes: %d\n', n_multi_peak);
-    fprintf('  Ratios: NaN=%d, Inf=%d, Good(>%.1f)=%d, Bad(<=%.1f)=%d\n', ...
-        n_nan_ratio, n_inf_ratio, par.final_prominence_ratio_pass, n_good_ratio, par.final_prominence_ratio_pass, n_bad_ratio);
-    fprintf('  Width: NaN=%d, Good=[%.1f-%.1f]=%d, Bad=%d\n', ...
-        n_nan_width, par.min_width_idx, par.max_width_idx, n_good_width, n_bad_width);
-    fprintf('  Total quarantined: %d / %d\n\n', sum(quarantine_mask), num_spikes);
+    % fprintf('\n[DEBUG] Decision tree stats:\n');
+    % fprintf('  Single-peak spikes: %d\n', n_single_peak);
+    % fprintf('  Multi-peak spikes: %d\n', n_multi_peak);
+    % fprintf('  Ratios: NaN=%d, Inf=%d, Good(>%.1f)=%d, Bad(<=%.1f)=%d\n', ...
+    %     n_nan_ratio, n_inf_ratio, par.final_prominence_ratio_pass, n_good_ratio, par.final_prominence_ratio_pass, n_bad_ratio);
+    % fprintf('  Width: NaN=%d, Good=[%.1f-%.1f]=%d, Bad=%d\n', ...
+    %     n_nan_width, par.min_width_idx, par.max_width_idx, n_good_width, n_bad_width);
+    % fprintf('  Total quarantined: %d / %d\n\n', sum(quarantine_mask), num_spikes);
 
     quarantine_properties = struct();
     quarantine_properties.prominence_ratio = prominence_ratio(:);

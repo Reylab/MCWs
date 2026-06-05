@@ -1,4 +1,4 @@
-function refract_viol(channels)
+function refract_viol(channels,varargin)
     % Function: refract_viol
     % Description: Filters spikes that violate the refractory period.
     %              The refractory parameters (ref_ms or ref) mimic those used
@@ -6,6 +6,12 @@ function refract_viol(channels)
     %              masks for cumulative filtering.
     % Channels: The list of microelectrode channels (channel IDs) to process.
     
+    p = inputParser;
+    addParameter(p, 'keep_strategy', 'none', @ischar);
+    parse(p, varargin{:});
+
+    keep_strategy = p.Results.keep_strategy;
+
     refract_viol_tic = tic;
     
     load('NSx','NSx');
@@ -28,16 +34,16 @@ function refract_viol(channels)
         spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
                 
         try
-            fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
+            % fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
             SPK = load(spike_file);
             
             % Load full spike set
             if isfield(SPK,'spikes_all')
                 spikes_all = SPK.spikes_all;
-                index_all  = SPK.index_all;
+                index_all  = SPK.index_all(:);
             else 
                 spikes_all = SPK.spikes;
-                index_all  = SPK.index;
+                index_all  = SPK.index(:);
             end
             
             par = SPK.par;
@@ -52,17 +58,46 @@ function refract_viol(channels)
                 ref_val = 1.5; % Default fallback to 1.5ms
             end
             
-            % Identify violations mirroring the chronological check in amp_detect_old.m
-            mask_refract = false(size(index_all));
-            last_accepted = -inf;
+            % Vectorized Refractory Chain Flagging (Python keep=None equivalent)
+            ref_val = par.ref_ms; % or your resolved ref window
             
-            for i = 1:length(index_all)
-                % Check if spike is within the refractory period of the last accepted spike
-                if index_all(i) < last_accepted + ref_val
-                    mask_refract(i) = true;
-                else
-                    last_accepted = index_all(i);
+            if length(index_all) > 1
+                % 1. Find gaps between consecutive spikes
+                gaps = diff(index_all);
+                in_chain_gap = gaps < ref_val; % True if gap violates refractory window
+                
+                % 2. Identify the starts and ends of chains
+                % We pad with false to catch chains at the very edges of the array
+                ext_gap = [false; in_chain_gap; false];
+                
+                % Rise in True indicates a chain started; Fall indicates it ended
+                chain_starts = find(diff(ext_gap) == 1);
+                chain_ends   = find(diff(ext_gap) == -1); 
+                
+                % 3. Allocate our violation wmask
+                mask_refract = false(size(index_all));
+                
+               switch lower(keep_strategy)
+                    case 'first'
+                        % Keep the anchor (chain_starts), flag all subsequent spikes
+                        for c = 1:length(chain_starts)
+                            mask_refract(chain_starts(c) + 1 : chain_ends(c)) = true;
+                        end
+                        
+                    case 'last'
+                        % Flag all prior spikes, keep the final element (chain_ends)
+                        for c = 1:length(chain_starts)
+                            mask_refract(chain_starts(c) : chain_ends(c) - 1) = true;
+                        end
+                        
+                    otherwise % 'none' / default conservative choice
+                        % Flag every single spike involved in the chain
+                        for c = 1:length(chain_starts)
+                            mask_refract(chain_starts(c) : chain_ends(c)) = true;
+                        end
                 end
+            else
+                mask_refract = false(size(index_all));
             end
             
             mask_non_refract = ~mask_refract;
@@ -96,8 +131,8 @@ function refract_viol(channels)
                  "index", "spikes", "index_all", "spikes_all", "par", ...
                  "mask_non_refract", "-append");
             
-            fprintf('  -> %d/%d spikes flagged as refractory violations (%.2f%%)\n', ...
-                sum(mask_refract), length(index_all), (sum(mask_refract)/length(index_all))*100);
+            fprintf('Channel %s: %d/%d spikes flagged as refractory violations (%.2f%%)\n', ...
+                ch_lbl, sum(mask_refract),length(index_all), (sum(mask_refract) / length(index_all)) * 100);
                 
         catch ME
             fprintf('  -> FAILED to process channel %s: %s\n', ch_lbl, ME.message);

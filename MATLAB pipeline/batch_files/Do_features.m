@@ -27,23 +27,50 @@ function Do_features(input, varargin)
     [~, idx] = max([dates.datenum]);
     target_spikes_folder = fullfile(pwd, dates(idx).name);
     fprintf('Locking feature extraction to spikes folder: %s\n', dates(idx).name);
+
+    dates_spikes = dir(fullfile(pwd, 'spikes*'));
+    dates_spikes = dates_spikes([dates_spikes.isdir]);
+    if isempty(dates_spikes)
+        error('No folders starting with ''spikes'' found in the current working directory.');
+    end
+    [~, idx_spk] = max([dates_spikes.datenum]);
+    target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
+    fprintf('Locking feature extraction to spikes folder: %s\n', dates_spikes(idx_spk).name);
+    
+    % NEW: Resolve the latest times folder to check against during saving
+    dates_times = dir(fullfile(pwd, 'times*'));
+    dates_times = dates_times([dates_times.isdir]);
+    if ~isempty(dates_times)
+        [~, idx_times] = max([dates_times.datenum]);
+        latest_times_folder = fullfile(pwd, dates_times(idx_times).name);
+        fprintf('Found existing times folder: %s. Will route features here if times files exist.\n', dates_times(idx_times).name);
+    else
+        latest_times_folder = '';
+        fprintf('No times folder found. Will save features to spikes files by default.\n');
+    end
     
     % Gather and build absolute file paths using the locked target directory
     if isnumeric(input) || any(strcmp(input,'all'))
-        filenames_all = {};
         dirnames = dir(fullfile(target_spikes_folder, '*_spikes.mat'));
-        dirnames = {dirnames.name};
+        filenames_all = cell(1, length(dirnames));
     
         for i = 1:length(dirnames)
-            fname = dirnames{i};
-            filenames_all{end+1} = fullfile(target_spikes_folder, fname);
+            filenames_all{i} = fullfile(target_spikes_folder, dirnames(i).name);
         end
         
         if isnumeric(input)
-            for i=1:length(input)
-                chan_cells = regexp(filenames_all, ['CSC' num2str(input(i)) '_spikes\.mat|NSX' num2str(input(i)) '_spikes\.mat'], 'match');
-                chan_cells = [chan_cells{:}];
-                filenames = [filenames chan_cells];
+            % Loop through each requested channel number safely
+            for i = 1:length(input)
+                % Create a flexible pattern that looks for the number followed by '_spikes.mat'
+                % Matches: '1_spikes.mat', 'ch1_spikes.mat', 'CSC1_spikes.mat', 'NSX1_spikes.mat'
+                pattern = [num2str(input(i)) '_spikes.mat'];
+                
+                % Check which absolute filenames contain this specific channel pattern
+                matches = contains(filenames_all, pattern);
+                
+                if any(matches)
+                    filenames = [filenames, filenames_all(matches)];
+                end
             end
         else
             filenames = filenames_all;
@@ -68,7 +95,7 @@ function Do_features(input, varargin)
 
     % Get parameters file name
     if exist('set_parameters.m','file')
-        par_file = 'set_parameters';
+        par_file = set_parameters();
     else
         par_file = [];
     end
@@ -101,13 +128,13 @@ function Do_features(input, varargin)
         parfor fnum = 1:num_files
             filename = filenames{fnum};
             fprintf('Processing file %d of %d: %s (Parallel)\n', fnum, num_files, filename);
-            do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum);
+            do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum, latest_times_folder);
         end
     else
         for fnum = 1:num_files
             filename = filenames{fnum};
             fprintf('Processing file %d of %d: %s (Serial)\n', fnum, num_files, filename);
-            do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum);
+            do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum, latest_times_folder);
         end
     end
 
@@ -128,8 +155,7 @@ function Do_features(input, varargin)
 
 end
 
-function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
-
+function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum, latest_times_folder)
     par = struct;
     par = update_parameters(par,par_file,'clus');
     par = update_parameters(par,par_input,'clus');
@@ -139,6 +165,7 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
     % ensures readInData loads from the explicitly targeted file immediately.
     data_handler = readInData(par);
     par = data_handler.par;
+    nick_name = data_handler.nick_name;
     
     if data_handler.with_spikes
         [spikes, index, spikes_all, index_all] = data_handler.load_spikes_withCollisions();
@@ -154,14 +181,37 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum)
         return
     end
 
-    [inspk, coeff] = wave_features(spikes, par);
+    [features] = wave_features(spikes, par);
+    inspk = features.inspk;
+    coeff = features.coeff;
+
+    target_save_file = filename; % Default to the spikes file
+    save_target_type = 'SPIKES';
+    if ~isempty(latest_times_folder)
+        possible_times_file = fullfile(latest_times_folder, ['times_' nick_name '.mat']);
+        if exist(possible_times_file, 'file')
+            target_save_file = possible_times_file;
+            save_target_type = 'TIMES';
+        end
+    end
+    
+    % Append features directly back into the resolved target file
+    if isempty(coeff)
+        save(target_save_file, 'inspk', '-append');
+    else
+        try
+            save(target_save_file, 'inspk', 'coeff', '-append');
+        catch
+            save(target_save_file, 'inspk', 'coeff', '-append', '-v7.3');
+        end
+    end
 
     % Append features directly back into the targeted spike file
     try
-        save(filename, 'inspk', 'coeff', '-append');
+        save(filename,'inspk', 'features', '-append');
     catch
         % Fallback if file becomes large or version needs enforcement
-        save(filename, 'inspk', 'coeff', '-append', '-v7.3');
+        save(filename, 'inspk', 'features', '-append', '-v7.3');
     end
 
 end

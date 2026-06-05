@@ -48,7 +48,15 @@ function extract_blank_on_events_ripple(filename_NEV,which_dig)
                     error('Check the signature')
                 end
                 % if sum(unique(Event_Value) == 15) == 0 % No continue message daq signal until patient MCW-FH_016
-                if sum(unique(Event_Value) == experiment.continue_msg_on) == 0 % No continue message daq signal until patient MCW-FH_016
+
+                if isfield(experiment,'continue_msg_on')
+                    continue_sum = experiment.continue_msg_on;
+                else
+                    continue_sum = 15; % legacy design constraint
+                end
+                % if sum(unique(Event_Value) == 15) == 0 % No continue message daq signal until patient MCW-FH_016
+                % if sum(unique(Event_Value) == experiment.continue_msg_on) == 0 % No continue message daq signal until patient MCW-FH_016
+                if sum(unique(Event_Value) == continue_sum) == 0 % No continue message daq signal until patient MCW-FH_016
                     blank_seq_beg_str = [experiment.blank_on, experiment.lines_onoff]; % experiment.blank_on = 11, experiment.lines_onoff = 13
                     inds_blank_on_seq_beg = strfind(Event_Value', blank_seq_beg_str);
                     % remove every 2nd blank_on event

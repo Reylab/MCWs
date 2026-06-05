@@ -5,7 +5,6 @@ function new_check_lfp_power_NSX(channels, varargin)
     p = inputParser;
     p.addParameter('save_fig',false);
     p.addParameter('show_img',true);
-    p.addParameter('direc_resus_base',pwd);
     p.addParameter('resus_folder_name','spectra');
     p.addParameter('direc_raw',pwd);
     p.addParameter('with_NoNotch',false);
@@ -50,6 +49,17 @@ function new_check_lfp_power_NSX(channels, varargin)
         par.save_fig = true;
     end
     
+    folder_preprocess = fullfile(par.direc_raw, 'preprocessing');
+    if ~exist(folder_preprocess, 'dir')
+        mkdir(folder_preprocess);
+    end
+    if par.save_fig
+        spectra_dir = fullfile(folder_preprocess, par.resus_folder_name);
+        if ~exist(spectra_dir, 'dir')
+            mkdir(spectra_dir);
+        end
+    end
+    
     conf_table = par_check_lfp_power_NSX();
     nchannels = length(channels);
     process_info_out = cell(nchannels,1);
@@ -65,10 +75,6 @@ function new_check_lfp_power_NSX(channels, varargin)
         end
     end
     
-    folder_preprocess = fullfile(par.direc_raw, 'preprocessing');
-    if ~exist(folder_preprocess, 'dir')
-        mkdir(folder_preprocess);
-    end
     file_preprocess = fullfile(folder_preprocess, 'pre_processing_info.mat');
     
     if exist(file_preprocess,'file')
@@ -475,10 +481,7 @@ function info=new_check_lfp_power(channel,par,conf_table,NSx,freq_priority)
     sgtitle({titletext,extra_title},'fontsize',13,'interpreter','none');  
     
     if par.save_fig == 1
-        if ~exist(fullfile(par.direc_resus_base,par.resus_folder_name),'dir')
-            mkdir(par.direc_resus_base,par.resus_folder_name);
-        end
-        outfile = fullfile(par.direc_resus_base,par.resus_folder_name,['spectrum_' par.session '_ch' num2str(channel) '_' label]);
+        outfile = fullfile(par.direc_raw, 'preprocessing', par.resus_folder_name, ['spectrum_' par.session '_ch' num2str(channel) '_' label]);
 %         savefig(fig,[outfile '.fig'],'compact');    
         print(fig,'-dpng',[outfile '.png']);           
     end

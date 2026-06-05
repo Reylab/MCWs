@@ -44,6 +44,32 @@ classdef readInData < handle
             file_path = target_name; % fallback
         end
 
+        function file_path = find_latest_times(obj, target_name)
+            % Priority: 
+            %  local file if exists in current dir
+            %  files in the newest times_YYYYMMDD_HHMM folder
+            if exist(target_name, 'file')
+                file_path = target_name;
+                return;
+            end
+            
+            dates = dir(fullfile(pwd, 'times*'));
+            dates = dates([dates.isdir]);
+            
+            if ~isempty(dates)
+                % Sort directory datenums to find the most recently modified folder
+                [~, idx] = max([dates.datenum]);
+                latest_date_folder = fullfile(pwd, dates(idx).name);
+                
+                possible_file = fullfile(latest_date_folder, target_name);
+                if exist(possible_file, 'file')
+                    file_path = possible_file;
+                    return;
+                end
+            end
+            file_path = target_name; % fallback
+        end
+
         function obj = readInData(par_ui)
             [unused, fnam, ext] = fileparts(par_ui.filename);
             ext = lower(ext);
@@ -72,25 +98,32 @@ classdef readInData < handle
                 obj.nick_name = fnam(1:end-7);
             end
             
-            keep_results = (~isfield(par_ui,'reset_results')) || (~ par_ui.reset_results);
+       keep_results = (~isfield(par_ui,'reset_results')) || (~ par_ui.reset_results);
             if  keep_results ||  obj.with_results
-                %Search for previous results
-                if exist(['times_' obj.nick_name '.mat'],'file')
-                    finfo = whos('-file',['times_' obj.nick_name '.mat']);
+                % Search for previous results using dynamic folder routing
+                target_times_file = obj.find_latest_times(['times_' obj.nick_name '.mat']);
+                
+                if exist(target_times_file,'file')
+                    finfo = whos('-file', target_times_file);
                     if ismember('spikes',{finfo.name})
                         obj.with_wc_spikes = true;
                     elseif ismember('spikes_file',{finfo.name})
-                        load(['times_' obj.nick_name '.mat'],'spikes_file');
+                        load(target_times_file,'spikes_file');
                         obj.spikes_file = spikes_file;
                     end
                    
-                    if exist(['data_' obj.nick_name '.dg_01.lab'],'file') && exist(['data_' obj.nick_name '.dg_01'],'file')
+                    % Check for SPC files in the times folder too
+                    spc_lab = obj.find_latest_times(['data_' obj.nick_name '.dg_01.lab']);
+                    spc_dat = obj.find_latest_times(['data_' obj.nick_name '.dg_01']);
+                    
+                    if exist(spc_lab,'file') && exist(spc_dat,'file')
                         obj.with_spc = true;
                         obj.with_results = true;
                     end
+                    
                     if  obj.with_results
                         if ismember('par',{finfo.name})
-                            load(['times_' obj.nick_name '.mat'],'par');
+                            load(target_times_file,'par');
                             obj.par = update_parameters(obj.par, par, 'relevant',true);
                             with_par = true;
                         end
@@ -246,7 +279,8 @@ classdef readInData < handle
             	ME = MException('MyComponent:noClusFound', 'This file don''t have a associated ''times_%s.mat'' file',obj.nick_name);
             	throw(ME)
             end
-            load(['times_' obj.nick_name '.mat']);
+            times_file = obj.find_latest_times(['times_' obj.nick_name '.mat']);
+            load(times_file);
             if ~exist('ipermut','var')
             	ipermut = [];
             end
@@ -262,11 +296,11 @@ classdef readInData < handle
             classes = cluster_class(1:end,1);
             
             if ~exist('Temp','var')
-            	Temp = ones(max(classes));
+            	Temp = ones(max(classes), 1);
             end
             if obj.with_spc
-                clu = load(['data_' obj.nick_name '.dg_01.lab']);
-                tree = load(['data_' obj.nick_name '.dg_01']);
+                clu = load(obj.find_latest_times(['data_' obj.nick_name '.dg_01.lab']));
+                tree = load(obj.find_latest_times(['data_' obj.nick_name '.dg_01']));
             else
                 clu = [];
                 tree = [];
@@ -280,7 +314,8 @@ classdef readInData < handle
             	ME = MException('MyComponent:noClusFound', 'This file don''t have a associated ''times_%s.mat'' file',obj.nick_name);
             	throw(ME)
             end
-            finfo = whos('-file', ['times_' obj.nick_name '.mat'],'rejected','cluster_class');
+            times_file = obj.find_latest_times(['times_' obj.nick_name '.mat']);
+            finfo = whos('-file', times_file,'rejected','cluster_class');
             if ~ismember('rejected',{finfo.name})
             	rejected = false(1,finfo.size(1));
             end
@@ -288,7 +323,8 @@ classdef readInData < handle
         
 
         function [original_classes, current_temp,auto_sort_info] = get_gui_status(obj)
-            load(['times_' obj.nick_name '.mat'],'gui_status');
+            times_file = obj.find_latest_times(['times_' obj.nick_name '.mat']);
+            load(times_file,'gui_status');
             current_temp = gui_status.current_temp;
             if isempty(current_temp) || (current_temp == -1 && obj.with_spc)
                 current_temp=1;

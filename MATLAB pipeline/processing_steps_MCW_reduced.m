@@ -222,7 +222,7 @@ if par.micros
     param.stdmax = 50;                     % maximum threshold for detection
     param.ref_ms = 1.5;
     % param.preprocessing = false;
-    param.preprocessing = false;
+    param.preprocessing = true;
 
     disp('spike detection BEGIN..')
     param.detection = 'neg';
@@ -253,10 +253,10 @@ if par.micros
 
     % quarantine squikes 
     % artifact_removal(channels)
-    within_channels(channels)
+    within_channel(channels)
 
 
-    % refract_viol(channels)
+    refract_viol(channels)
        %% sorting
     if par.do_sorting
         disp('spike sorting BEGIN..')
@@ -268,15 +268,15 @@ if par.micros
         param.max_std_templates = 3;
         param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
         
-        Do_features(channels, 'parallel', true, 'par', param);
-        Do_clustering(channels, 'parallel', true, 'make_times', true, ...
+        Do_features(channels, 'parallel', false, 'par', param);
+        Do_clustering(channels, 'parallel', false, 'make_times', true, ...
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
 
         %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
     end
-    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',false);
+    compute_metrics_batch(channels,'parallel',false, 'save',true, 'rescue',false);
         % can be used on single channels
         % [metrics_table, SS] = compute_cluster_metrics(data, ...
         %     'exclude_cluster_0', params.exclude_cluster_0, ...

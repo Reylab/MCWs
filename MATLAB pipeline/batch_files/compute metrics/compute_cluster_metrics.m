@@ -146,8 +146,8 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
             labels_valid = cluster_ids;
         end
         
-        fprintf('DEBUG %s: Before silhouette - unique_clusters=%d, exclude_0=%d, unique_after_filter=%d\n', ...
-            data.filename, numel(unique_clusters), p.Results.exclude_cluster_0, numel(unique(labels_valid)));
+        % fprintf('DEBUG %s: Before silhouette - unique_clusters=%d, exclude_0=%d, unique_after_filter=%d\n', ...
+        %     data.filename, numel(unique_clusters), p.Results.exclude_cluster_0, numel(unique(labels_valid)));
         
         try
             [scores, SS] = silhouette_score(feat_valid, labels_valid, 'return_matrix', true);
@@ -197,8 +197,8 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
             end
         end
     else
-        fprintf('DEBUG %s: SS set to [] in ELSE - only 1 unique cluster (unique_clusters=%d)\n', ...
-            data.filename, numel(unique_clusters));
+        % fprintf('DEBUG %s: SS set to [] in ELSE - only 1 unique cluster (unique_clusters=%d)\n', ...
+        %     data.filename, numel(unique_clusters));
         SS = [];
         if ~isempty(df_metrics)
             df_metrics.silhouette_score = NaN(height(df_metrics),1);
