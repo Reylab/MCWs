@@ -95,7 +95,12 @@ switch system_type
             end
             run_linux = sprintf('./cluster_linux64.exe %s.run',fname);
         end
-        [status,result] = unix(run_linux);
+        % Temporary change in run_cluster.m (around line 99)
+        cmd = sprintf('''%s'' %s.run', which('cluster_linux64.exe'), fname);
+        fprintf('DEBUG: Executing command: %s\n', cmd); % <--- ADD THIS
+        [status, result] = unix(cmd);        [status,result] = unix(cmd);
+        
+
     otherwise 
     	ME = MException('MyComponent:NotSupportedArq', '%s type of computer not supported.',com_type);
     	throw(ME)

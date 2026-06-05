@@ -594,10 +594,10 @@ function Do_clustering(input, varargin)
     %         par.max_inputs = par.max_inputs * par.channels;
     %     end
     
-        par.fname_in = ['tmp_data_wc' num2str(fnum)];                       % temporary filename used as input for SPC
+        par.fname_in = fullfile(target_spikes_folder, ['tmp_data_wc' num2str(fnum)]);
         par.fname = ['data_' data_handler.nick_name];
         par.nick_name = data_handler.nick_name;
-        par.fnamespc = ['data_wc' num2str(fnum)];
+        par.fnamespc = fullfile(target_spikes_folder, ['data_wc' num2str(fnum)]);
     
         par.randomseed = 42; %% test if default seed param valid.
     
@@ -677,7 +677,11 @@ function Do_clustering(input, varargin)
         % INTERACT W SPC
       % Extract the specific folder for this channel
         [target_spikes_folder, ~, ~] = fileparts(filename);
+        if isempty(target_spikes_folder)
+            target_spikes_folder = pwd;   % stay where we are
+        end
         old_dir = pwd;
+        cd(target_spikes_folder);
         
 
         try
@@ -696,7 +700,7 @@ function Do_clustering(input, varargin)
             % We use absolute paths to ensure it lands in the correct destination
             if exist([par.fnamespc '.dg_01.lab'], 'file')
                 movefile([par.fnamespc '.dg_01.lab'], fullfile(global_times_folder, [par.fname '.dg_01.lab']), 'f');
-                movefile([par.fnamespc '.dg_01'], fullfile(global_times_folder, [par.fname '.dg_01']), 'f');
+                movefile([par.fnamespc '.dg_01'],     fullfile(global_times_folder, [par.fname '.dg_01']),     'f');
             end
             
             % Return to original directory

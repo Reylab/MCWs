@@ -67,6 +67,9 @@ if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHu
 elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
 elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\MCWs'; % aj desktop
 elseif contains(name,'MCW-21454'), dir_base = 'C:\Users\betan\Documents\Github\MCWs'; % aj laptop mcw
+elseif contains(name,'TOWER-REYLAB') || contains(name,'RACK-REYLAB') || contains(name, 'ABTL')
+%     current_user = 'sofiad';  % replace with appropriate user name  
+    current_user = getenv('USER');    dir_base = sprintf('/home/%s/Documents/GitHub/MCWs/MATLAB_pipeline',current_user); 
 end
 
 addpath(genpath(dir_base));
@@ -268,7 +271,7 @@ if par.micros
         param.max_std_templates = 3;
         param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
         
-        Do_features(channels, 'parallel', false, 'par', param);
+        Do_features(channels, 'parallel', true, 'par', param);
         Do_clustering(channels, 'parallel', false, 'make_times', true, ...
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
