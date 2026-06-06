@@ -185,33 +185,27 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum,
     inspk = features.inspk;
     coeff = features.coeff;
 
-    target_save_file = filename; % Default to the spikes file
-    save_target_type = 'SPIKES';
+    % Determine save target - times file if it exists, otherwise spikes file
+    target_save_file = filename;
     if ~isempty(latest_times_folder)
         possible_times_file = fullfile(latest_times_folder, ['times_' nick_name '.mat']);
         if exist(possible_times_file, 'file')
             target_save_file = possible_times_file;
-            save_target_type = 'TIMES';
-        end
-    end
-    
-    % Append features directly back into the resolved target file
-    if isempty(coeff)
-        save(target_save_file, 'inspk', '-append');
-    else
-        try
-            save(target_save_file, 'inspk', 'coeff', '-append');
-        catch
-            save(target_save_file, 'inspk', 'coeff', '-append', '-v7.3');
         end
     end
 
-    % Append features directly back into the targeted spike file
-    try
-        save(filename,'inspk', 'features', '-append');
-    catch
-        % Fallback if file becomes large or version needs enforcement
-        save(filename, 'inspk', 'features', '-append', '-v7.3');
+    % Use matfile to overwrite features in place without touching other variables
+    m = matfile(target_save_file, 'Writable', true);
+    m.inspk = inspk;
+    m.coeff = coeff;
+    m.features = features;
+
+    % Always also update the spikes file itself for legacy functions
+    if ~strcmp(target_save_file, filename)
+        m_spk = matfile(filename, 'Writable', true);
+        m_spk.inspk = inspk;
+        m_spk.coeff = coeff;
+        m_spk.features = features;
     end
 
 end

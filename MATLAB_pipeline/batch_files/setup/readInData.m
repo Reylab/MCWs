@@ -22,7 +22,8 @@ classdef readInData < handle
             % Priority: 
             %  local file if exists in current dir
             %  files in the newest spikes_YYYYMMDD_HHMM folder
-            if exist(target_name, 'file')
+            [p, ~, ~] = fileparts(target_name);
+            if ~isempty(p) && p(1) == filesep && exist(target_name, 'file')
                 file_path = target_name;
                 return;
             end
@@ -48,7 +49,8 @@ classdef readInData < handle
             % Priority: 
             %  local file if exists in current dir
             %  files in the newest times_YYYYMMDD_HHMM folder
-            if exist(target_name, 'file')
+            [p, ~, ~] = fileparts(target_name);
+            if ~isempty(p) && p(1) == filesep && exist(target_name, 'file')
                 file_path = target_name;
                 return;
             end

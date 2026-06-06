@@ -71,23 +71,8 @@ function Do_clustering(input, varargin)
     save_spikes = p.Results.save_spikes;
 
     sdnum = p.Results.sdnum;
-    run_par_for = parallel;
-    timestamp_start = string(datetime('now'), 'yyyyMMdd_HHmm');
-    global_times_folder = fullfile(pwd, 'times_' + timestamp_start);
-    if ~exist(global_times_folder, 'dir')
-        mkdir(global_times_folder);
-    end
-    fprintf('Saving all outputs to: %s\n', 'times_' + timestamp_start);
-
-    dates_spikes = dir(fullfile(pwd, 'spikes*'));
-    dates_spikes = dates_spikes([dates_spikes.isdir]);
-    if isempty(dates_spikes)
-        error('No folders starting with ''spikes'' found in the current working directory.');
-    end
-    [~, idx_spk] = max([dates_spikes.datenum]);
-    target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
-
-    
+  
+   
     run_par_for = parallel;
     
     dates_spikes = dir(fullfile(pwd, 'spikes*'));
@@ -594,10 +579,8 @@ function Do_clustering(input, varargin)
     %         par.max_inputs = par.max_inputs * par.channels;
     %     end
     
-        par.fname_in = fullfile(target_spikes_folder, ['tmp_data_wc' num2str(fnum)]);
         par.fname = ['data_' data_handler.nick_name];
         par.nick_name = data_handler.nick_name;
-        par.fnamespc = fullfile(target_spikes_folder, ['data_wc' num2str(fnum)]);
     
         par.randomseed = 42; %% test if default seed param valid.
     
@@ -606,19 +589,18 @@ function Do_clustering(input, varargin)
         end
     
         % LOAD PRE-CALCULATED FEATURES (stored in the spikes file)
-        feat = load(filename, 'spikes', 'index', 'features', 'spikes_all', 'index_all');
-    
-        if ~isfield(feat, 'features')
+        feat = load(filename, 'spikes', 'index', 'inspk', 'coeff', 'spikes_all', 'index_all');
+        
+        if ~isfield(feat, 'inspk')
             warning('Features not found in %s. Please run Do_features first.', filename);
             return
         end
-    
+        
         spikes = feat.spikes;
         index = feat.index;
-        inspk = feat.features.inspk;
-        coeff = feat.features.coeff;
-    
-        % Handle optional fields that might not exist in all files
+        inspk = feat.inspk;
+        coeff = feat.coeff;
+        
         if isfield(feat, 'spikes_all')
             spikes_all = feat.spikes_all;
         else
@@ -652,7 +634,8 @@ function Do_clustering(input, varargin)
         % Debug: Check parameters and data sizes
         fprintf('Processing %s: %d spikes, %d features, max_spk=%d\n', ...
                 filename, nspk, par.inputs, par.max_spk);
-    
+    feat = load(filename, 'spikes', 'index', 'features', 'spikes_all', 'index_all');
+   
         if par.permut == 'n'
             % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.
             if size(spikes,1)> par.max_spk;
@@ -667,47 +650,35 @@ function Do_clustering(input, varargin)
                 % random selection of spikes for SPC
                 ipermut = randperm(length(inspk));
                 ipermut(naux+1:end) = [];
+                
                 inspk_aux = inspk(ipermut,:);
             else
                 ipermut = randperm(size(inspk,1));
+                
                 inspk_aux = inspk(ipermut,:);
             end
         end
 
         % INTERACT W SPC
-      % Extract the specific folder for this channel
         [target_spikes_folder, ~, ~] = fileparts(filename);
         if isempty(target_spikes_folder)
-            target_spikes_folder = pwd;   % stay where we are
+            target_spikes_folder = pwd;
         end
-        old_dir = pwd;
-        cd(target_spikes_folder);
         
-
+        % SPC param.c has hardcoded path length limit - use short names in /tmp
+        short_base = ['/tmp/spc_wc' num2str(fnum)];
+        par.fname_in  = [short_base '_in'];
+        par.fnamespc  = short_base;
+        
         try
-            % Move to the spikes folder so run_cluster operates in a clean context
-            cd(target_spikes_folder);
-            
-            % Save input file
             save(par.fname_in, 'inspk_aux', '-ascii');
-            
-            % Run clustering - with the fix above, this will now handle spaces correctly
-           
-            dir_contents = dir();
             [clu, tree] = run_cluster(par, true);
             
-            % Move results to the global times folder
-            % We use absolute paths to ensure it lands in the correct destination
             if exist([par.fnamespc '.dg_01.lab'], 'file')
                 movefile([par.fnamespc '.dg_01.lab'], fullfile(global_times_folder, [par.fname '.dg_01.lab']), 'f');
                 movefile([par.fnamespc '.dg_01'],     fullfile(global_times_folder, [par.fname '.dg_01']),     'f');
             end
-            
-            % Return to original directory
-            cd(old_dir);
-            
         catch ME
-            cd(old_dir);
             warning('SPC failed for %s: %s', par.fname, ME.message);
             rethrow(ME);
         end
@@ -777,7 +748,7 @@ function Do_clustering(input, varargin)
         cluster_class = zeros(nspk,2);
         cluster_class(:,2)= index';
         cluster_class(:,1)= classes';
-        features = feat.features;
+        features = struct('inspk', inspk, 'coeff', coeff);
         vars = {'cluster_class','features','par','forced','Temp','gui_status','inspk'};
     %     if exist('index_all','var')
         if ~isempty(index_all)

@@ -10,7 +10,7 @@ if exist([fname '.dg_01.lab'],'file')
 end
 
 dat = load(fname_in);
-n = length(dat);
+n = size(dat,1);
 fid = fopen(sprintf('%s.run',fname),'wt');
 fprintf(fid,'NumberOfPoints: %s\n',num2str(n));
 fprintf(fid,'DataFile: %s\n',fname_in);
@@ -82,25 +82,18 @@ switch system_type
 	    [status,result] = unix(run_linux);
         
     case {'GLNXA64', 'GLNXI64'}
-       
-        run_linux = sprintf('''%s'' %s.run',which('cluster_linux64.exe'),fname);
         fileattrib(which('cluster_linux64.exe'),'+x')
-        
-        [stat,mess]=fileattrib(which('cluster_linux64.exe'));
-        
-        if mess.UserExecute==0
+        [stat,mess] = fileattrib(which('cluster_linux64.exe'));
+        if mess.UserExecute == 0
             if exist([pwd '/cluster_linux64.exe'],'file') == 0
                 directory = which('cluster_linux64.exe');
                 copyfile(directory,pwd);
             end
-            run_linux = sprintf('./cluster_linux64.exe %s.run',fname);
+            cmd = sprintf('./cluster_linux64.exe %s.run', fname);
+        else
+            cmd = sprintf('''%s'' %s.run', which('cluster_linux64.exe'), fname);
         end
-        % Temporary change in run_cluster.m (around line 99)
-        cmd = sprintf('''%s'' %s.run', which('cluster_linux64.exe'), fname);
-        fprintf('DEBUG: Executing command: %s\n', cmd); % <--- ADD THIS
-        [status, result] = unix(cmd);        [status,result] = unix(cmd);
-        
-
+        [status, result] = unix(cmd);
     otherwise 
     	ME = MException('MyComponent:NotSupportedArq', '%s type of computer not supported.',com_type);
     	throw(ME)
