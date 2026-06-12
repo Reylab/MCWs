@@ -100,7 +100,7 @@ function refract_viol(channels,varargin)
                 mask_refract = false(size(index_all));
             end
             
-            mask_non_refract = ~mask_refract;
+            mask_non_refract = ~mask_refract';
             
             % Load existing masks to create a cumulative mask
             if isfield(SPK, 'mask_nonart')
@@ -116,9 +116,9 @@ function refract_viol(channels,varargin)
             end
             
             if isfield(SPK, 'mask_taskspks')
-                mask_taskspks = SPK.mask_taskspks;
+                mask_taskspks = reshape(SPK.mask_taskspks, 1, []);;
             else
-                mask_taskspks = true(size(index_all));
+                mask_taskspks = true(1, length(index_all));
             end
             
             % Apply previous and new mask
@@ -126,6 +126,10 @@ function refract_viol(channels,varargin)
             
             spikes = spikes_all(mask_tot, :);
             index = index_all(mask_tot);
+
+            index = reshape(index, 1, []);
+            index_all = reshape(index_all, 1, []);
+            mask_non_refract = reshape(mask_non_refract, 1, []);
             
             save(spike_file, ...
                  "index", "spikes", "index_all", "spikes_all", "par", ...

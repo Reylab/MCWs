@@ -17,11 +17,7 @@ function plot_grapes_as_online(varargin)
     addParameter(ipr, 'extra_lbl', '');
     addParameter(ipr, 'use_blanks', false, @islogical);    
     addParameter(ipr, 'circshiftblanks', false, @islogical);    
-    addParameter(ipr, 'short_win', false, @islogical);
-    % Add this parameter at the end of your addParameter list:
-    addParameter(ipr, 'target_dir', ''); 
-    
-    % Add this to your result extraction:
+    addParameter(ipr, 'short_win', false, @islogical);    
 
     % Check if varargin exists or is empty
     if ~isempty(varargin)
@@ -29,7 +25,6 @@ function plot_grapes_as_online(varargin)
     else
         parse(ipr);
     end
-    target_dir = ipr.Results.target_dir;
     grapes_offline = ipr.Results.grapes_offline;
     channels2plot = ipr.Results.channels2plot;
     is_online = ipr.Results.is_online;
@@ -46,9 +41,6 @@ function plot_grapes_as_online(varargin)
     use_blanks = ipr.Results.use_blanks;
     circshiftblanks = ipr.Results.circshiftblanks;
     short_win = ipr.Results.short_win;
-
-
-    root = resolve_session_root();
 
     if use_blanks
         if circshiftblanks
@@ -99,53 +91,25 @@ function plot_grapes_as_online(varargin)
     alpha_gauss = 3.035;
     ifr_resolution = 1;
     
-    if isempty(target_dir)
-        grapes_filename = [grapes_name '.mat'];
-        [~, current_dir_name] = fileparts(pwd);
+    
+    if ~grapes_offline
+        folder = 'online_grapes_new_order_results';
+        if is_online
+            folder = [folder filesep 'plots_without_online_best'];
+        end
         
-        % PRIORITY 1: Check if pwd is a valid subfolder matching the mode
-        if grapes_offline && startsWith(current_dir_name, 'times')
-            target_dir = pwd;
-            fprintf('Using current working directory (times subfolder): %s\n', target_dir);
-        elseif ~grapes_offline && startsWith(current_dir_name, 'spikes')
-            target_dir = pwd;
-            fprintf('Using current working directory (spikes subfolder): %s\n', target_dir);
-            
-        % PRIORITY 2: Check root and its subfolders
-        elseif exist(fullfile(root, grapes_filename), 'file')
-            target_dir = root;
-            fprintf('Using session root directory.\n');
-            
-        % PRIORITY 3: Timestamped Folder
-        else
-            pattern = 'times_*';
-            if ~grapes_offline
-                pattern = 'spikes_*';
-            end
-            d = dir(fullfile(root, pattern));
-            d = d([d.isdir]);
-            if ~isempty(d)
-                [~, idx] = max([d.datenum]);
-                target_dir = fullfile(root, d(idx).name);
-                fprintf('Locked onto timestamped folder: %s\n', target_dir);
-            else
-                error('plot_grapes_as_online: could not find %s in %s or its subfolders.', grapes_filename, root);
+    else
+        folder = 'offline_grapes_new_order_results';
+        if is_online
+            folder = [folder filesep 'plots_without_online_best'];
+        end
+        if ~strcmp(channels2plot,'all')
+            if min(channels2plot)>2000
+                channels2plot = channels2plot - 2000;
+            elseif min(channels2plot)>1000
+                channels2plot = channels2plot - 1000;
             end
         end
-    end
-
-    % Set the output directory as an absolute path
-    folder_suffix = 'offline_grapes_new_order_results';
-    if ~grapes_offline
-        folder_suffix = 'online_grapes_new_order_results';
-    end
-    if is_online
-        folder_suffix = [folder_suffix filesep 'plots_without_online_best'];
-    end
-    
-    output_dir = fullfile(target_dir, folder_suffix);
-    if ~exist(output_dir, 'dir')
-        mkdir(output_dir);
     end
     
     %%
@@ -154,30 +118,21 @@ function plot_grapes_as_online(varargin)
     
     custompath = reylab_custompath({'wave_clus_reylab','tasks/online_v3/online','codes_for_analysis','mex','useful_functions'});
     
-    load(fullfile(root, 'experiment_properties_online3.mat'));
+    load('experiment_properties_online3.mat')
 
     if ~exist('priority_chs_ranking', 'var')
         priority_chs_ranking = []; % It should be in patient 12 & onwards in experiment prop.
     end
     
     if grapes_offline
-        % Construct the path using target_dir
-        grapes_full_path = fullfile(target_dir, [grapes_name '.mat']);
-        
-        if ~exist(grapes_full_path, 'file')
-            error('Could not find grapes file at: %s', grapes_full_path);
-        end
-        
-        grapes = load(grapes_full_path);
-        
-        % Update folder path references
-        grapes.ImageNames = table(repmat({fullfile(root, '..', 'pics_used')}, ...
-                                       numel(grapes.ImageNames), 1), grapes.ImageNames, ...
-                                       'VariableNames', {'folder', 'name'});
+        grapes = load(grapes_name);
+        grapes.ImageNames=table(repmat({[pwd filesep 'pics_used']}, ...
+                                numel(grapes.ImageNames),1),grapes.ImageNames, ...
+                                'VariableNames',{'folder', 'name'});
     else
-        % Keep your online loading logic
         load(['results' filesep 'grapes_online.mat']);
-        grapes.ImageNames.folder(:) = {fullfile(root, '..', 'pics_used')};
+    %     picusa = cellfun(@(x) contains(x,'pics_USA'),grapes.ImageNames.folder);
+         grapes.ImageNames.folder(:)={[pwd filesep 'pics_used']};
     end
 
     final_n_scr = numel(scr_end_cell);
@@ -191,9 +146,10 @@ function plot_grapes_as_online(varargin)
         grapes.rasters = new_rasters;
     end
     
-    if ~exist(output_dir, 'dir') 
-        mkdir(output_dir)
+    if ~exist(['.' filesep folder],'dir') 
+        mkdir(folder)
     end
+    cd(folder)
     if ~contains(grapes.exp_type,'freq_tag')
         all_picsused = unique(cell2mat(cellfun(@(x)x.pics2use, scr_config_cell, 'UniformOutput', false)));
     else
@@ -239,10 +195,10 @@ function plot_grapes_as_online(varargin)
                                                               final_n_scr, ifr_calculator, nwins, ...
                                                               lbl, priority_chs_ranking, ...
                                                               experiment, copy2miniscrfolder, ...
-                                                              show_sel_count, show_best_stims_wins, short_win,...
-                                                              'output_dir',output_dir);
+                                                              show_sel_count, show_best_stims_wins, short_win);
             writetable(s4miniscr_tbl, 'offline_miniscr_stims.csv','Delimiter',',');
             disp('Finished plotting best stims offline without online miniscr selections & creating offline_miniscr_stims.csv')
+            cd('..')
         end
 
         % plot best stims without removing any miniscr selections
@@ -254,7 +210,7 @@ function plot_grapes_as_online(varargin)
                                                           final_n_scr, ifr_calculator, nwins, ...
                                                           lbl, priority_chs_ranking, ...
                                                           experiment, copy2miniscrfolder, ...
-                                                          show_sel_count, false, short_win,'output_dir',output_dir);
+                                                          show_sel_count, false, short_win);
         writetable(s4miniscr_tbl, 'offline_best_stims.csv','Delimiter',',');
         disp('Finished plotting best stims offline & creating offline_best_stims.csv')      
         
@@ -269,9 +225,9 @@ function plot_grapes_as_online(varargin)
                                 'save_fig', true, 'emu_num', experiment.params.EMU_num, ...
                                 'close_fig', true, 'order_offset', 0, ...
                                 'priority_chs_ranking', priority_chs_ranking, ...
-                                'parallel_plots', true, 'extra_lbl', extra_lbl, ...
-                                'output_dir', output_dir);
+                                'parallel_plots', true, 'extra_lbl', extra_lbl);
     end
+    cd('..')
     % 
     % isthisclass = cellfun(@(x) strcmp(x,'class1'),data.class);
     % isthischannel = cellfun(@(x) strcmp(x,'chan43'),data.channel);

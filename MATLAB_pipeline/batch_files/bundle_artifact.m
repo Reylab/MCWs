@@ -32,9 +32,9 @@ for ibun = 1:length(bundles_to_explore)
         target_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', NSx(pos_chans_probe(k)).output_name));
         SPK = load(target_file);
         if isfield(SPK,'index_all')
-            inds(k).spktimes = SPK.index_all;          
+            inds(k).spktimes = reshape(SPK.index_all, 1, []);          
         else
-            inds(k).spktimes = SPK.index;           
+            inds(k).spktimes = reshape(SPK.index, 1, []);           
         end
         all_spktimes = [all_spktimes inds(k).spktimes];
         which_chan = [which_chan NSx(pos_chans_probe(k)).chan_ID*ones(size(inds(k).spktimes))];
@@ -138,6 +138,10 @@ for ibun = 1:length(bundles_to_explore)
         spikes = spikes_all(mask_tot,:);
         index = index_all(mask_tot);
         % make_plots(spikes, spikes_all, mask_nonart, ch_lbl, b_parallel,target_file)
+
+        index = reshape(index, 1, []);
+        index_all = reshape(index_all,1,[]);
+        mask_nonart = reshape(mask_nonart,1,[]);
         
         save(target_file, ...
              "index", "spikes", "index_all", "spikes_all", "par", "mask_nonart", "-append") 

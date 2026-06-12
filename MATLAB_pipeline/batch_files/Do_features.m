@@ -12,32 +12,31 @@ function Do_features(input, varargin)
     p = inputParser;
     addParameter(p, 'par', struct, @isstruct);
     addParameter(p, 'parallel', false, @islogical);
+    addParameter(p, 'folder', '', @ischar);  % optional override folder
     parse(p, varargin{:});
     
     par_input = p.Results.par;
     parallel = p.Results.parallel;
     run_par_for = parallel;
+    folder_override = p.Results.folder;
     filenames = {};
 
-    dates = dir(fullfile(pwd, 'spikes*'));
-    dates = dates([dates.isdir]);
-    if isempty(dates)
-        error('No folders starting with ''spikes'' found in the current working directory.');
-    end
-    [~, idx] = max([dates.datenum]);
-    target_spikes_folder = fullfile(pwd, dates(idx).name);
-    fprintf('Locking feature extraction to spikes folder: %s\n', dates(idx).name);
 
-    dates_spikes = dir(fullfile(pwd, 'spikes*'));
-    dates_spikes = dates_spikes([dates_spikes.isdir]);
-    if isempty(dates_spikes)
-        error('No folders starting with ''spikes'' found in the current working directory.');
+    if ~isempty(folder_override)
+        % User explicitly specified a folder
+        target_spikes_folder = folder_override;
+        fprintf('Using specified folder: %s\n', target_spikes_folder);
+    else
+        dates_spikes = dir(fullfile(pwd, 'spikes*'));
+        dates_spikes = dates_spikes([dates_spikes.isdir]);
+        if isempty(dates_spikes)
+            error('No folders starting with ''spikes'' found. Use ''folder'' option to specify one.');
+        end
+        [~, idx_spk] = max([dates_spikes.datenum]);
+        target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
+        fprintf('Locking feature extraction to spikes folder: %s\n', dates_spikes(idx_spk).name);
     end
-    [~, idx_spk] = max([dates_spikes.datenum]);
-    target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
-    fprintf('Locking feature extraction to spikes folder: %s\n', dates_spikes(idx_spk).name);
     
-    % NEW: Resolve the latest times folder to check against during saving
     dates_times = dir(fullfile(pwd, 'times*'));
     dates_times = dates_times([dates_times.isdir]);
     if ~isempty(dates_times)
@@ -187,12 +186,12 @@ function do_features_single(filename, min_spikes4SPC, par_file, par_input, fnum,
 
     % Determine save target - times file if it exists, otherwise spikes file
     target_save_file = filename;
-    if ~isempty(latest_times_folder)
-        possible_times_file = fullfile(latest_times_folder, ['times_' nick_name '.mat']);
-        if exist(possible_times_file, 'file')
-            target_save_file = possible_times_file;
-        end
-    end
+    % if ~isempty(latest_times_folder)
+    %     possible_times_file = fullfile(latest_times_folder, ['times_' nick_name '.mat']);
+    %     if exist(possible_times_file, 'file')
+    %         target_save_file = possible_times_file;
+    %     end
+    % end
 
     % Use matfile to overwrite features in place without touching other variables
     m = matfile(target_save_file, 'Writable', true);

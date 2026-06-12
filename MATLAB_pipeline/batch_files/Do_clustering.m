@@ -60,7 +60,10 @@ function Do_clustering(input, varargin)
     addParameter(p, 'resolution', '-r150', @ischar);
     addParameter(p, 'save_spikes', true, @islogical);
     addParameter(p, 'sdnum', 3, @isnumeric); % temp number for testing
+    addParameter(p, 'folder', '', @ischar);
+    addParameter(p, 'times_folder', '', @ischar);
     parse(p, varargin{:});
+    
     
     par_input = p.Results.par;
     parallel = p.Results.parallel;
@@ -69,38 +72,44 @@ function Do_clustering(input, varargin)
     make_templates = p.Results.make_templates;
     resolution = p.Results.resolution;
     save_spikes = p.Results.save_spikes;
-
+    folder_override = p.Results.folder;
+    times_folder_override = p.Results.times_folder;
     sdnum = p.Results.sdnum;
-  
-   
     run_par_for = parallel;
     
     dates_spikes = dir(fullfile(pwd, 'spikes*'));
     dates_spikes = dates_spikes([dates_spikes.isdir]);
-    if isempty(dates_spikes)
-        error('No folders starting with ''spikes'' found in the current working directory.');
+    if ~isempty(folder_override)
+        target_spikes_folder = folder_override;
+        fprintf('Using specified spikes folder: %s\n', target_spikes_folder);
+    else
+        dates_spikes = dir(fullfile(pwd, 'spikes*'));
+        dates_spikes = dates_spikes([dates_spikes.isdir]);
+        if isempty(dates_spikes)
+            error('No folders starting with ''spikes'' found. Use ''folder'' option to specify one.');
+        end
+        [~, idx_spk] = max([dates_spikes.datenum]);
+        target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
     end
-    [~, idx_spk] = max([dates_spikes.datenum]);
-    target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
 
     dates_times = dir(fullfile(pwd, 'times*'));
     dates_times = dates_times([dates_times.isdir]);
 
-    if ~isempty(dates_times)
-        % If times folders exist, lock onto the most recent one (just like spikes)
-        [~, idx_times] = max([dates_times.datenum]);
-        global_times_folder = fullfile(pwd, dates_times(idx_times).name);
-        fprintf('Locked onto existing times folder: %s\n', dates_times(idx_times).name);
+    if ~isempty(times_folder_override)
+        global_times_folder = times_folder_override;
+        fprintf('Using specified times folder: %s\n', global_times_folder);
     elseif make_times
-        % If no times folder exists, but we are running a fresh clustering batch, create one
         timestamp_start = string(datetime('now'), 'yyyyMMdd_HHmm');
         global_times_folder = fullfile(pwd, 'times_' + timestamp_start);
         mkdir(global_times_folder);
         fprintf('Created new times folder: %s\n', 'times_' + timestamp_start);
+    elseif ~isempty(dates_times)
+        [~, idx_times] = max([dates_times.datenum]);
+        global_times_folder = fullfile(pwd, dates_times(idx_times).name);
+        fprintf('Locked onto existing times folder: %s\n', dates_times(idx_times).name);
     else
-        % If no times folder exists and we aren't clustering (e.g., just plotting), fallback to spikes folder
         global_times_folder = target_spikes_folder;
-        fprintf('No times folder found. Defaulting outputs to spikes folder: %s\n', dates_spikes(idx_spk).name);
+        fprintf('No times folder found. Defaulting outputs to spikes folder: %s\n', target_spikes_folder);
     end
 
     filenames = {};
@@ -134,12 +143,13 @@ function Do_clustering(input, varargin)
         end
     
     elseif ischar(input) && length(input) > 4
-        if  strcmp (input(end-3:end),'.txt')   %case for .txt input
-            filenames =  textread(input,'%s');
+        if strcmp(input(end-3:end), '.txt')
+            filenames = textread(input, '%s');
+        elseif input(1) == filesep
+            filenames = {input};  % absolute path - use directly
         else
-            filenames = {input};               %case for cell input
+            filenames = {input};
         end
-    
     elseif iscellstr(input)
         filenames = input;
     else
@@ -167,15 +177,17 @@ function Do_clustering(input, varargin)
                 end
             end
         end
-    
-    
-    
+
         initial_date = now;
         Nfiles = length(filenames);
         if run_par_for == true
             parfor fnum = 1:Nfiles
                 filename = filenames{fnum};
-                full_spike_path = fullfile(target_spikes_folder, filename);
+                if filenames{fnum}(1) == filesep
+                    full_spike_path = filenames{fnum};
+                else
+                    full_spike_path = fullfile(target_spikes_folder, filenames{fnum});
+                end                
                 begin_time = tic;
                 do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
                 time_taken = toc(begin_time);
@@ -185,7 +197,11 @@ function Do_clustering(input, varargin)
         else
             for fnum = 1:length(filenames)
                 filename = filenames{fnum};
-                full_spike_path = fullfile(target_spikes_folder, filename);
+                if filenames{fnum}(1) == filesep
+                    full_spike_path = filenames{fnum};
+                else
+                    full_spike_path = fullfile(target_spikes_folder, filenames{fnum});
+                end                
                 begin_time = tic;
                 do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
                 time_taken = toc(begin_time);
@@ -634,7 +650,7 @@ function Do_clustering(input, varargin)
         % Debug: Check parameters and data sizes
         fprintf('Processing %s: %d spikes, %d features, max_spk=%d\n', ...
                 filename, nspk, par.inputs, par.max_spk);
-    feat = load(filename, 'spikes', 'index', 'features', 'spikes_all', 'index_all');
+    % feat = load(filename, 'spikes', 'index', 'features', 'spikes_all', 'index_all');
    
         if par.permut == 'n'
             % GOES FOR TEMPLATE MATCHING IF TOO MANY SPIKES.

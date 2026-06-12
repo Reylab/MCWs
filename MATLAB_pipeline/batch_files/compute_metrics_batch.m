@@ -29,14 +29,27 @@ addParameter(p, 'n_workers', 0, @isscalar); % 0 = auto-detect
 addParameter(p, 'save', true, @islogical);  % save metrics and SS to .mat when true
 addParameter(p, 'show_plots', false, @islogical);  % show plots during processing
 addParameter(p, 'rescue', false, @islogical);  % save to 'metrics rescue/' folder if true
+addParameter(p, 'folder_name', '', @ischar);  % optional folder name to look for times files (overrides active times dir search
+
 parse(p, varargin{:});
 
-% Get file list
-dates_times = dir(fullfile(pwd, 'times*'));
-dates_times = dates_times([dates_times.isdir]);
-if isempty(dates_times), error('No times folders found.'); end
-[~, idx_t] = max([dates_times.datenum]);
-active_times_dir = fullfile(pwd, dates_times(idx_t).name);
+if ~isempty(p.Results.folder_name)
+    % Priority 1: Use the user-provided folder
+    active_times_dir = fullfile(pwd, p.Results.folder_name);
+    
+    if ~exist(active_times_dir, 'dir')
+        error('The specified folder "%s" does not exist.', p.Results.folder_name);
+    end
+    fprintf('Using user-specified folder: %s\n', active_times_dir);
+else
+    % Priority 2: Fallback to auto-detect (max of dates)
+    dates_times = dir(fullfile(pwd, 'times*'));
+    dates_times = dates_times([dates_times.isdir]);
+    if isempty(dates_times), error('No times folders found.'); end
+    [~, idx_t] = max([dates_times.datenum]);
+    active_times_dir = fullfile(pwd, dates_times(idx_t).name);
+    fprintf('No folder specified. Auto-detecting most recent: %s\n', dates_times(idx_t).name);
+end
 
 dates_spikes = dir(fullfile(pwd, 'spikes*'));
 dates_spikes = dates_spikes([dates_spikes.isdir]);

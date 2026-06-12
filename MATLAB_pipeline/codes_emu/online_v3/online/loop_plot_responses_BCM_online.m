@@ -3,14 +3,15 @@ function fig_cells = loop_plot_responses_BCM_online(data_table, grapes, ss_num, 
                                                     close_fig, order_offset, ...
                                                     priority_chs_ranking, is_ch_grapes, ...
                                                     b_yellow_patch, b_short_win, ...
-                                                    b_img_lbl_legend, image_cache, output_dir)
+                                                    b_img_lbl_legend, varargin)
     
-    if ~exist('image_cache', 'var') || isempty(image_cache)
-        image_cache = []; % Will fall back to imread if empty
-    end
-    if ~exist('output_dir', 'var') || isempty(output_dir)
-        output_dir = pwd;
-    end
+    ipr = inputParser;
+    addParameter(ipr, 'image_cache', [],  @(x) isempty(x) || isa(x,'containers.Map'));
+    addParameter(ipr, 'output_dir',  pwd, @ischar);
+    parse(ipr, varargin{:});
+    image_cache = ipr.Results.image_cache;
+    output_dir  = ipr.Results.output_dir;
+    
     if ~exist('b_img_lbl_legend', 'var')
         b_img_lbl_legend = false; % only for dynamic_scr, categ_localiz
     end    

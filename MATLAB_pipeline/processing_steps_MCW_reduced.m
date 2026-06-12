@@ -260,6 +260,35 @@ if par.micros
 
 
     refract_viol(channels)
+
+    %% create grapes files for raster plotting mu
+    if par.do_loop_plot  && ~par.fast_analysis
+        muonly = 'y';
+        % par.circshiftblanks=true;
+        % par.use_blanks= true;
+        if strcmp(exp_type,'RSVPSCR')
+            skip = 0; ons_ind =0;effect_rows_2=0;
+            do_structure_mu_BCM_online3(channels,exp_type, par.use_blanks, par.circshiftblanks, par.is_online)
+            rankfirst=1; ranklast=15;    
+            loop_plot_best_responses_BCM_rank(channels,muonly,rankfirst,ranklast,effect_rows_2,1,3)
+       % elseif contains(exp_type,'RSVP_online')
+        elseif contains(exp_type,'RSVP')
+            do_structure_mu_BCM_online3(channels,exp_type, par.use_blanks, false, par.is_online)
+        end
+    
+    
+        % same as before in case there are channels where more than the "best" 15 responses are needed
+        channels_more = channels;
+        rankfirst=16;
+        for n_win = 1:par.extra_stims_win
+            if strcmp(exp_type,'SCR') || strcmp(exp_type,'RSVPSCR')
+                ranklast=rankfirst+step_pic-1;
+                loop_plot_best_responses_BCM_rank(channels_more,muonly,rankfirst,ranklast,effect_rows_2,1,3)
+            end
+            rankfirst = rankfirst + step_pic;
+        end
+    %     disp('plot best responses DONE')
+    end
        %% sorting
     if par.do_sorting
         disp('spike sorting BEGIN..')
@@ -272,14 +301,14 @@ if par.micros
         param.max_spikes_plot = par.max_spikes_plot; % Default: 5000
         
         Do_features(channels, 'parallel', true, 'par', param);
-        Do_clustering(channels, 'parallel', false, 'make_times', true, ...
+        Do_clustering(channels, 'parallel', true, 'make_times', true, ...
                       'make_templates', par.make_templates, 'make_plots', false, 'par', param);
         disp('spike sorting DONE')
 
         %Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
 
     end
-    compute_metrics_batch(channels,'parallel',false, 'save',true, 'rescue',false);
+    compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',false);
         % can be used on single channels
         % [metrics_table, SS] = compute_cluster_metrics(data, ...
         %     'exclude_cluster_0', params.exclude_cluster_0, ...
@@ -294,8 +323,45 @@ if par.micros
 
  %% to see former metric plotting        
         %        Do_clustering(channels,'parallel',true,'make_times',false,'make_templates',false,'make_plots',true,'par',param)    
+ %% sorted raster plots
+         if par.do_loop_plot  && ~par.fast_analysis
+            clustered_channels = channels;
+            muonly = 'n';
+    
+            if strcmp(exp_type,'SCR') || strcmp(exp_type,'RSVPSCR')
+                rankfirst=1; ranklast=15;
+            else
+                rankfirst=1; ranklast=10;
+            end
+    
+            if strcmp(exp_type,'RSVPSCR')
+                do_structure_sorted_BCM_online3(clustered_channels, par.use_blanks, par.circshiftblanks, par.is_online)
+    %             loop_plot_best_responses_BCM_rank(clustered_channels,muonly,rankfirst,ranklast,effect_rows_2,1,3)
+%             elseif contains(exp_type,'RSVP_online')
+            elseif contains(exp_type,'RSVP')
+                do_structure_sorted_BCM_online3(clustered_channels, par.use_blanks, false, par.is_online)                
+            end
+    
+            channels_more_clus = clustered_channels;
+            rankfirst=16;
+            for n_win = 1:par.extra_stims_win
+                if strcmp(exp_type,'SCR') || strcmp(exp_type,'RSVPSCR')
+                    ranklast=rankfirst+step_pic-1;
+    %                 loop_plot_best_responses_BCM_rank(channels_more_clus,muonly,rankfirst,ranklast,effect_rows_2,1,3)                
+                end
+                rankfirst = rankfirst + step_pic;
+            end
+    %         disp('plot best responses DONE')
+        end
 
-
+        plot_grapes_as_online('grapes_offline',true,'channels2plot', 'all', 'stim_list', 'all', 'order_by_rank', true, ...
+                              'is_online', par.is_online, 'plot_best_stims_only', par.plot_best_stims_only, ...
+                              'copy2miniscrfolder', par.copy2miniscrfolder, 'show_sel_count', par.show_sel_count, ...
+                              'show_best_stims_wins', par.show_best_stims_wins, 'best_stims_nwins', 8, ...
+                              'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', par.use_blanks, ...
+                              'circshiftblanks', par.circshiftblanks);
+        
+        fprintf('plot_grapes_as_online DONE\n');
     %% reintroduce quarantined spikes
     % see if they match any templates
     rescue_spikes(channels,'parallel',true,'restore',true);

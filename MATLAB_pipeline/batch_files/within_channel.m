@@ -100,6 +100,12 @@ function within_channel(channels)
             % fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
             % fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
             % Remove -append to fully overwrite file, ensuring old unfiltered spikes don't persist
+
+            index = reshape(index, 1, []);
+            index_all = reshape(index_all, 1, []);
+            mask_nonart = reshape(mask_nonart, 1, []);
+            mask_non_quarantine = reshape(mask_non_quarantine,1,[]);
+            
             save(spike_file, ...
                  'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
                  'mask_non_quarantine', 'quarantine_properties','-append');

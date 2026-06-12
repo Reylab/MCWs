@@ -4,74 +4,69 @@ function do_structure_sorted_BCM_online3(channels, use_blanks, circshiftblanks, 
 % Gets channel/s as input. If no channels are specified goes through all of
 % them.
 % MJI: 6/7/2010
-
+begin_time = tic;
 ipr = inputParser;
-addParameter(ipr,'spike_dir','',@ischar)
+addParameter(ipr, 'times_dir', '', @ischar);
+addParameter(ipr, 'spike_dir', '', @ischar);
+addParameter(ipr, 'time_pre', 1e3, @isnumeric);
+addParameter(ipr, 'time_pos', 2e3, @isnumeric);
 parse(ipr, varargin{:});
 
-spike_dir = ipr.Results.spike_dir;
+target_times_folder = ipr.Results.times_dir;
+target_spikes_folder = ipr.Results.spike_dir; % Use this later
+time_pre = ipr.Results.time_pre;
+time_pos = ipr.Results.time_pos;
 
-begin_time = tic;
-fprintf("do_structure_sorted_BCM_online3 (use_blanks:%s, circshiftblanks:%s): ", ...
-                            mat2str(use_blanks), mat2str(circshiftblanks))
-if ~exist('time_pre','var') || isempty(time_pre), time_pre=1e3; end
-if ~exist('time_pos','var') || isempty(time_pos), time_pos=2e3; end
-
-load('NSx','NSx');
-
-% --- 4-TIER SOURCE RESOLUTION (TIMES & SPIKES ALIGNMENT) ---
+% --- 5-TIER SOURCE RESOLUTION (TIMES) ---
 use_workspace = false;
-target_times_folder = '';
+[~, current_dir_name] = fileparts(pwd);
 
-% Priority 1: String File/Dir Input
-if (ischar(spike_dir) || isstring(spike_dir)) && isfolder(spike_dir)
-    target_times_folder = spike_dir;
-    fprintf('Priority 1: Using explicit input directory: %s\n', target_times_folder);
-end
+root = resolve_session_root();
+load(fullfile(root, 'NSx.mat'), 'NSx');
 
-% Priority 2: Workspace Check (Strictly if is_online is true)
-if isempty(target_times_folder) && is_online
-    if evalin('base', 'exist(''cluster_class'', ''var'')')
-        use_workspace = true;
-        fprintf('Priority 2: is_online is true. Using clustered data directly from base workspace.\n');
-    else
-        warning('is_online is true, but ''cluster_class'' was not found in the base workspace. Falling back to file search.');
-    end
-end
+% Priority 1: User-Provided Input
+if ~isempty(target_times_folder)
+    if ~isfolder(target_times_folder), error('Times dir not found: %s', target_times_folder); end
+    fprintf('Priority 1: Using user-specified times: %s\n', target_times_folder);
 
-% Priority 3: Current Directory (Flat Structure)
-if isempty(target_times_folder) && ~use_workspace
-    if isnumeric(channels) && ~isempty(channels)
-        posch = find(arrayfun(@(x) (x.chan_ID==channels(1)), NSx));
-        if ~isempty(posch) && exist(fullfile(pwd, sprintf('times_%s.mat', NSx(posch(1)).output_name)), 'file')
-            target_times_folder = pwd;
-            fprintf('Priority 3: Found times in current working directory.\n');
-        end
-    end
-end
+% Priority 2: Workspace
+elseif is_online && evalin('base', 'exist(''cluster_class'', ''var'')')
+    use_workspace = true;
+    fprintf('Priority 2: Using base workspace.\n');
 
-% Priority 4: Timestamped Date Folders
-if isempty(target_times_folder) && ~use_workspace
-    dates_times = dir(fullfile(pwd, 'times*'));
-    dates_times = dates_times([dates_times.isdir]);
-    if ~isempty(dates_times)
-        [~, idx_times] = max([dates_times.datenum]);
-        target_times_folder_name = dates_times(idx_times).name;
-        target_times_folder = fullfile(pwd, target_times_folder_name);
-        fprintf('Priority 4: Locked onto timestamped times folder: %s\n', target_times_folder_name);
-    else
-        error('Could not find times in explicit input, workspace, current directory, or timestamped folders.');
-    end
-end
+% Priority 3: Current Directory (Subfolder Check)
+elseif startsWith(current_dir_name, 'times')
+    target_times_folder = pwd;
+    fprintf('Priority 3: Using current working directory (times subfolder): %s\n', target_times_folder);
 
-% Resolve Associated Spikes Folder for Grapes loading
-if use_workspace || strcmp(target_times_folder, pwd)
-    associated_spikes_folder = pwd;
+% Priority 4: Current Directory (Flat Structure)
+elseif isnumeric(channels) && ~isempty(channels) && exist(fullfile(root, ...
+    sprintf('times_%s.mat', NSx(find(arrayfun(@(x) (x.chan_ID==channels(1)), NSx),1)).output_name)), 'file')
+    target_times_folder = root;
+    fprintf('Priority 4: Using session root directory.\n');
+
+% Priority 5: Timestamped Folder
 else
-    [~, times_dir_name] = fileparts(target_times_folder);
-    timestamp_suffix = strrep(times_dir_name, 'times', ''); 
-    associated_spikes_folder = fullfile(pwd, ['spikes' timestamp_suffix]);
+    dates = dir(fullfile(root, 'times*'));
+    dates = dates([dates.isdir]);
+    if isempty(dates), error('Could not resolve times directory.'); end
+    [~, idx] = max([dates.datenum]);
+    target_times_folder = fullfile(root, dates(idx).name);
+    fprintf('Priority 5: Using folder: %s\n', dates(idx).name);
 end
+
+% --- Resolve Spikes Folder (Use Input or Default to Most Recent) ---
+if isempty(target_spikes_folder)
+    dates_s = dir(fullfile(root, 'spikes*'));
+    dates_s = dates_s([dates_s.isdir]);
+    if isempty(dates_s), error('No spikes folders found.'); end
+    [~, idx_s] = max([dates_s.datenum]);
+    associated_spikes_folder = fullfile(root, dates_s(idx_s).name);
+else
+    associated_spikes_folder = target_spikes_folder;
+end
+fprintf('Using spikes folder: %s\n', associated_spikes_folder);
+
 
 if use_blanks && circshiftblanks
     grapes_name = 'grapes_blanks_circ.mat';
@@ -100,9 +95,9 @@ else
     grapes.time_pos = time_pos;
 end
 
-load stimulus;
-load finalevents;
-load('experiment_properties_online3.mat','experiment','scr_config_cell','scr_end_cell')
+load(fullfile(root, 'stimulus.mat'));
+load(fullfile(root, 'finalevents.mat'));
+load(fullfile(root, 'experiment_properties_online3.mat'), 'experiment', 'scr_config_cell', 'scr_end_cell');
 
 num_chan = numel(channels);
 spikes = cell(num_chan,1);

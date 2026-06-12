@@ -4,8 +4,7 @@ function [selected2explore, s2exp_block_tbl, selected2rm] = stimulus_selection_w
                                                   lbl, priority_chs_ranking, ...
                                                   experiment, copy2miniscrfolder, ...
                                                   show_sel_count, showwins, short_win, ...
-                                                  pics_lookup_table, current_faces_count, current_nonfaces_count)
-    
+                                                  varargin)
 % function [selected2explore, s2exp_block_tbl, selected2rm] = stimulus_selection_windows( ...
 %                                                   data2plot, grapes, rank_config, ...
 %                                                   n_scr, ifr_calculator, win_choose, ...
@@ -13,17 +12,17 @@ function [selected2explore, s2exp_block_tbl, selected2rm] = stimulus_selection_w
 %                                                   experiment, copy2miniscrfolder, ...
 %                                                   copy2dailyminiscrfolder,show_sel_count, showwins)
 %     
-    % Handle optional face/non-face tracking parameters
-    if ~exist('pics_lookup_table', 'var') || isempty(pics_lookup_table)
-        pics_lookup_table = table();
-    end
-    if ~exist('current_faces_count', 'var')
-        current_faces_count = 0;
-    end
-    if ~exist('current_nonfaces_count', 'var')
-        current_nonfaces_count = 0;
-    end
+    ipr = inputParser;
+    addParameter(ipr, 'pics_lookup_table',       table(), @istable);
+    addParameter(ipr, 'current_faces_count',     0,       @isnumeric);
+    addParameter(ipr, 'current_nonfaces_count',  0,       @isnumeric);
+    addParameter(ipr, 'output_dir',              pwd,     @ischar);
+    parse(ipr, varargin{:});
     
+    pics_lookup_table        = ipr.Results.pics_lookup_table;
+    current_faces_count      = ipr.Results.current_faces_count;
+    current_nonfaces_count   = ipr.Results.current_nonfaces_count;
+    output_dir               = ipr.Results.output_dir;
     b_img_lbl_legend = false;
     if contains(experiment.subtask, "DynamicScr") || ...
        contains(experiment.subtask, "CategLocaliz")
@@ -34,13 +33,13 @@ function [selected2explore, s2exp_block_tbl, selected2rm] = stimulus_selection_w
         fc=loop_plot_responses_BCM_online(data2plot, grapes,n_scr,win_choose,rank_config, ...
                                           ifr_calculator.ejex,save_fig,lbl, ...
                                           save_fig, 0, priority_chs_ranking, ...
-                                          false, true, short_win, b_img_lbl_legend);
+                                          false, true, short_win, b_img_lbl_legend,'output_dir',output_dir);
     else
         futures = parfeval(@loop_plot_responses_BCM_online, 0, ...
                                           data2plot, grapes,n_scr,win_choose,rank_config, ...
                                           ifr_calculator.ejex,save_fig,lbl, ...
                                           save_fig, 0, priority_chs_ranking, ...
-                                          false, true, short_win, b_img_lbl_legend);
+                                          false, true, short_win, b_img_lbl_legend,'output_dir',output_dir);
         wait(futures);
     end
     if showwins

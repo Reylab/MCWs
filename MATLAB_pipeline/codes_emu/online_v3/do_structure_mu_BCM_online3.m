@@ -1,11 +1,17 @@
-function do_structure_mu_BCM_online3(channels,exp_type,use_blanks, circshiftblanks, is_online, time_pre,time_pos,varargin)
+function do_structure_mu_BCM_online3(channels,exp_type,use_blanks, circshiftblanks, is_online,varargin)
 % Arranges the spike trains into matrices for each cluster and stimulus.
 % Gets channel/s as input. If no channels are specified tries to read them
 % from tile or else goes through all of them.
 ipr = inputParser;
-addParameter(ipr,'spike_dir','',@ischar)
+addParameter(ipr, 'spike_dir', '', @ischar);
+addParameter(ipr, 'time_pre', 1e3, @isnumeric);
+addParameter(ipr, 'time_pos', 2e3, @isnumeric);
 parse(ipr, varargin{:});
+
+% Extract parameters
 spike_dir = ipr.Results.spike_dir;
+time_pre = ipr.Results.time_pre;
+time_pos = ipr.Results.time_pos;
 
 begin_time = tic;
 fprintf("do_structure_mu_BCM_online3 (use_blanks:%s, circshiftblanks:%s): ", ...
@@ -13,54 +19,65 @@ fprintf("do_structure_mu_BCM_online3 (use_blanks:%s, circshiftblanks:%s): ", ...
 if ~exist('time_pre','var') || isempty(time_pre), time_pre=1e3; end
 if ~exist('time_pos','var') || isempty(time_pos), time_pos=2e3; end
 
-load('NSx','NSx');
-load stimulus;
-load finalevents;
+root = resolve_session_root();
+load(fullfile(root, 'NSx.mat'), 'NSx');
+load(fullfile(root, 'stimulus.mat'));
+load(fullfile(root, 'finalevents.mat'));
 if min(cell2mat({stimulus{1}.ISI}))<0.5
     time_pre=500; time_pos=750;
 end
 
-% --- 4-TIER SOURCE RESOLUTION (SPIKES) ---
+% --- 5-TIER SOURCE RESOLUTION (SPIKES) ---
 use_workspace = false;
-target_spikes_folder = '';
+target_spikes_folder = spike_dir; % Use the variable parsed from inputParser
+[~, current_dir_name] = fileparts(pwd);
 
-% Priority 1: String File/Dir Input
-if (ischar(spike_dir) || isstring(spike_dir)) && isfolder(spike_dir)
-    target_spikes_folder = char(channels);
+% Priority 1: User-provided input
+if ~isempty(target_spikes_folder)
+    if ~isfolder(target_spikes_folder)
+        error('The directory provided in spike_dir does not exist: %s', target_spikes_folder);
+    end
     fprintf('Priority 1: Using explicit input directory: %s\n', target_spikes_folder);
-end
 
-% Priority 2: Workspace Check (Strictly if is_online is true)
-if isempty(target_spikes_folder) && is_online
+% Priority 2: Workspace Check
+elseif is_online
     if evalin('base', 'exist(''index'', ''var'')')
         use_workspace = true;
-        fprintf('Priority 2: is_online is true. Using spike index directly from base workspace.\n');
+        fprintf('Priority 2: Using spike index from base workspace.\n');
     else
-        warning('is_online is true, but ''index'' was not found in the base workspace. Falling back to file search.');
+        warning('is_online is true, but ''index'' was not found. Falling back to file search.');
     end
 end
 
-% Priority 3: Current Directory (Flat Structure)
+% Priority 3: Current Directory (Subfolder Check)
+if isempty(target_spikes_folder) && ~use_workspace
+    if startsWith(current_dir_name, 'spikes')
+        target_spikes_folder = pwd;
+        fprintf('Priority 3: Using current working directory (spikes subfolder): %s\n', target_spikes_folder);
+    end
+end
+
+% Priority 4: Current Directory (Flat Structure)
 if isempty(target_spikes_folder) && ~use_workspace
     if isnumeric(channels) && ~isempty(channels)
         posch = find(arrayfun(@(x) (x.chan_ID==channels(1)), NSx));
-        if ~isempty(posch) && exist(fullfile(pwd, sprintf('%s_spikes.mat', NSx(posch(1)).output_name)), 'file')
-            target_spikes_folder = pwd;
-            fprintf('Priority 3: Found spikes in current working directory.\n');
+        if ~isempty(posch) && exist(fullfile(root, sprintf('%s_spikes.mat', NSx(posch(1)).output_name)), 'file')
+            target_spikes_folder = root;
+            fprintf('Priority 4: Found spikes in session root.\n');
         end
     end
 end
 
-% Priority 4: Timestamped Date Folders
+% Priority 5: Timestamped Date Folders
 if isempty(target_spikes_folder) && ~use_workspace
-    dates_spikes = dir(fullfile(pwd, 'spikes*'));
+    dates_spikes = dir(fullfile(root, 'spikes*'));
     dates_spikes = dates_spikes([dates_spikes.isdir]);
     if ~isempty(dates_spikes)
         [~, idx_spk] = max([dates_spikes.datenum]);
-        target_spikes_folder = fullfile(pwd, dates_spikes(idx_spk).name);
-        fprintf('Priority 4: Locked onto timestamped spikes folder: %s\n', dates_spikes(idx_spk).name);
+        target_spikes_folder = fullfile(root, dates_spikes(idx_spk).name);
+        fprintf('Priority 5: Locked onto timestamped spikes folder: %s\n', dates_spikes(idx_spk).name);
     else
-        error('Could not find spikes in explicit input, workspace, current directory, or timestamped folders.');
+        error('Could not find spikes in explicit input, workspace, subfolder, session root, or timestamped folders.');
     end
 end
 
@@ -89,7 +106,7 @@ else
     grapes.time_pos = time_pos;
 end
 
-load('experiment_properties_online3.mat','experiment','scr_config_cell','scr_end_cell')
+load(fullfile(root, 'experiment_properties_online3.mat'), 'experiment', 'scr_config_cell', 'scr_end_cell');
 spikes = cell(length(channels), 1);
 output_names = cell(length(channels), 1);
 
