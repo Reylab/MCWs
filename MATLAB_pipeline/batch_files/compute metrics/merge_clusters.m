@@ -1,4 +1,4 @@
-function new_data = merge_and_report(data, merge_list, varargin)
+function new_data = merge_clusters(data, merge_list, varargin)
 % MERGE_AND_REPORT - Merge specified clusters and save the result
 %
 % Usage:
@@ -10,7 +10,6 @@ function new_data = merge_and_report(data, merge_list, varargin)
 %                Must have length >= 2 and < total number of clusters
 %
 % Optional Parameters:
-%   'test',      true/false  - If true, don't save anything (default: true)
 %   'overwrite', true/false  - If true, backup originals and save to original filename
 %                              If false, save with suffix _merge[IDs] (default: false)
 %
@@ -30,7 +29,6 @@ function new_data = merge_and_report(data, merge_list, varargin)
     p = inputParser;
     addRequired(p, 'data');
     addRequired(p, 'merge_list', @(x) isnumeric(x) && isvector(x) && length(x) >= 2);
-    addParameter(p, 'test',      true,  @islogical);
     addParameter(p, 'overwrite', false, @islogical);
     parse(p, data, merge_list, varargin{:});
 
@@ -146,39 +144,38 @@ function new_data = merge_and_report(data, merge_list, varargin)
     %  Save 
     merge_suffix = sprintf('_merge%s', strrep(mat2str(merge_list), ' ', ''));
 
-    if ~p.Results.test
-        fprintf('Saving merged data...\n');
+    fprintf('Saving merged data...\n');
 
-        if p.Results.overwrite
-            % Back up the original before overwriting
-            backup_dir = fullfile(pathstr, 'backup_originals');
-            if ~exist(backup_dir, 'dir'), mkdir(backup_dir); end
-            original_mat = fullfile(pathstr, [name, ext]);
-            if exist(original_mat, 'file')
-                try
-                    copyfile(original_mat, fullfile(backup_dir, [name, ext]));
-                    fprintf('  Backed up: %s\n', original_mat);
-                catch ME_bak
-                    warning('Failed to backup %s: %s', original_mat, ME_bak.message);
-                end
+    if p.Results.overwrite
+        % Back up the original before overwriting
+        backup_dir = fullfile(pathstr, 'backup_originals');
+        if ~exist(backup_dir, 'dir'), mkdir(backup_dir); end
+        original_mat = fullfile(pathstr, [name, ext]);
+        if exist(original_mat, 'file')
+            try
+                copyfile(original_mat, fullfile(backup_dir, [name, ext]));
+                fprintf('  Backed up: %s\n', original_mat);
+            catch ME_bak
+                warning('Failed to backup %s: %s', original_mat, ME_bak.message);
             end
-            out_base = name;
-            out_mat  = original_mat;
-        else
-            out_base = [name, merge_suffix];
-            out_mat  = fullfile(pathstr, [out_base, ext]);
         end
-
-        new_data.filename = out_base;
-        try
-            save(out_mat, '-struct', 'new_data');
-            fprintf('  Saved: %s\n', out_mat);
-        catch ME_save
-            warning('Failed to save merged data: %s', ME_save.message);
-        end
+        out_base = name;
+        out_mat  = original_mat;
     else
-        fprintf('Test mode — no files saved.\n');
+        merged_dir = fullfile(pathstr, 'merged');
+        if ~exist(merged_dir, 'dir'), mkdir(merged_dir); end
+        out_base = [name, merge_suffix];
+        out_mat  = fullfile(merged_dir, [out_base, ext]);
     end
+
+    new_data.filename = out_base;
+    try
+        save(out_mat, '-struct', 'new_data');
+        fprintf('  Saved: %s\n', out_mat);
+    catch ME_save
+        warning('Failed to save merged data: %s', ME_save.message);
+    end
+    
 
     fprintf('Merge complete\n');
 end

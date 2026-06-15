@@ -1,180 +1,175 @@
-function rescue_spikes(varargin)
+function rescue_spikes(channels, varargin)
 % rescue_spikes - Attempts to reclassify quarantined spikes using template matching
+% against the already-clustered ("good") spike population.
+%
 % Inputs:
-%   channels - vector of channel IDs
-%   Optional: 'parallel', true/false, ...
+%   channels - vector of channel IDs (NSx.chan_ID values)
+%   Optional:
+%     'parallel', true/false        (default: false)
+%     'restore', true/false         (default: false)
+%     'peak_weight', scalar > 0     (default: 1)
+%     'amp_dir', 'pos'/'neg'/'both'  (default: 'neg')
+%     'quarantine_masks', cellstr   (default: {} -> auto-detect)
+%         Any subset of: {'mask_nonart','mask_non_quarantine','mask_non_refract'}
+%         A spike is treated as "quarantined" (a rescue candidate) if it is
+%         FALSE in ANY of the selected/detected masks. mask_taskspks is never
+%         used here.
+%
 % Usage:
 %   rescue_spikes(channels, 'parallel', true)
+%   rescue_spikes(channels, 'quarantine_masks', {'mask_non_refract'})
+%   rescue_spikes(channels, 'restore', true)
 
-% Parse optional arguments
+% ---- Parse optional arguments ----
 p = inputParser;
-
-addParameter(p,'channels',[],@isnumeric);
 addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'restore', false, @islogical);
 addParameter(p, 'peak_weight', 1, @(x) isnumeric(x) && isscalar(x) && x > 0);
-addParameter(p, 'amp_dir','neg',@ischar);
+addParameter(p, 'amp_dir', 'neg', @ischar);
+addParameter(p, 'quarantine_masks', {}, @iscell);
 parse(p, varargin{:});
 
-channels = p.Results.channels;
-parallel = p.Results.parallel;
-restore = p.Results.restore;
-peak_weight = p.Results.peak_weight;
-amp_dir = p.Results.amp_dir;
+parallel          = p.Results.parallel;
+restore           = p.Results.restore;
+peak_weight       = p.Results.peak_weight;
+amp_dir           = p.Results.amp_dir;
+quarantine_masks  = p.Results.quarantine_masks;
+
+% Known quarantine mask names (mask_taskspks deliberately excluded - handled elsewhere)
+valid_quarantine_masks = {'mask_nonart','mask_non_quarantine','mask_non_refract'};
+if ~isempty(quarantine_masks)
+    unknown = setdiff(quarantine_masks, valid_quarantine_masks);
+    if ~isempty(unknown)
+        error('rescue_spikes: unrecognized quarantine_masks entries: %s', strjoin(unknown, ', '));
+    end
+end
+
+% ---- Locate active spikes / times folders ----
+dates_spikes = dir(fullfile(pwd, 'spikes*'));
+dates_spikes = dates_spikes([dates_spikes.isdir]);
+if isempty(dates_spikes), error('No spikes folders found.'); end
+[~, idx_s] = max([dates_spikes.datenum]);
+active_spikes_dir = fullfile(pwd, dates_spikes(idx_s).name);
+
+dates_times = dir(fullfile(pwd, 'times*'));
+dates_times = dates_times([dates_times.isdir]);
+if isempty(dates_times)
+    active_times_dir = active_spikes_dir;
+    fprintf('No times folder found. Using spikes folder for times files: %s\n', active_spikes_dir);
+else
+    [~, idx_t] = max([dates_times.datenum]);
+    active_times_dir = fullfile(pwd, dates_times(idx_t).name);
+end
+
+% ---- Resolve channels via NSx ----
+load('NSx','NSx');
+NSx_proc = NSx(ismember(cell2mat({NSx.chan_ID}), channels));
+num_channels_proc = length(NSx_proc);
 
 if restore
-    fprintf('Starting rescue_spikes RESTORE on %d channels...\n', length(channels));
+    fprintf('Starting rescue_spikes RESTORE on %d channels...\n', num_channels_proc);
 else
-    fprintf('Starting rescue_spikes on %d channels...\n', length(channels));
+    fprintf('Starting rescue_spikes on %d channels...\n', num_channels_proc);
 end
 
 if parallel
-    parfor kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore, peak_weight,amp_dir);
+    parfor kk = 1:num_channels_proc
+        process_channel_rescue(NSx_proc(kk), active_spikes_dir, active_times_dir, ...
+            restore, peak_weight, amp_dir, quarantine_masks, valid_quarantine_masks);
     end
 else
-    for kk = 1:length(channels)
-        process_channel_rescue(channels(kk), restore, peak_weight,amp_dir);
+    for kk = 1:num_channels_proc
+        process_channel_rescue(NSx_proc(kk), active_spikes_dir, active_times_dir, ...
+            restore, peak_weight, amp_dir, quarantine_masks, valid_quarantine_masks);
     end
 end
 
 fprintf('rescue_spikes DONE.\n');
 end
 
-function process_channel_rescue(ch, restore, peak_weight,amp_dir)
+function process_channel_rescue(ch_info, active_spikes_dir, active_times_dir, ...
+        restore, peak_weight, amp_dir, quarantine_masks, valid_quarantine_masks)
+
+    ch_lbl = ch_info.output_name;
+    spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
+    times_file = fullfile(active_times_dir, sprintf('times_%s.mat', ch_lbl));
+
     try
-        ch_lbl = get_channel_label(ch); % Helper to get output_name or label
-        fname_spk = sprintf('%s_spikes.mat', ch_lbl);
-        fname_times = sprintf('times_%s.mat', ch_lbl);
-        
         if restore
-            if exist(fname_spk, 'file')
-                vars_spk = load(fname_spk);
-                
-                % Check if rescue_mask exists and has rescued spikes
-                has_rescued_spikes = isfield(vars_spk, 'rescue_mask') && ~isempty(vars_spk.rescue_mask) && any(vars_spk.rescue_mask);
-                
-                if has_rescued_spikes
-                    % 1. Restore Spikes File - remove rescued timestamps from index
-                    rescued_timestamps = vars_spk.index_all(vars_spk.rescue_mask);
-                    to_remove_spk = ismember(vars_spk.index, rescued_timestamps);
-                    
-                    if any(to_remove_spk)
-                        vars_spk.spikes(to_remove_spk, :) = [];
-                        vars_spk.index(to_remove_spk) = [];
-                    end
-                    vars_spk.rescue_mask = false(size(vars_spk.index_all));
-                    save(fname_spk, '-struct', 'vars_spk');
-                    fprintf('  Channel %s: Restored spikes file (removed %d rescued spikes).\n', ch_lbl, sum(to_remove_spk));
-                end
-                
-                % 2. Restore times file from backup
-                if exist(fname_times, 'file')
-                    vars_times = load(fname_times);
-                    
-                    % Restore from backup if it exists
-                    if isfield(vars_times, 'spikes_pre_rescue')
-                        vars_times.spikes = vars_times.spikes_pre_rescue;
-                        vars_times.cluster_class = vars_times.cluster_class_pre_rescue;
-                        if isfield(vars_times, 'index_pre_rescue')
-                            vars_times.index = vars_times.index_pre_rescue;
-                        end
-                        if isfield(vars_times, 'inspk') && isfield(vars_times, 'spikes_pre_rescue')
-                            % Recalculate inspk size to match restored spikes
-                            vars_times.inspk = vars_times.inspk(1:size(vars_times.spikes_pre_rescue,1), :);
-                        end
-                        fprintf('  Channel %s: Restored times file from backup.\n', ch_lbl);
-                    end
-                    
-                    % Clean up rescue artifacts
-                    fields_to_remove = {'spikes_quarantined', 'index_quarantined', 'class_quarantined', ...
-                        'class_quar', 'index_quar', 'rescued_idx', 'spikes_pre_rescue', 'index_pre_rescue', ...
-                        'cluster_class_pre_rescue', 'rescue_mask'};
-                    for f = 1:length(fields_to_remove)
-                        if isfield(vars_times, fields_to_remove{f})
-                            vars_times = rmfield(vars_times, fields_to_remove{f});
-                        end
-                    end
-                    
-                    save(fname_times, '-struct', 'vars_times');
-                end
-                
-                if ~has_rescued_spikes
-                    if exist(fname_times, 'file')
-                        fprintf('  Channel %s: No rescue mask found, but cleaned up times file.\n', ch_lbl);
-                    else
-                        fprintf('  Channel %s: No rescue mask found to restore.\n', ch_lbl);
-                    end
-                end
-            else
-                fprintf('  Channel %s: Spikes file not found.\n', ch_lbl);
-            end
+            restore_channel(ch_lbl, spike_file, times_file);
             return;
         end
 
-        SPK = load(fname_spk);
+        if ~exist(spike_file, 'file')
+            fprintf('  Channel %s: Spikes file not found (%s).\n', ch_lbl, spike_file);
+            return;
+        end
+
+        SPK = load(spike_file);
         spikes_all = SPK.spikes_all;
-        index_all = SPK.index_all;
+        index_all  = SPK.index_all;
+        index_all  = reshape(index_all, 1, []);
 
+        n = numel(index_all);
 
-        if isfield(SPK,'mask_non_quarantine')
-            mask_non_quarantine = SPK.mask_non_quarantine;
+        % ---- Build combined quarantine mask from selected/auto-detected masks ----
+        masks_to_use = quarantine_masks;
+        if isempty(masks_to_use)
+            % auto-detect: use whichever of the valid masks exist in the file
+            masks_to_use = valid_quarantine_masks(isfield(SPK, valid_quarantine_masks));
         else
-            mask_non_quarantine = false(size(index_all));
+            missing = masks_to_use(~isfield(SPK, masks_to_use));
+            if ~isempty(missing)
+                warning('  Channel %s: requested quarantine mask(s) not found, skipping: %s', ...
+                    ch_lbl, strjoin(missing, ', '));
+                masks_to_use = masks_to_use(isfield(SPK, masks_to_use));
+            end
         end
 
-        if isfield(SPK,'mask_nonart')
-            mask_non_collision = SPK.mask_nonart;
+        if isempty(masks_to_use)
+            mask_pass_all = true(1, n);
+            fprintf('  Channel %s: No quarantine masks found/selected; nothing to rescue.\n', ch_lbl);
         else
-            mask_non_collision = true(size(index_all));
+            mask_pass_all = true(1, n);
+            for m = 1:length(masks_to_use)
+                mvals = logical(reshape(SPK.(masks_to_use{m}), 1, []));
+                if numel(mvals) ~= n
+                    error('rescue_spikes:MaskLengthMismatch', ...
+                        'Mask %s length (%d) does not match index_all length (%d) for channel %s.', ...
+                        masks_to_use{m}, numel(mvals), n, ch_lbl);
+                end
+                mask_pass_all = mask_pass_all & mvals;
+            end
         end
-        
-        if isfield(SPK,'mask_taskspks')
-            mask_task = SPK.mask_taskspks;
-        else
-            mask_task = true(size(index_all));
+
+        % mask_quar: TRUE = spike fails at least one selected mask -> rescue candidate
+        mask_quar = ~mask_pass_all;
+
+        if ~any(mask_quar)
+            fprintf('  Channel %s: No quarantined spikes (masks used: %s).\n', ...
+                ch_lbl, format_mask_list(masks_to_use));
+            return;
         end
-        
-        
+
         par = SPK.par;
-        index = SPK.index;
+        index  = SPK.index;
         spikes = SPK.spikes;
 
         par.amp_dir = amp_dir;
         par.pk_weight = peak_weight;
 
-        % Build rescue mask - select which spikes to attempt rescue on
-       
-        % SINGLE MASK OPTIONS (all spikes from one category):
-        % mask_quar = ~mask_non_quarantine;     % Only quarantine
-       % mask_quar = ~mask_non_collision;      % Only collision
-         %mask_quar = ~mask_task;               % Only task-excluded
-        
-        % COMBINED MASK OPTIONS (use OR to combine - no duplicates):
-      %   mask_quar = ~mask_non_quarantine | ~mask_non_collision;                % Quarantine + collision
-       %  mask_quar = ~mask_non_quarantine | ~mask_task;                         % Quarantine + task-excluded
-       %  mask_quar = ~mask_non_collision | ~mask_task;                          % Collision + task-excluded
-        mask_quar = ~mask_non_quarantine | ~mask_non_collision;% | ~mask_task;     % All three combined
+        % ---- Load times file / clustering info ----
+        if exist(times_file, 'file')
+            S = load(times_file);
 
-        if ~any(mask_quar)
-            fprintf('  Channel %s: No quarantined spikes to rescue.\n', ch_lbl);
-            return;
-        end
-        % Features for quarantined spikes
-
-        % Load times file and get clustering info
-        if exist(fname_times, 'file')
-            S = load(fname_times);
-            
             if ~isfield(S, 'spikes_pre_rescue')
                 spikes_pre_rescue = S.spikes;
                 index_pre_rescue = index;
                 cluster_class_pre_rescue = S.cluster_class;
-                save(fname_times, 'spikes_pre_rescue', 'index_pre_rescue', ...
+                save(times_file, 'spikes_pre_rescue', 'index_pre_rescue', ...
                      'cluster_class_pre_rescue', '-append');
-
             end
-            
+
             cluster_class = S.cluster_class;
             if isfield(S, 'coeff')
                 coeff = S.coeff;
@@ -182,132 +177,170 @@ function process_channel_rescue(ch, restore, peak_weight,amp_dir)
                 coeff = 1:64; % Fallback if coeff missing
             end
             inspk_good = S.inspk;
-
-        else %if no times file, means unclustered/assume multiunit
-            % Uncomment the following lines to skip rescue for unclustered channels:
-            % fprintf('  Channel %s: Skipping - no times file (unclustered).\n', ch_lbl);
-            % return
-            
-            spikes = SPK.spikes;
-            coeff = 1:64; % default to first 64 coeffs
+        else
+            % No times file: unclustered/multiunit. Treat all current spikes as
+            % a single cluster and compute features locally.
+            coeff = 1:64;
             inspk_good = local_wavelet_decomp(spikes);
-            class_good = ones(size(spikes,1),1);
-            cluster_class = [class_good, index(:)];
-            mask_quar = ~mask_non_quarantine | ~mask_non_collision;
+            class_good_init = ones(size(spikes,1),1);
+            cluster_class = [class_good_init, index(:)];
         end
+
         spikes_quar = spikes_all(mask_quar, :);
-        index_quar = index_all(mask_quar);
-        % Use class_good as those with cluster_class ~= 0
+        index_quar  = index_all(mask_quar);
+
+        % "Good"/clustered population = non-zero cluster assignments
         class_good_mask = cluster_class(:,1) ~= 0;
         class_good = cluster_class(class_good_mask, 1);
-        inspk_good_classified = inspk_good(class_good_mask, :);
+        inspk_good_classified  = inspk_good(class_good_mask, :);
         spikes_good_classified = spikes(class_good_mask, :);
-        % Calculate Haar wavelet features for quarantined spikes
+
+        % ---- Feature extraction for quarantined spikes ----
         inspk_quar_full = local_wavelet_decomp(spikes_quar);
-        inspk_quar = inspk_quar_full(:, coeff); % Use same coeffs as clustering
-        % Use force_membership_wc to assign clusters to quarantined spikes
+        inspk_quar = inspk_quar_full(:, coeff);
+
+        % ---- Template matching ----
         par.sdnum = 3;
         class_quar = force_membership_wc(spikes_good_classified, class_good, spikes_quar, par);
         rescued_idx = find(class_quar ~= 0);
-        if isempty(rescued_idx)
-            fprintf('  Channel %s: No spikes rescued.\n', ch_lbl);
-        else
-            fprintf('  Channel %s: Rescued %d spikes.\n', ch_lbl, numel(rescued_idx));
-        end
-        % Merge rescued spikes with original clustered spikes
-        spikes_rescued = spikes_quar(rescued_idx, :);
-        index_rescued = index_quar(rescued_idx);
-        class_rescued = class_quar(rescued_idx)';
-        inspk_rescued = inspk_quar(rescued_idx, :);
-        % Combine (force column vectors for index since some files save as row)
-        index_combined = [index(:); index_rescued(:)];
-        spikes_combined = [spikes; spikes_rescued];
-        class_combined = [cluster_class(:,1); class_rescued(:)];
-        inspk_combined = [inspk_good; inspk_rescued];
 
-        cluster_class_combined = zeros(length(class_combined),2);
+        if isempty(rescued_idx)
+            fprintf('  Channel %s: No spikes rescued (masks used: %s).\n', ...
+                ch_lbl, format_mask_list(masks_to_use));
+        else
+            fprintf('  Channel %s: Rescued %d/%d quarantined spikes (masks used: %s).\n', ...
+                ch_lbl, numel(rescued_idx), numel(index_quar), format_mask_list(masks_to_use));
+        end
+
+        % ---- Merge rescued spikes with original clustered spikes ----
+        spikes_rescued = spikes_quar(rescued_idx, :);
+        index_rescued  = index_quar(rescued_idx);
+        class_rescued  = class_quar(rescued_idx)';
+        inspk_rescued  = inspk_quar(rescued_idx, :);
+
+        index_combined  = [index(:); index_rescued(:)];
+        spikes_combined = [spikes; spikes_rescued];
+        class_combined  = [cluster_class(:,1); class_rescued(:)];
+        inspk_combined  = [inspk_good; inspk_rescued];
+
+        cluster_class_combined = zeros(length(class_combined), 2);
         cluster_class_combined(:,1) = class_combined;
         cluster_class_combined(:,2) = index_combined;
-        % Sort by index
+
         [index_sorted, sort_idx] = sort(index_combined);
-        spikes_sorted = spikes_combined(sort_idx, :);
+        spikes_sorted        = spikes_combined(sort_idx, :);
         cluster_class_sorted = cluster_class_combined(sort_idx, :);
-        inspk_sorted = inspk_combined(sort_idx, :);
-        % Save in times format (same as do_clustering)
-        % Save as apikes, index, inspk, cluster_class for consistency
+        inspk_sorted         = inspk_combined(sort_idx, :);
+
         spikes = spikes_sorted;
         index = index_sorted;
         inspk = inspk_sorted;
         cluster_class = cluster_class_sorted;
-        % Save rescued info and quarantined spikes/indices/classes
-        spikes_quarantined = spikes_quar;
-        index_quarantined = index_quar;
-        class_quarantined = class_quar;
 
-        rescue_mask = false(size(index_all));
+        % ---- Build full-length rescue mask (aligned to index_all) ----
+        rescue_mask = false(1, n);
         quar_indices_all = find(mask_quar);
         rescue_mask(quar_indices_all(rescued_idx)) = true;
-        
-        if exist(fname_times, 'file')
-            save(fname_times, 'spikes', 'inspk', 'cluster_class','rescue_mask', '-append');
-        else
-            save(fname_times, 'spikes', 'inspk', 'cluster_class', 'rescue_mask','par');
-        end
-        % Also save rescue info in spikes file
-        save(fname_times, 'class_quar', 'index_quar', 'rescued_idx', '-append');
-        
-        % Create and save rescue_mask to spikes file
 
-        save(fname_spk, 'spikes','index','rescue_mask', '-append');
-        
+        % Record which masks were used for this rescue pass
+        quarantine_masks_used = masks_to_use;
+
+        % ---- Save times file ----
+        if exist(times_file, 'file')
+            save(times_file, 'spikes', 'inspk', 'cluster_class', 'rescue_mask', ...
+                 'quarantine_masks_used', '-append');
+        else
+            save(times_file, 'spikes', 'inspk', 'cluster_class', 'rescue_mask', ...
+                 'quarantine_masks_used', 'par');
+        end
+        % Also persist per-spike rescue diagnostics in the times file
+        save(times_file, 'class_quar', 'index_quar', 'rescued_idx', '-append');
+
+        % ---- Save spikes file ----
+        save(spike_file, 'spikes', 'index', 'rescue_mask', 'quarantine_masks_used', '-append');
+
     catch ME
-        fprintf('  Channel %d: Error - %s\n', ch, ME.message);
-        % Print full stack trace to help debug index/bounds errors
+        fprintf('  Channel %s: Error - %s\n', ch_lbl, ME.message);
         try
             report = getReport(ME, 'extended');
             fprintf('%s\n', report);
         catch
-            % Fallback if getReport fails for some reason
             fprintf('  (Could not get full report)\n');
         end
     end
 end
 
-function ch_lbl = get_channel_label(ch)
-     % Accepts either an integer channel number or a string filename
-     if isnumeric(ch)
-         files = dir(sprintf('*_%d_spikes.mat', ch));
-         if ~isempty(files)
-             [~, name, ~] = fileparts(files(1).name);
-            % strip trailing '_spikes' if present to avoid duplicate suffix later
-            if endsWith(name, '_spikes')
-                ch_lbl = name(1:end-length('_spikes'));
-            else
-                ch_lbl = name;
-            end
-         else
-             ch_lbl = num2str(ch); % fallback
-         end
-     elseif ischar(ch) || isstring(ch)
-         % If input is a string, use it directly (strip _spikes.mat if present)
-         [~, name, ~] = fileparts(char(ch));
-        if endsWith(name, '_spikes')
-            ch_lbl = name(1:end-length('_spikes'));
-        else
-            ch_lbl = name;
-        end
-     else
-         error('Channel input must be integer or string filename');
-     end
- end
+function restore_channel(ch_lbl, spike_file, times_file)
+    if exist(spike_file, 'file')
+        vars_spk = load(spike_file);
 
+        has_rescued_spikes = isfield(vars_spk, 'rescue_mask') && ~isempty(vars_spk.rescue_mask) && any(vars_spk.rescue_mask);
+
+        if has_rescued_spikes
+            rescued_timestamps = vars_spk.index_all(vars_spk.rescue_mask);
+            to_remove_spk = ismember(vars_spk.index, rescued_timestamps);
+
+            if any(to_remove_spk)
+                vars_spk.spikes(to_remove_spk, :) = [];
+                vars_spk.index(to_remove_spk) = [];
+            end
+            vars_spk.rescue_mask = false(size(vars_spk.index_all));
+            save(spike_file, '-struct', 'vars_spk');
+            fprintf('  Channel %s: Restored spikes file (removed %d rescued spikes).\n', ch_lbl, sum(to_remove_spk));
+        end
+
+        if exist(times_file, 'file')
+            vars_times = load(times_file);
+
+            if isfield(vars_times, 'spikes_pre_rescue')
+                vars_times.spikes = vars_times.spikes_pre_rescue;
+                vars_times.cluster_class = vars_times.cluster_class_pre_rescue;
+                if isfield(vars_times, 'index_pre_rescue')
+                    vars_times.index = vars_times.index_pre_rescue;
+                end
+                if isfield(vars_times, 'inspk') && isfield(vars_times, 'spikes_pre_rescue')
+                    vars_times.inspk = vars_times.inspk(1:size(vars_times.spikes_pre_rescue,1), :);
+                end
+                fprintf('  Channel %s: Restored times file from backup.\n', ch_lbl);
+            end
+
+            fields_to_remove = {'spikes_quarantined', 'index_quarantined', 'class_quarantined', ...
+                'class_quar', 'index_quar', 'rescued_idx', 'spikes_pre_rescue', 'index_pre_rescue', ...
+                'cluster_class_pre_rescue', 'rescue_mask', 'quarantine_masks_used'};
+            for f = 1:length(fields_to_remove)
+                if isfield(vars_times, fields_to_remove{f})
+                    vars_times = rmfield(vars_times, fields_to_remove{f});
+                end
+            end
+
+            save(times_file, '-struct', 'vars_times');
+        end
+
+        if ~has_rescued_spikes
+            if exist(times_file, 'file')
+                fprintf('  Channel %s: No rescue mask found, but cleaned up times file.\n', ch_lbl);
+            else
+                fprintf('  Channel %s: No rescue mask found to restore.\n', ch_lbl);
+            end
+        end
+    else
+        fprintf('  Channel %s: Spikes file not found.\n', ch_lbl);
+    end
+end
+
+function s = format_mask_list(masks)
+    if isempty(masks)
+        s = '(none)';
+    else
+        s = strjoin(masks, ', ');
+    end
+end
 
 function inspk = local_wavelet_decomp(spikes)
     % Computes Haar wavelet coefficients for each spike
-    % Do it like wave_features: use wavedec if available, else fix_wavedec
     nspk = size(spikes,1);
     L = size(spikes,2);
-    scales = 4; % match typical default used elsewhere
+    scales = 4;
     cc = zeros(nspk, L);
     try
         spikes_l = reshape(spikes', numel(spikes), 1);

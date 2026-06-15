@@ -266,28 +266,7 @@ if par.micros
         muonly = 'y';
         % par.circshiftblanks=true;
         % par.use_blanks= true;
-        if strcmp(exp_type,'RSVPSCR')
-            skip = 0; ons_ind =0;effect_rows_2=0;
-            do_structure_mu_BCM_online3(channels,exp_type, par.use_blanks, par.circshiftblanks, par.is_online)
-            rankfirst=1; ranklast=15;    
-            loop_plot_best_responses_BCM_rank(channels,muonly,rankfirst,ranklast,effect_rows_2,1,3)
-       % elseif contains(exp_type,'RSVP_online')
-        elseif contains(exp_type,'RSVP')
-            do_structure_mu_BCM_online3(channels,exp_type, par.use_blanks, false, par.is_online)
-        end
-    
-    
-        % same as before in case there are channels where more than the "best" 15 responses are needed
-        channels_more = channels;
-        rankfirst=16;
-        for n_win = 1:par.extra_stims_win
-            if strcmp(exp_type,'SCR') || strcmp(exp_type,'RSVPSCR')
-                ranklast=rankfirst+step_pic-1;
-                loop_plot_best_responses_BCM_rank(channels_more,muonly,rankfirst,ranklast,effect_rows_2,1,3)
-            end
-            rankfirst = rankfirst + step_pic;
-        end
-    %     disp('plot best responses DONE')
+        do_structure_mu_BCM_online3(channels,exp_type, par.use_blanks, false, par.is_online)
     end
        %% sorting
     if par.do_sorting
@@ -333,25 +312,12 @@ if par.micros
             else
                 rankfirst=1; ranklast=10;
             end
-    
-            if strcmp(exp_type,'RSVPSCR')
-                do_structure_sorted_BCM_online3(clustered_channels, par.use_blanks, par.circshiftblanks, par.is_online)
-    %             loop_plot_best_responses_BCM_rank(clustered_channels,muonly,rankfirst,ranklast,effect_rows_2,1,3)
-%             elseif contains(exp_type,'RSVP_online')
-            elseif contains(exp_type,'RSVP')
-                do_structure_sorted_BCM_online3(clustered_channels, par.use_blanks, false, par.is_online)                
-            end
+
+            do_structure_sorted_BCM_online3(clustered_channels, par.use_blanks, false, par.is_online)                
     
             channels_more_clus = clustered_channels;
             rankfirst=16;
-            for n_win = 1:par.extra_stims_win
-                if strcmp(exp_type,'SCR') || strcmp(exp_type,'RSVPSCR')
-                    ranklast=rankfirst+step_pic-1;
-    %                 loop_plot_best_responses_BCM_rank(channels_more_clus,muonly,rankfirst,ranklast,effect_rows_2,1,3)                
-                end
-                rankfirst = rankfirst + step_pic;
-            end
-    %         disp('plot best responses DONE')
+
         end
 
         plot_grapes_as_online('grapes_offline',true,'channels2plot', 'all', 'stim_list', 'all', 'order_by_rank', true, ...
@@ -359,18 +325,20 @@ if par.micros
                               'copy2miniscrfolder', par.copy2miniscrfolder, 'show_sel_count', par.show_sel_count, ...
                               'show_best_stims_wins', par.show_best_stims_wins, 'best_stims_nwins', 8, ...
                               'ch_grapes_nwins', 3, 'extra_lbl', '', 'use_blanks', par.use_blanks, ...
-                              'circshiftblanks', par.circshiftblanks);
+                              'circshiftblanks', false);
         
         fprintf('plot_grapes_as_online DONE\n');
     %% reintroduce quarantined spikes
     % see if they match any templates
-    rescue_spikes(channels,'parallel',true,'restore',true);
+    rescue_spikes(channels,'parallel',true,'restore',false);
 
     %fix need something to separate this ones quar
     compute_metrics_batch(channels,'parallel',true, 'save',true, 'rescue',true);
-            
 
-
+    %merge clusters that look over clustered
+    merge_list = [];
+    merge_clusters(channels,merge_list);
+   
 % Should backup originals to backup_originals/, then overwrite times_mLTP02 raw_258.mat
 
     end

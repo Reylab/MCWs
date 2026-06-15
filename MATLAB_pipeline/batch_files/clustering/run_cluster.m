@@ -9,7 +9,7 @@ if exist([fname '.dg_01.lab'],'file')
     delete([fname '.dg_01']);
 end
 
-dat = load(fname_in);
+dat = load(fname_in,'-ascii');
 n = size(dat,1);
 fid = fopen(sprintf('%s.run',fname),'wt');
 fprintf(fid,'NumberOfPoints: %s\n',num2str(n));

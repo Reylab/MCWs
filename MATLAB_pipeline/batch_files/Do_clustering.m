@@ -682,7 +682,7 @@ function Do_clustering(input, varargin)
         end
         
         % SPC param.c has hardcoded path length limit - use short names in /tmp
-        short_base = ['/tmp/spc_wc' num2str(fnum)];
+        short_base = fullfile(tempdir, ['spc_wc' num2str(fnum)]);
         par.fname_in  = [short_base '_in'];
         par.fnamespc  = short_base;
         

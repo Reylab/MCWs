@@ -42,7 +42,7 @@ function Do_features(input, varargin)
     if ~isempty(dates_times)
         [~, idx_times] = max([dates_times.datenum]);
         latest_times_folder = fullfile(pwd, dates_times(idx_times).name);
-        fprintf('Found existing times folder: %s. Will route features here if times files exist.\n', dates_times(idx_times).name);
+        fprintf('Found existing times folder - new spike features might not be the same as previous\n', dates_times(idx_times).name);
     else
         latest_times_folder = '';
         fprintf('No times folder found. Will save features to spikes files by default.\n');
