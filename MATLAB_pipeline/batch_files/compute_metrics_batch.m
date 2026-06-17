@@ -24,7 +24,7 @@ p = inputParser;
 addParameter(p, 'exclude_cluster_0', true, @islogical);
 addParameter(p, 'n_neighbors', 5, @isscalar);
 addParameter(p, 'bin_duration', 60000.0, @isscalar);
-addParameter(p, 'parallel', true, @islogical);
+addParameter(p, 'parallel', false, @islogical);
 addParameter(p, 'n_workers', 0, @isscalar); % 0 = auto-detect
 addParameter(p, 'save', true, @islogical);  % save metrics and SS to .mat when true
 addParameter(p, 'show_plots', false, @islogical);  % show plots during processing
@@ -32,6 +32,9 @@ addParameter(p, 'rescue', false, @islogical);  % save to 'metrics rescue/' folde
 addParameter(p, 'folder_name', '', @ischar);  % optional folder name to look for times files (overrides active times dir search
 
 parse(p, varargin{:});
+
+[~,current_dir_name] = fileparts(pwd);
+root_dir = resolve_session_root();
 
 if ~isempty(p.Results.folder_name)
     % Priority 1: Use the user-provided folder
@@ -41,21 +44,25 @@ if ~isempty(p.Results.folder_name)
         error('The specified folder "%s" does not exist.', p.Results.folder_name);
     end
     fprintf('Using user-specified folder: %s\n', active_times_dir);
+elseif contains(current_dir_name,'merge')||contains(current_dir_name,'times_2')
+    active_times_dir = pwd;
 else
     % Priority 2: Fallback to auto-detect (max of dates)
     dates_times = dir(fullfile(pwd, 'times*'));
     dates_times = dates_times([dates_times.isdir]);
-    if isempty(dates_times), error('No times folders found.'); end
+    if isempty(dates_times)
+         error('No times folders found.');
+    end
     [~, idx_t] = max([dates_times.datenum]);
     active_times_dir = fullfile(pwd, dates_times(idx_t).name);
     fprintf('No folder specified. Auto-detecting most recent: %s\n', dates_times(idx_t).name);
 end
 
-dates_spikes = dir(fullfile(pwd, 'spikes*'));
+dates_spikes = dir(fullfile(root_dir, 'spikes*'));
 dates_spikes = dates_spikes([dates_spikes.isdir]);
 if isempty(dates_spikes), error('No spikes folders found.'); end
 [~, idx_s] = max([dates_spikes.datenum]);
-active_spikes_dir = fullfile(pwd, dates_spikes(idx_s).name);
+active_spikes_dir = fullfile(root_dir, dates_spikes(idx_s).name);
 
 if ischar(file_pattern) || isStringScalar(file_pattern)
     % string pattern or 'all'
@@ -210,7 +217,10 @@ function [metrics_table, SS] = process_single_file(filename, active_spikes_dir, 
             % Merge spike fields into data
             fn = fieldnames(spikes);
             for k = 1:length(fn)
-                data.(fn{k}) = spikes.(fn{k});
+                % Do not overwrite fields that already exist in the times file!
+                if ~isfield(data, fn{k})
+                    data.(fn{k}) = spikes.(fn{k});
+                end
             end
         end
         

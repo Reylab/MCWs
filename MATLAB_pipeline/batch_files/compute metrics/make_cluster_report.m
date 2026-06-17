@@ -283,6 +283,9 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 % Updated title format matching Do_clustering
                 tot_cluster_spikes = sum(cluster_ids == cid);
                 
+                % Build merge annotation for column header
+                merge_tag = get_merge_tag(double(cid), data);
+
                 has_rescued = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask) && cid ~= 0;
                 if has_rescued
                     cluster_spike_times = spike_times_ms(cluster_ids == cid);
@@ -295,9 +298,9 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                             end
                         end
                     end
-                    title(axW, sprintf('Cluster %d: # %d (%d) R: %d', cid, tot_cluster_spikes, n_unforced, rescued_here), 'FontSize', 10);
+                    title(axW, sprintf('Cluster %d%s: # %d (%d) R: %d', cid, merge_tag, tot_cluster_spikes, n_unforced, rescued_here), 'FontSize', 10);
                 else
-                    title(axW, sprintf('Cluster %d: # %d (%d)', cid, tot_cluster_spikes, n_unforced), 'FontSize', 10);
+                    title(axW, sprintf('Cluster %d%s: # %d (%d)', cid, merge_tag, tot_cluster_spikes, n_unforced), 'FontSize', 10);
                 end
                 
                 xlabel(axW, xlabel_str);
@@ -338,7 +341,49 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
             end
         end
 
-        sgtitle(sprintf('Cluster Report - Page %d/%d', page_i, length(pages)), 'FontSize', 14);
+        % --- Build two-line sgtitle ---
+        % Line 1: channel ID + page x/n
+        chan_str = '';
+        if isfield(data, 'filename') && ~isempty(data.filename)
+            % Strip 'times_' prefix first
+            name_clean = regexprep(data.filename, '^times[_\-]*', '', 'ignorecase');
+            tok_ch = regexp(name_clean, '[cC][hH](\d+)', 'tokens', 'once');
+            if isempty(tok_ch)
+                % Look for trailing _NN or space NN (e.g., mRAMY04 raw_333)
+                tok_ch = regexp(name_clean, '[_\s](\d+)(?:\.mat)?$', 'tokens', 'once');
+            end
+            if isempty(tok_ch)
+                % Fallback: grab the first numbers we see
+                tok_ch = regexp(name_clean, '(\d+)', 'tokens', 'once');
+            end
+            if ~isempty(tok_ch)
+                chan_str = sprintf(' | Ch%s', tok_ch{1});
+            end
+        end
+        title_line1 = sprintf('Cluster Report%s  —  Page %d/%d', chan_str, page_i, length(pages));
+
+        % Line 2: directory up to and including pwd (trim prefix above pwd)
+        if isfield(data, 'fullpath') && ~isempty(data.fullpath)
+            file_dir = fileparts(data.fullpath);
+        else
+            file_dir = pwd;
+        end
+        % Show up to 3 trailing path components of the file's directory so that
+        % for merged data the times folder is always visible:
+        %   …/times_20260615_1623/ch333_merge[3_6]
+        % and for normal data:
+        %   …/times_20260615_1623
+        parts = strsplit(file_dir, filesep);
+        parts = parts(~cellfun(@isempty, parts));
+        n_show = min(3, numel(parts));
+        if n_show > 0
+            dir_display = ['…/' strjoin(parts(end-n_show+1:end), '/')];
+        else
+            dir_display = file_dir;
+        end
+        title_line2 = dir_display;
+
+        sgtitle(sprintf('%s\n%s', title_line1, title_line2), 'FontSize', 12, 'Interpreter', 'none');
         figs{end+1} = fig;
     end
 
@@ -411,7 +456,226 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         warning('Failed to generate correlograms: %s', ME_corr.message);
     end
 
+    % --- Cluster Breakdown Page(s) ---
+    % Appended after correlograms; page numbers continue from previous count.
+    try
+        figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_ids, spike_times_ms, ...
+            index_all, mask_quarantine, forced, leicolors, visstr, clusters_per_page, length(figs));
+        figs = [figs, figs_bd];
+    catch ME_bd
+        warning('Failed to generate cluster breakdown pages: %s', ME_bd.message);
+    end
+
     fprintf('Generated %d figure pages for cluster report %s\n', length(figs),data.filename);
+end
+
+% -------------------------------------------------------------------------
+% Cluster Breakdown Pages
+% -------------------------------------------------------------------------
+% -------------------------------------------------------------------------
+% Cluster Breakdown Pages
+% -------------------------------------------------------------------------
+function figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_ids, spike_times_ms, ...
+        index_all, mask_quarantine, forced, leicolors, visstr, clusters_per_page, total_pages_before)
+% MAKE_CLUSTER_BREAKDOWN_PAGES  One column per cluster, rows = original / forced / rescued
+
+    figs_bd = {};
+    if isempty(unique_clusters), return; end
+
+    % Only non-noise clusters on breakdown page
+    bd_clusters = unique_clusters(unique_clusters ~= 0);
+    if isempty(bd_clusters), return; end
+
+    has_rescue  = isfield(data,'rescue_mask') && ~isempty(data.rescue_mask);
+    has_forced  = isfield(data,'forced')      && ~isempty(data.forced);
+    has_pre     = isfield(data,'cluster_class_pre_rescue');
+
+    % ALIGNMENT FIX: We MUST use the post-rescue arrays (cluster_ids, spike_times_ms)
+    % so they index perfectly into data.spikes.
+    cids_bd = cluster_ids;
+    sts_bd  = spike_times_ms;
+    waveforms_all = double(data.spikes);    % full post-rescue spike matrix
+    index_all_vec = index_all(:);
+    
+    % 1) Pre-calculate forced and rescued spike times for the whole dataset
+    forced_sts = [];
+    if has_forced
+        f_vec = forced(:);
+        if has_pre && numel(f_vec) == size(data.cluster_class_pre_rescue, 1)
+            forced_sts = data.cluster_class_pre_rescue(f_vec, 2);
+        elseif numel(f_vec) == numel(cids_bd)
+            forced_sts = sts_bd(f_vec);
+        end
+    end
+    
+    rescued_sts = [];
+    if has_rescue
+        rescued_sts = index_all_vec(data.rescue_mask(:));
+    end
+
+    K = numel(bd_clusters);
+    n_pages = ceil(K / clusters_per_page);
+    page_offset = total_pages_before;  
+
+    for pg = 1:n_pages
+        idx_start = (pg-1)*clusters_per_page + 1;
+        idx_end   = min(pg*clusters_per_page, K);
+        page_clusters = bd_clusters(idx_start:idx_end);
+        nc = numel(page_clusters);
+        ncols = clusters_per_page;
+        nrows = 3;
+
+        fig = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
+                    'PaperUnits','inches','PaperType','<custom>','PaperSize',[16 8], ...
+                    'PaperPosition',[0 0 16 8],'PaperPositionMode','manual', ...
+                    'RendererMode','manual','Renderer','painters');
+
+        for ci = 1:ncols
+            if ci > nc
+                for rr = 1:nrows
+                    axE = subplot(nrows, ncols, (rr-1)*ncols + ci);
+                    axis(axE,'off');
+                end
+                continue;
+            end
+
+            cid = page_clusters(ci);
+            colc = leicolors(mod(cid, size(leicolors,1))+1, :);
+            merge_tag = get_merge_tag(cid, data);
+
+            % --- Masks for this cluster ---
+            mask_cid = (cids_bd == cid);
+
+            % Forced mask
+            mask_forced_cid = false(size(mask_cid));
+            if ~isempty(forced_sts)
+                mask_forced_cid(ismember(sts_bd, forced_sts) & mask_cid) = true;
+            end
+            n_forced = sum(mask_forced_cid);
+
+            % Rescued mask
+            mask_resc_cid = false(size(mask_cid));
+            if ~isempty(rescued_sts)
+                mask_resc_cid(ismember(sts_bd, rescued_sts) & mask_cid) = true;
+            end
+            n_resc = sum(mask_resc_cid);
+
+            % Pure original spikes
+            mask_orig_cid = mask_cid(:) & ~mask_forced_cid(:) & ~mask_resc_cid(:);
+            n_orig = sum(mask_orig_cid);
+            % ---- ROW 1: Bar Summary — original, forced, rescued ----
+            ax1 = subplot(nrows, ncols, ci);
+            counts = [n_orig, n_forced, n_resc];
+            labels = {'Orig','Forced','Rescued'};
+            bar_cols = [colc; [0.97 0.52 0.03]; [0.1 0.75 0.1]];
+            bh = bar(ax1, 1:3, counts, 'FaceColor','flat','EdgeColor','k','LineWidth',0.5);
+            bh.CData = bar_cols;
+            set(ax1,'XTick',1:3,'XTickLabel',labels,'XTickLabelRotation',30,'FontSize',7);
+            ylabel(ax1,'Count','FontSize',7);
+            grid(ax1,'on'); box(ax1,'off');
+            set(ax1,'GridAlpha',0.2,'XGrid','off');
+            
+            % Count labels above each bar
+            y_max_bar = max(counts);
+            ylim(ax1, [0, max(y_max_bar * 1.18, 1)]);
+            for bi = 1:numel(counts)
+                text(ax1, bi, counts(bi) + y_max_bar * 0.04, num2str(counts(bi)), ...
+                    'HorizontalAlignment','center','FontSize',7,'FontWeight','bold');
+            end
+            ttl = sprintf('C%d%s', cid, merge_tag);
+            title(ax1, ttl, 'FontSize', 9, 'FontWeight', 'bold', 'Interpreter','none');
+
+            % ---- ROW 2: Waveforms — pure original, forced overlay ----
+            ax2 = subplot(nrows, ncols, ncols + ci);
+            hold(ax2,'on');
+            tvec = 1:size(waveforms_all,2);
+            max_disp = 300;
+
+            % Plot ONLY the pure original spikes
+            W_orig = waveforms_all(mask_orig_cid, :);
+            if ~isempty(W_orig)
+                n_disp = min(max_disp, size(W_orig,1));
+                idx_disp = randperm(size(W_orig,1), n_disp);
+                plot(ax2, tvec, W_orig(idx_disp,:)', 'Color', [colc, 0.12], 'LineWidth', 0.6);
+                plot(ax2, tvec, mean(W_orig,1), 'Color', 'k', 'LineWidth', 2.0);
+            end
+            
+            % Forced overlay (orange)
+            if any(mask_forced_cid)
+                W_f = waveforms_all(mask_forced_cid,:);
+                n_f = min(max_disp, size(W_f,1));
+                plot(ax2, tvec, W_f(randperm(size(W_f,1),n_f),:)', 'Color', [0.97 0.52 0.03 0.25], 'LineWidth', 0.5);
+            end
+            
+            hold(ax2,'off');
+            title(ax2, sprintf('Orig (n=%d) / Forced', n_orig), 'FontSize', 7);
+            xlabel(ax2,'Samples','FontSize',7); ylabel(ax2,'Amp','FontSize',7);
+            grid(ax2,'on'); box(ax2,'off');
+            set(ax2,'GridAlpha',0.2,'FontSize',7);
+
+            % ---- ROW 3: Rescued spikes only (green) ----
+            ax3 = subplot(nrows, ncols, 2*ncols + ci);
+            if has_rescue && any(mask_resc_cid)
+                hold(ax3,'on');
+                W_r = waveforms_all(mask_resc_cid,:);
+                n_r = min(max_disp, size(W_r,1));
+                plot(ax3, tvec, W_r(randperm(size(W_r,1),n_r),:)', 'Color', [0.1 0.75 0.1 0.25], 'LineWidth', 0.5);
+                plot(ax3, tvec, mean(W_r,1), 'Color', [0 0.5 0], 'LineWidth', 1.8);
+                hold(ax3,'off');
+                title(ax3, sprintf('Rescued  (n=%d)', n_resc), 'FontSize', 7);
+                xlabel(ax3,'Samples','FontSize',7); ylabel(ax3,'Amp','FontSize',7);
+                grid(ax3,'on'); box(ax3,'off');
+                set(ax3,'GridAlpha',0.2,'FontSize',7);
+            elseif ~has_rescue
+                text(ax3, 0.5, 0.5, 'No rescue performed', ...
+                    'HorizontalAlignment','center','FontSize',8,'Color',[0.5 0.5 0.5]);
+                axis(ax3,'off');
+            else
+                text(ax3, 0.5, 0.5, 'No rescued spikes', ...
+                    'HorizontalAlignment','center','FontSize',8,'Color',[0.5 0.5 0.5]);
+                axis(ax3,'off');
+            end
+        end
+
+        % --- Page title ---
+        bd_total_pages = page_offset + n_pages;
+        sgtitle(sprintf('Cluster Breakdown  —  Page %d/%d', page_offset + pg, bd_total_pages), 'FontSize', 13, 'Interpreter', 'none');
+        figs_bd{end+1} = fig;
+    end
+end
+
+% Helper: merge annotation tag for a cluster ID given the data struct
+function tag = get_merge_tag(cid, data)
+    tag = '';
+    % Preferred: merge_groups struct array (new multi-group format)
+    if isfield(data, 'merge_groups') && ~isempty(data.merge_groups)
+        for gi = 1:numel(data.merge_groups)
+            grp = data.merge_groups(gi);
+            if grp.new_id == cid && numel(grp.former_ids) > 1
+                tag = sprintf(' [merged: %s]', strjoin(arrayfun(@(x)sprintf('%d',x), grp.former_ids(:)', 'UniformOutput',false), '+'));
+                return;
+            end
+        end
+    end
+    % Fallback: flat merge_map (legacy single-group saves)
+    if isfield(data,'merge_map') && isstruct(data.merge_map) && ...
+       isfield(data.merge_map,'former') && isfield(data.merge_map,'new')
+        src = data.merge_map.former(data.merge_map.new == cid);
+        if numel(src) > 1
+            tag = sprintf(' [merged: %s]', strjoin(arrayfun(@(x)sprintf('%d',x),src(:)','UniformOutput',false),'+'));
+        end
+    end
+end
+
+% Helper: return only the last component of a path
+function name = basename_only(p)
+    parts = strsplit(p, filesep);
+    parts = parts(~cellfun(@isempty, parts));
+    if isempty(parts)
+        name = p;
+    else
+        name = parts{end};
+    end
 end
 
 function plot_isi_histogram(ax, spike_times, refractory_ms, line_freq, color)
@@ -813,7 +1077,6 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
 
     [n, T] = size(W);
     
-    % CHANGE 1: Add max waveforms limit
     max_waveforms = 5000;
     if n > max_waveforms
         rng(42, 'twister');

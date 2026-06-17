@@ -1,181 +1,193 @@
-function new_data = merge_clusters(data, merge_list, varargin)
-% MERGE_AND_REPORT - Merge specified clusters and save the result
+function varargout = merge_clusters(channels, merge_list, varargin)
+% MERGE_CLUSTERS - Merge clusters for targeted channels using NSx mapping.
 %
-% Usage:
-%   new_data = merge_and_report(data, merge_list, ...)
+% Usage (single group):
+%   merge_clusters(channels, [3 5], 'folder', '')
+%       Merges clusters 3 and 5 into one (primary = first element = 3).
 %
-% Inputs:
-%   data       - struct with cluster_class, spikes, inspk (or filename string to load)
-%   merge_list - vector of cluster IDs to merge, e.g., [1, 2, 3]
-%                Must have length >= 2 and < total number of clusters
+% Usage (multiple independent groups):
+%   merge_clusters(channels, {[3 5], [1 2 4]}, 'folder', '')
+%       Independently merges 3+5 into one cluster and 1+2+4 into another.
+%       Each group's primary (target) is its first element.
 %
-% Optional Parameters:
-%   'overwrite', true/false  - If true, backup originals and save to original filename
-%                              If false, save with suffix _merge[IDs] (default: false)
-%
-% Outputs:
-%   new_data - merged data structure (with merge provenance in new_data.par)
-%
-% Examples:
-%   % Inspect result without saving:
-%   new_data = merge_and_report(data, [2, 4], 'test', true);
-%
-%   % Save with suffix (e.g. times_ch01_merge[24].mat):
-%   merge_and_report(data, [2, 4], 'test', false);
-%
-%   % Overwrite original file (backs up first):
-%   merge_and_report(data, [2, 4], 'test', false, 'overwrite', true);
+% After renumbering, merge_map records every group so the report can
+% annotate each resulting cluster with the former IDs that fed into it.
 
     p = inputParser;
-    addRequired(p, 'data');
-    addRequired(p, 'merge_list', @(x) isnumeric(x) && isvector(x) && length(x) >= 2);
-    addParameter(p, 'overwrite', false, @islogical);
-    parse(p, data, merge_list, varargin{:});
+    addRequired(p, 'channels', @isnumeric);
+    addRequired(p, 'merge_list', @(x) isnumeric(x) || iscell(x));
+    addParameter(p, 'folder', '', @ischar);
+    parse(p, channels, merge_list, varargin{:});
 
-    %  Locate active times directory ---
-    dates_times = dir(fullfile(pwd, 'times*'));
-    dates_times = dates_times([dates_times.isdir]);
-    if isempty(dates_times), error('No times folders found.'); end
-    [~, idx_t] = max([dates_times.datenum]);
-    active_times_dir = fullfile(pwd, dates_times(idx_t).name);
-
-    %  Load data if a filename was passed ---
-    if ischar(data) || isstring(data)
-        filename = char(data);
-        if ~exist(filename, 'file')
-            filename = fullfile(active_times_dir, filename);
-        end
-        if ~exist(filename, 'file')
-            error('File not found: %s', filename);
-        end
-        data = load(filename);
-        [pathstr, name, ext] = fileparts(filename);
-        if isempty(pathstr), pathstr = active_times_dir; end
+    % Normalise merge_list -> cell array of row vectors, one per group
+    if isnumeric(merge_list)
+        % Legacy: single numeric vector
+        groups = { unique(merge_list(:))' };
     else
-        if isfield(data, 'filename') && ~isempty(data.filename)
-            [pathstr, name, ext] = fileparts(data.filename);
-            if isempty(pathstr), pathstr = active_times_dir; end
-            if isempty(ext), ext = '.mat'; end
-        elseif isfield(data, 'fullpath') && ~isempty(data.fullpath)
-            [pathstr, name, ext] = fileparts(data.fullpath);
-        else
-            pathstr = active_times_dir;
-            name    = 'merged_data';
-            ext     = '.mat';
-        end
-    end
-
-    %  Validate data structure 
-    if ~isstruct(data) || ~isfield(data, 'cluster_class') || ~isfield(data, 'spikes') || ~isfield(data, 'inspk')
-        error('data must be a struct with fields: cluster_class, spikes, inspk');
-    end
-
-    %  Validate merge_list 
-    merge_list      = unique(merge_list(:))';
-    cluster_ids     = data.cluster_class(:, 1);
-    unique_clusters = unique(cluster_ids);
-
-    if length(merge_list) < 2
-        error('merge_list must contain at least 2 clusters to merge');
-    end
-    if length(merge_list) >= length(unique_clusters)
-        error('merge_list must be less than total number of clusters (%d)', length(unique_clusters));
-    end
-    if ~all(ismember(merge_list, unique_clusters))
-        missing = merge_list(~ismember(merge_list, unique_clusters));
-        error('Clusters not found in data: %s', mat2str(missing));
-    end
-
-    %  Perform merge 
-    fprintf('Merging clusters: %s\n', mat2str(merge_list));
-
-    % Copy all relevant fields
-    new_data = struct();
-    fields_to_copy = {'cluster_class','spikes','inspk','par','spikes_all','index_all', ...
-                      'forced','rescue_mask','cluster_class_pre_rescue','mask_nonart', ...
-                      'mask_non_quarantine','mask_taskspks','filename','fullpath'};
-    for fi = 1:numel(fields_to_copy)
-        f = fields_to_copy{fi};
-        if isfield(data, f)
-            new_data.(f) = data.(f);
-        end
-    end
-
-    % Assign all source clusters to the target (first ID in merge_list)
-    target_cluster  = merge_list(1);
-    source_clusters = merge_list(2:end);
-    new_cluster_ids = new_data.cluster_class(:, 1);
-    for s = source_clusters
-        new_cluster_ids(new_cluster_ids == s) = target_cluster;
-    end
-
-    % Renumber to contiguous 0-indexed IDs
-    unique_new  = unique(new_cluster_ids);
-    cluster_map = containers.Map('KeyType', 'int32', 'ValueType', 'int32');
-    for i = 1:length(unique_new)
-        cluster_map(unique_new(i)) = i - 1;
-    end
-    renumbered = arrayfun(@(x) cluster_map(x), new_cluster_ids);
-    new_data.cluster_class(:, 1) = renumbered;
-
-    final_clusters = unique(renumbered);
-    fprintf('  Before: %d clusters  →  After: %d clusters\n', ...
-            length(unique_clusters), length(final_clusters));
-
-    %  Record merge provenance in par ---
-    if ~isfield(new_data, 'par') || isempty(new_data.par)
-        new_data.par = struct();
-    end
-    new_merged_id = cluster_map(target_cluster);
-    merge_event = struct( ...
-        'timestamp',         datestr(now, 'yyyy-mm-dd HH:MM:SS'), ...
-        'original_clusters', merge_list, ...
-        'merged_into_id',    new_merged_id, ...
-        'cluster_map_before', unique_clusters(:)', ...
-        'cluster_map_after',  final_clusters(:)');
-    if isfield(new_data.par, 'merge_history') && ~isempty(new_data.par.merge_history)
-        new_data.par.merge_history(end+1) = merge_event;
-    else
-        new_data.par.merge_history = merge_event;
-    end
-    new_data.par.is_merged       = true;
-    new_data.par.merge_list_last = merge_list;
-
-    %  Save 
-    merge_suffix = sprintf('_merge%s', strrep(mat2str(merge_list), ' ', ''));
-
-    fprintf('Saving merged data...\n');
-
-    if p.Results.overwrite
-        % Back up the original before overwriting
-        backup_dir = fullfile(pathstr, 'backup_originals');
-        if ~exist(backup_dir, 'dir'), mkdir(backup_dir); end
-        original_mat = fullfile(pathstr, [name, ext]);
-        if exist(original_mat, 'file')
-            try
-                copyfile(original_mat, fullfile(backup_dir, [name, ext]));
-                fprintf('  Backed up: %s\n', original_mat);
-            catch ME_bak
-                warning('Failed to backup %s: %s', original_mat, ME_bak.message);
+        groups = merge_list(:)';
+        for g = 1:numel(groups)
+            groups{g} = unique(groups{g}(:))';   % ensure row, sorted, no dups
+            if numel(groups{g}) < 2
+                error('Each merge group must contain at least 2 cluster IDs (group %d).', g);
             end
         end
-        out_base = name;
-        out_mat  = original_mat;
+    end
+
+    root = resolve_session_root();
+    load(fullfile(root, 'NSx.mat'), 'NSx');
+
+    if ~isempty(p.Results.folder)
+        times_dir = p.Results.folder;
     else
-        merged_dir = fullfile(pathstr, 'merged');
+        [~, cur_dir] = fileparts(pwd);
+        if startsWith(cur_dir, 'times')
+            times_dir = pwd;
+        else
+            d = dir(fullfile(root, 'times*'));
+            d = d([d.isdir]);
+            if isempty(d), error('No times directory found.'); end
+            [~, idx] = max([d.datenum]);
+            times_dir = fullfile(root, d(idx).name);
+        end
+    end
+
+    results = cell(size(channels));
+
+    for c = 1:length(channels)
+        chan = channels(c);
+
+        posch = find(arrayfun(@(x) (x.chan_ID == chan), NSx), 1);
+        if isempty(posch)
+            warning('Channel %d not found in NSx.mat mapping.', chan);
+            continue;
+        end
+
+        filename    = sprintf('times_%s.mat', NSx(posch).output_name);
+        matched_file = fullfile(times_dir, filename);
+
+        if ~exist(matched_file, 'file')
+            warning('File %s does not exist in %s', filename, times_dir);
+            continue;
+        end
+
+        data = load(matched_file);
+        if ~isfield(data, 'cluster_class')
+            warning('File %s is missing cluster_class.', filename);
+            continue;
+        end
+
+        cluster_ids   = data.cluster_class(:, 1);
+        unique_before = unique(cluster_ids);
+
+        % Validate all requested IDs exist
+        all_requested = unique([groups{:}]);
+        if ~all(ismember(all_requested, unique_before))
+            missing = all_requested(~ismember(all_requested, unique_before));
+            warning('Clusters [%s] not found in channel %d – skipping.', ...
+                    num2str(missing), chan);
+            continue;
+        end
+
+        % --- Apply each group's merge sequentially ---
+        % Each group: collapse all members onto the first (target) ID.
+        for g = 1:numel(groups)
+            grp    = groups{g};
+            target = grp(1);
+            for s = grp(2:end)
+                cluster_ids(cluster_ids == s) = target;
+            end
+        end
+
+        % --- Contiguous 0-indexed renumbering ---
+        new_unique  = unique(cluster_ids);
+        renumbered  = zeros(size(cluster_ids));
+        for i = 1:length(new_unique)
+            renumbered(cluster_ids == new_unique(i)) = i - 1;
+        end
+        data.cluster_class(:, 1) = renumbered;
+
+        % --- Build former->new remapping (covers all IDs, all groups) ---
+        former_arr = unique_before(:);
+        new_arr    = zeros(size(former_arr));
+        % Build a lookup: former ID -> post-merge (pre-renumber) ID
+        post_merge_id = double(unique_before);   % default: identity
+        for g = 1:numel(groups)
+            grp    = groups{g};
+            target = grp(1);
+            for s = grp(2:end)
+                post_merge_id(unique_before == s) = target;
+            end
+        end
+        for i = 1:numel(former_arr)
+            new_arr(i) = find(new_unique == post_merge_id(i), 1) - 1;
+        end
+
+        % --- Build per-group tracking (new_id = renumbered target) ---
+        %   merge_groups(g).former_ids  – original IDs merged (sorted)
+        %   merge_groups(g).new_id      – renumbered result ID
+        merge_groups_out = struct('former_ids', {}, 'new_id', {});
+        for g = 1:numel(groups)
+            grp    = groups{g};
+            target = grp(1);
+            new_id = find(new_unique == target, 1) - 1;
+            merge_groups_out(g).former_ids = grp;   % all members incl. target
+            merge_groups_out(g).new_id     = new_id;
+        end
+
+        % --- Save pipeline tracking ---
+        data.merged    = true;
+
+        % merge_map: flat lookup used by report for quick annotation
+        data.merge_map         = struct();
+        data.merge_map.former  = former_arr;
+        data.merge_map.new     = new_arr;
+
+        % merge_groups: richer per-group record (supports multiple merges)
+        data.merge_groups = merge_groups_out;
+
+        % Legacy scalar fields (valid only when exactly one group was merged)
+        if numel(groups) == 1
+            data.merged_clusters = groups{1};
+            data.merged_into     = merge_groups_out(1).new_id;
+        else
+            % Remove legacy fields that would be misleading for multi-group
+            if isfield(data, 'merged_clusters'), data = rmfield(data, 'merged_clusters'); end
+            if isfield(data, 'merged_into'),     data = rmfield(data, 'merged_into');     end
+        end
+
+        % Historical logging (one entry per group)
+        if ~isfield(data, 'par') || ~isstruct(data.par), data.par = struct(); end
+        for g = 1:numel(groups)
+            history_event = struct( ...
+                'timestamp',       datestr(now, 'yyyy-mm-dd HH:MM:SS'), ...
+                'merged_clusters', groups{g}, ...
+                'into_id',         merge_groups_out(g).new_id ...
+            );
+            if isfield(data.par, 'merge_history')
+                data.par.merge_history(end+1) = history_event;
+            else
+                data.par.merge_history = history_event;
+            end
+        end
+
+        % --- Folder name: encode all groups ---
+        % e.g. ch[1]_merge[3_5]-[1_2_4]
+        group_strs = cellfun(@(g) strrep(mat2str(g),' ','_'), groups, 'UniformOutput', false);
+        fold_merge = sprintf('ch%s_merge%s', mat2str(channels), strjoin(group_strs, '-'));
+        merged_dir = fullfile(times_dir, fold_merge);
         if ~exist(merged_dir, 'dir'), mkdir(merged_dir); end
-        out_base = [name, merge_suffix];
-        out_mat  = fullfile(merged_dir, [out_base, ext]);
+        [~, name, ext] = fileparts(filename);
+        out_file = fullfile(merged_dir, [name ext]);
+
+        save(out_file, '-struct', 'data');
+        results{c} = data;
     end
 
-    new_data.filename = out_base;
-    try
-        save(out_mat, '-struct', 'new_data');
-        fprintf('  Saved: %s\n', out_mat);
-    catch ME_save
-        warning('Failed to save merged data: %s', ME_save.message);
+    if nargout > 0
+        if length(channels) == 1
+            varargout{1} = results{1};
+        else
+            varargout{1} = results;
+        end
     end
-    
-
-    fprintf('Merge complete\n');
 end
