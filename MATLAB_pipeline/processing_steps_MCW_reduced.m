@@ -250,7 +250,7 @@ if par.micros
 
 
     %% bundle collision and quarantine within probes
-    disp('bundle artifact detection BEGIN..')
+    disp('artifact detection BEGIN..')
     % separate_collisions(channels)
     bundle_artifact(channels) 
 
@@ -337,7 +337,7 @@ if par.micros
 
     %merge clusters that look over clustered
     merge_list = [];
-    merge_clusters(channels,merge_list);
+    % merge_clusters(channels,merge_list);
    
 % Should backup originals to backup_originals/, then overwrite times_mLTP02 raw_258.mat
 

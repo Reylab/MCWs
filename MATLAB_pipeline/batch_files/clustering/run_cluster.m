@@ -35,20 +35,20 @@ fclose(fid);
 
 system_type = computer;
 switch system_type
-    case {'PCWIN'}    
-%         if exist([pwd '\cluster.exe'])==0
-%             directory = which('cluster.exe');
-%             copyfile(directory,pwd);
-%         end
-        [status,result] = dos(sprintf('"%s" %s.run',which('cluster.exe'),fname));
-        %[status,result] = dos(sprintf('cluster.exe %s.run',fname));
-    case {'PCWIN64'}    
-%         if exist([pwd '\cluster_64.exe'])==0
-%             directory = which('cluster_64.exe');
-%             copyfile(directory,pwd);
-%         end
-        [status,result] = dos(sprintf('"%s" %s.run',which('cluster_64.exe'),fname));
-        %[status,result] = dos(sprintf('cluster_64.exe %s.run',fname));
+    case {'PCWIN', 'PCWIN64'}
+        if strcmp(system_type, 'PCWIN')
+            exe_path = which('cluster.exe');
+        else
+            exe_path = which('cluster_64.exe');
+        end
+        
+        % By assigning the path to a variable (exe_path) and passing it 
+        % directly to the system/dos command (or using fullfile/string concatenation), 
+        % you stop sprintf from parsing the path.
+        
+        % Use this instead of sprintf for the command construction:
+        cmd = ['"' exe_path '" ' fname '.run'];
+        [status, result] = dos(cmd);    
     case {'MAC'}
         if exist([pwd '/cluster_mac.exe'])==0
             directory = which('cluster_mac.exe');

@@ -138,16 +138,16 @@ function Do_features(input, varargin)
     end
 
     % Cleanup Parallel Pool
-    if parallel == true
-        if exist('matlabpool','file')
-            matlabpool('close')
-        else
-            poolobj = gcp('nocreate');
-            if ~isempty(poolobj)
-                delete(poolobj);
-            end
-        end
-    end
+    % if parallel == true
+    %     if exist('matlabpool','file')
+    %         matlabpool('close')
+    %     else
+    %         poolobj = gcp('nocreate');
+    %         if ~isempty(poolobj)
+    %             delete(poolobj);
+    %         end
+    %     end
+    % end
 
     time_taken = toc(feature_start_time);
     fprintf('Feature extraction done in %0.2f seconds.\n', time_taken);

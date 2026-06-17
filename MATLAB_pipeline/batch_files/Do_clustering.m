@@ -209,14 +209,14 @@ function Do_clustering(input, varargin)
                     count_new_times(initial_date, filenames,global_times_folder),Nfiles, filename, time_taken)
             end
         end
-        if parallel == true
-            if exist('matlabpool','file')
-                matlabpool('close')
-            else
-                poolobj = gcp('nocreate');
-                delete(poolobj);
-            end
-        end
+        % if parallel == true
+        %     if exist('matlabpool','file')
+        %         matlabpool('close')
+        %     else
+        %         poolobj = gcp('nocreate');
+        %         delete(poolobj);
+        %     end
+        % end
     
         global_log_name = fullfile(global_times_folder, 'spc_log.txt');
         f = fopen(global_log_name, 'w');
