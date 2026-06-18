@@ -66,7 +66,7 @@ step_pic = 15;
 if contains(name,'NSRG-HUB-17988'), dir_base = 'C:\Users\al58796\Documents\GitHub\MCWs'; % aj desktop
 elseif contains(name,'ABT-REYLAB'), dir_base = 'C:\Users\user\Documents\GitHub\MCWs';
 elseif contains(name,'AJ-PC'), dir_base = 'C:\Users\betan\Documents\Research\MCWs'; % aj desktop
-elseif contains(name,'MCW-21454'), dir_base = 'C:\Users\betan\Documents\Github\MCWs'; % aj laptop mcw
+elseif contains(name,'MCW-21454'), dir_base = 'C:\Users\al58796\Documents\Github\MCWs\MATLAB_pipeline'; % aj laptop mcw
 elseif contains(name,'TOWER-REYLAB') || contains(name,'RACK-REYLAB') || contains(name, 'ABTL')
 %     current_user = 'sofiad';  % replace with appropriate user name  
     current_user = getenv('USER');    dir_base = sprintf('/home/%s/Documents/GitHub/MCWs/MATLAB_pipeline',current_user); 
@@ -151,6 +151,18 @@ elseif strcmp(par.which_system_micro,'RIP')
 end
 clear filenames
 
+%% if photodiode NC5 or NEV present
+if USE_PHOTODIODE
+    extract_events_rsvpscr_BCM_photoonly_online3(par.which_system_micro,par.nowait)
+else
+    if strcmp(par.which_system_micro,'RIP')
+        extract_events_rsvpscr_ripple_EMU_online3(filename_NEV); % CHECK matlab times
+    end
+end
+if strcmp(par.which_system_micro,'RIP')
+    extract_blank_on_events_ripple(filename_NEV)
+end
+    
 %%
 if ~exist('channels','var')
     channels=[];
@@ -161,10 +173,22 @@ if ~exist('channels','var')
         AA = {NSx(arrayfun(@(x) (x.sr==2000),NSx)).chan_ID};
     end
 
+    ext = {'*.nc5','*.NC5'};
+    extensions = cellfun(@(x)dir(x),ext,'UniformOutput',false);
+    extensions = vertcat(extensions{:});
+    
+
+    file_names_nc5 = string({extensions.name}); 
+    channel_idx = 1;
     for i=1:length(AA)
-        channels(i)=double(AA{i});
+        search_pattern = string(AA{i}); 
+        if any(contains(file_names_nc5, search_pattern))
+            channels(channel_idx) = double(AA{i}); % Convert securely to a double
+            channel_idx =channel_idx+ 1;
+        end
     end
 end
+% extract_events_rsvpscr_BCM_photoonly_online3(par.which_system_micro,par.nowait);
 % channels = [1:246];
 %% opens parallel pool
 poolobj = gcp('nocreate');

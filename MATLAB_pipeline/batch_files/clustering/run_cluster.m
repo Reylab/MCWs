@@ -109,13 +109,13 @@ if exist('multi_files','var') && multi_files==true
 	log_name = [par.filename 'spc_log.txt'];
 	f = fopen(log_name,'w');
 	fprintf(f,'----------\nSPC result of file: %s\n', par.filename);
-	fprintf(f,result);
+    fprintf(f, '%s', result);
 	fclose(f);
 else
 	log_name = 'spc_log.txt';
 	f = fopen(log_name,'w');
-	fprintf(f,result);
-	fclose(f);
+    fprintf(f, '%s', result);
+    fclose(f);
 end
 
 clu = load([fname '.dg_01.lab']);
