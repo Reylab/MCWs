@@ -136,19 +136,22 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
     end
 
     % compute silhouette scores matrix SS and per-cluster scores
-    if numel(unique_clusters) > 1
-        if p.Results.exclude_cluster_0
-            valid_mask = (cluster_ids ~= 0);
-            feat_valid = features(valid_mask, :);
-            labels_valid = cluster_ids(valid_mask);
-        else
-            feat_valid = features;
-            labels_valid = cluster_ids;
-        end
-        
+    % NOTE: filter FIRST, then check count — a channel with clusters [0,1]
+    % has numel(unique_clusters)=2 but only 1 real cluster after excluding 0,
+    % which causes silhouette_score to crash with "at least 2 clusters required".
+    if p.Results.exclude_cluster_0
+        valid_mask = (cluster_ids ~= 0);
+        feat_valid = features(valid_mask, :);
+        labels_valid = cluster_ids(valid_mask);
+    else
+        feat_valid = features;
+        labels_valid = cluster_ids;
+    end
+
+    if numel(unique(labels_valid)) > 1
         % fprintf('DEBUG %s: Before silhouette - unique_clusters=%d, exclude_0=%d, unique_after_filter=%d\n', ...
         %     data.filename, numel(unique_clusters), p.Results.exclude_cluster_0, numel(unique(labels_valid)));
-        
+
         try
             [scores, SS] = silhouette_score(feat_valid, labels_valid, 'return_matrix', true);
             % Map scores back into df_metrics (order: metric_clusters)
@@ -216,12 +219,14 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
             return;  % Exit early
         end
         
-        % Check if SS is empty before calling make_cluster_report
+        % SS may be empty when there is only one cluster after filtering —
+        % make_cluster_report handles that gracefully (metrics overview page
+        % is skipped via its own ~isempty(SS) guard; waveform/ISI/correlogram
+        % panels do not require SS at all).
         if isempty(SS)
-            fprintf('WARNING %s: SS is empty, skipping make_cluster_report (likely only 1-2 clusters after filtering)\n', data.filename);
-            return;
+            fprintf('NOTE %s: single cluster after filtering — SS unavailable, generating waveform/ISI report without metrics overview\n', data.filename);
         end
-        
+
         [figs, ~, ~] = make_cluster_report(data, ...
                 'calc_metrics', false, ...
                 'metrics_df', df_metrics, ...

@@ -101,8 +101,11 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     else
         df_metrics = p.Results.metrics_df;
         SS = p.Results.SS;
-        if isempty(df_metrics) || isempty(SS)
-            error('If calc_metrics=false, you must provide metrics_df and SS');
+        % df_metrics is required; SS may legitimately be empty when there is
+        % only one cluster after filtering (silhouette is undefined). The
+        % metrics overview page already guards itself with ~isempty(SS).
+        if isempty(df_metrics)
+            error('If calc_metrics=false, you must provide metrics_df');
         end
     end
     figs = {};
