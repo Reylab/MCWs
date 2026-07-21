@@ -17,9 +17,10 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     % --- Setup ---
     visstr = 'off'; % Default to off (prevents pop-ups)
     
-    if ~isstruct(data) || ~isfield(data,'cluster_class') || ~isfield(data,'spikes') || ~isfield(data,'inspk') ||  ~isfield(data,'spikes_all')
-        error('data must contain cluster_class, spikes, inspk, and spikes_all');
+    if ~isstruct(data) || ~isfield(data,'cluster_class') || ~isfield(data,'spikes') || ~isfield(data,'inspk')
+        error('data must contain cluster_class, spikes, and inspk');
     end
+    has_spikes_all = isfield(data,'spikes_all') && isfield(data,'index_all');
     cluster_class = data.cluster_class;
 
     if isfield(data,'cluster_class_pre_rescue')
@@ -35,8 +36,13 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     spike_times_ms = double(cluster_class(:,2));
     unique_clusters = unique(cluster_ids);
     recording_duration_ms = max(spike_times_ms);
-    spikes_all = data.spikes_all;
-    index_all = data.index_all;
+    if has_spikes_all
+        spikes_all = data.spikes_all;
+        index_all = data.index_all;
+    else
+        spikes_all = [];
+        index_all = [];
+    end
 
     if isfield(data,'mask_nonart')
         mask_bund = ~data.mask_nonart;
@@ -58,7 +64,12 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
 
     mask_quarantine = mask_art_chan(:) | mask_bund(:) | mask_tsk(:);
     tot_quar = sum(mask_quarantine);
-    tot_spikes = numel(index_all);
+    if has_spikes_all
+        tot_spikes = numel(index_all);
+    else
+        % No pre-quarantine spike record available; use clustered spike count instead.
+        tot_spikes = numel(cluster_ids);
+    end
 
     rescued = 0;
     if isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask)
@@ -101,12 +112,12 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     else
         df_metrics = p.Results.metrics_df;
         SS = p.Results.SS;
-        % df_metrics is required; SS may legitimately be empty when there is
-        % only one cluster after filtering (silhouette is undefined). The
-        % metrics overview page already guards itself with ~isempty(SS).
         if isempty(df_metrics)
             error('If calc_metrics=false, you must provide metrics_df');
         end
+        % SS may legitimately be empty (e.g. only 1-2 clusters after filtering,
+        % silhouette undefined). The metrics-overview page is skipped further
+        % down in that case; waveform/ISI plots still get generated.
     end
     figs = {};
     leicolors = [0 0 0; 0 0 1; 1 0 0; 0 0.5 0; 0.62 0 0; 0.42 0 0.76; 0.97 0.52 0.03; 0.52 0.25 0; 1 0.10 0.72; 0.55 0.55 0.55; 0.59 0.83 0.31; 0.97 0.62 0.86; 0.62 0.76 1.0];
@@ -289,7 +300,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 % Build merge annotation for column header
                 merge_tag = get_merge_tag(double(cid), data);
 
-                has_rescued = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask) && cid ~= 0;
+                has_rescued = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask) && has_spikes_all && cid ~= 0;
                 if has_rescued
                     cluster_spike_times = spike_times_ms(cluster_ids == cid);
                     rescued_here = 0;
@@ -363,7 +374,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 chan_str = sprintf(' | Ch%s', tok_ch{1});
             end
         end
-        title_line1 = sprintf('Cluster Report%s  —  Page %d/%d', chan_str, page_i, length(pages));
+        title_line1 = sprintf('Cluster Report%s    Page %d/%d', chan_str, page_i, length(pages));
 
         % Line 2: directory up to and including pwd (trim prefix above pwd)
         if isfield(data, 'fullpath') && ~isempty(data.fullpath)
@@ -373,14 +384,14 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         end
         % Show up to 3 trailing path components of the file's directory so that
         % for merged data the times folder is always visible:
-        %   …/times_20260615_1623/ch333_merge[3_6]
+        %   &/times_20260615_1623/ch333_merge[3_6]
         % and for normal data:
-        %   …/times_20260615_1623
+        %   &/times_20260615_1623
         parts = strsplit(file_dir, filesep);
         parts = parts(~cellfun(@isempty, parts));
         n_show = min(3, numel(parts));
         if n_show > 0
-            dir_display = ['…/' strjoin(parts(end-n_show+1:end), '/')];
+            dir_display = ['&/' strjoin(parts(end-n_show+1:end), '/')];
         else
             dir_display = file_dir;
         end
@@ -446,7 +457,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     if i == j
                         title(ax, sprintf('C%d (auto)', a), 'FontSize', 9, 'FontWeight', 'bold');
                     else
-                        title(ax, sprintf('C%d → C%d', a, b), 'FontSize', 9);
+                        title(ax, sprintf('C%d � C%d', a, b), 'FontSize', 9);
                     end
                     box(ax,'off'); grid(ax,'on');
                     set(ax, 'FontSize', 7);
@@ -472,9 +483,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     fprintf('Generated %d figure pages for cluster report %s\n', length(figs),data.filename);
 end
 
-% -------------------------------------------------------------------------
-% Cluster Breakdown Pages
-% -------------------------------------------------------------------------
 % -------------------------------------------------------------------------
 % Cluster Breakdown Pages
 % -------------------------------------------------------------------------
@@ -566,7 +574,7 @@ function figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_i
             % Pure original spikes
             mask_orig_cid = mask_cid(:) & ~mask_forced_cid(:) & ~mask_resc_cid(:);
             n_orig = sum(mask_orig_cid);
-            % ---- ROW 1: Bar Summary — original, forced, rescued ----
+            % ---- ROW 1: Bar Summary  original, forced, rescued ----
             ax1 = subplot(nrows, ncols, ci);
             counts = [n_orig, n_forced, n_resc];
             labels = {'Orig','Forced','Rescued'};
@@ -588,7 +596,7 @@ function figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_i
             ttl = sprintf('C%d%s', cid, merge_tag);
             title(ax1, ttl, 'FontSize', 9, 'FontWeight', 'bold', 'Interpreter','none');
 
-            % ---- ROW 2: Waveforms — pure original, forced overlay ----
+            % ---- ROW 2: Waveforms  pure original, forced overlay ----
             ax2 = subplot(nrows, ncols, ncols + ci);
             hold(ax2,'on');
             tvec = 1:size(waveforms_all,2);
@@ -642,7 +650,7 @@ function figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_i
 
         % --- Page title ---
         bd_total_pages = page_offset + n_pages;
-        sgtitle(sprintf('Cluster Breakdown  —  Page %d/%d', page_offset + pg, bd_total_pages), 'FontSize', 13, 'Interpreter', 'none');
+        sgtitle(sprintf('Cluster Breakdown    Page %d/%d', page_offset + pg, bd_total_pages), 'FontSize', 13, 'Interpreter', 'none');
         figs_bd{end+1} = fig;
     end
 end
@@ -973,8 +981,12 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
         base_spikes = zeros(n_clusters, 1);
         rescued_spikes = zeros(n_clusters, 1);
         
-        has_rescue = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask);
-        index_all_vec = data.index_all(:);
+        has_rescue = isfield(data, 'rescue_mask') && ~isempty(data.rescue_mask) && has_spikes_all;
+        if has_rescue
+            index_all_vec = data.index_all(:);
+        else
+            index_all_vec = [];
+        end
         
         for ci = 1:n_clusters
             cid = cluster_list(ci);
@@ -1080,6 +1092,7 @@ function density_image_matlab(W, ax, samplerate_hz, varargin)
 
     [n, T] = size(W);
     
+    % CHANGE 1: Add max waveforms limit
     max_waveforms = 5000;
     if n > max_waveforms
         rng(42, 'twister');

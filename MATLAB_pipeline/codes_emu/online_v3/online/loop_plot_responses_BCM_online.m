@@ -154,7 +154,8 @@ function fig_cells = loop_plot_responses_BCM_online(data_table, grapes, ss_num, 
             fig_filename = fullfile(output_dir, fig_filename);
             %fprintf('Saving grape figure to %s (pwd=%s)\n', fig_filename, pwd);
             try
-                exportgraphics(fig, fig_filename, 'Resolution', 150);
+                print(fig, fig_filename, '-dpng', '-r150');
+                % exportgraphics(fig, fig_filename, 'Resolution', 150);
             catch
                 % Fallback to print if exportgraphics not available (older MATLAB)
                 print(fig,'-dpng','-r150', fig_filename);
@@ -420,6 +421,10 @@ function plot_ifr(stim_idx, data_table, grapes, ifr_x, ...
     %subplot_ax = subplot(rows,cols,ifr_idx,'align');
     line(xlim,[data_table.IFR_thr(stim_idx) data_table.IFR_thr(stim_idx)],'linestyle','--','color','k')
       
+    % Prevent crash if ifr_y_max evaluates to 0 or less
+    if ifr_y_max <= 0
+        ifr_y_max = 1; 
+    end
     set(subplot_ax,'YLim',[0 ifr_y_max]);
     line([0 0],[0 ifr_y_max],'linestyle',':')
     if isfield(grapes,'ISI_min')

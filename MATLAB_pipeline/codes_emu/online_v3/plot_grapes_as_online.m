@@ -167,15 +167,13 @@ function plot_grapes_as_online(varargin)
         if ~exist(grapes_full_path, 'file')
             error('Could not find grapes file at: %s', grapes_full_path);
         end
-        
         grapes = load(grapes_full_path);
         
         % Update folder path references
-        grapes.ImageNames = table(repmat({fullfile(root, '..', 'pics_used')}, ...
+        grapes.ImageNames = table(repmat({fullfile(root, 'pics_used')}, ...
                                        numel(grapes.ImageNames), 1), grapes.ImageNames, ...
                                        'VariableNames', {'folder', 'name'});
     else
-        % Keep your online loading logic
         load(['results' filesep 'grapes_online.mat']);
         grapes.ImageNames.folder(:) = {fullfile(root, '..', 'pics_used')};
     end
