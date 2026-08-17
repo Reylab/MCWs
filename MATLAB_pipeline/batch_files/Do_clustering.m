@@ -598,7 +598,7 @@ function Do_clustering(input, varargin)
         par.fname = ['data_' data_handler.nick_name];
         par.nick_name = data_handler.nick_name;
     
-        par.randomseed = 42; %% test if default seed param valid.
+        % par.randomseed = 110; %% test if default seed param valid.
     
         if par.randomseed ~= 0 && isfield(par,'randomseed')
             rng(par.randomseed);

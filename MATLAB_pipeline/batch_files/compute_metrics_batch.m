@@ -44,7 +44,7 @@ if ~isempty(p.Results.folder_name)
         error('The specified folder "%s" does not exist.', p.Results.folder_name);
     end
     fprintf('Using user-specified folder: %s\n', active_times_dir);
-elseif contains(current_dir_name,'merge')||contains(current_dir_name,'times_2')
+elseif contains(current_dir_name,'merge')||contains(current_dir_name,'times_')
     active_times_dir = pwd;
 else
     % Priority 2: Fallback to auto-detect (max of dates)

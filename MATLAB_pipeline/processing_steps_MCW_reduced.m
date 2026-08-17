@@ -295,7 +295,7 @@ if par.micros
        %% sorting
     if par.do_sorting
         disp('spike sorting BEGIN..')
-        param.min_clus = 15;
+        param.min_clus = 20;
         param.max_spk = 30000;
         param.mintemp = 0.00;                  % minimum temperature for SPC
         param.maxtemp = 0.251;                 % maximum temperature for SPC
@@ -353,6 +353,10 @@ if par.micros
         
         fprintf('plot_grapes_as_online DONE\n');
     %% reintroduce quarantined spikes
+        % rescue_spikes(channels,'parallel',true,'restore',true);
+
+
+
     % see if they match any templates
     rescue_spikes(channels,'parallel',true,'restore',false);
 

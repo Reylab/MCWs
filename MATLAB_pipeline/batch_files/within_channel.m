@@ -1,13 +1,24 @@
-function within_channel(channels)
+function within_channel(channels, varargin)
     % Function: within_channel
     % Description: Filters spikes based on waveform characteristics (amplitude, width, multi-peak structure)
     %              using a robust, polarity-aware method. The resulting mask is combined with an existing
     %              collision mask for cumulative filtering.
     % Channels: The list of microelectrode channels (channel IDs) to process.
-    
+    % Optional name-value args:
+    %   'use_parallel' (default false) - run channels with parfor instead of for.
+    %   'filter_mode'  (default 'all') - 'all' uses the full decision tree; 'amp_only'
+    %                                    filters solely on the amplitude percentile.
+
+    p = inputParser;
+    addParameter(p, 'use_parallel', false, @islogical);
+    addParameter(p, 'filter_mode', 'all', @ischar); % Options: 'all', 'amp_only'
+    parse(p, varargin{:});
+
+    use_parallel = p.Results.use_parallel;
+    filter_mode = p.Results.filter_mode;
 
     within_channel_tic = tic;
-    
+
     % Define Quality Control (QC) parameters for spike shape analysis
     qc_params = struct();
     qc_params.min_amplitude_percentile = 5; % Spikes below this P2P amplitude percentile are quarantined
@@ -15,117 +26,133 @@ function within_channel(channels)
     qc_params.max_width_idx = 15;           % Max width of main feature (in samples)
     qc_params.prominence_ratio_threshold = 0.01; % Secondary feature prominence must be > 1% of main peak amp
     qc_params.final_prominence_ratio_pass = 2; % Main feature Prominence/Amplitude threshold for complex spikes
-    
+
     load('NSx','NSx');
     % Filter NSx structure to include only the specified channels
     NSx_proc = NSx(ismember(cell2mat({NSx.chan_ID}),channels));
-    
     num_channels_proc = length(NSx_proc);
-    fprintf('Starting robust waveform quality check on %d channels...\n', num_channels_proc);
-    
+    fprintf('Starting robust waveform quality check on %d channels (Mode: %s, Parallel: %d)...\n', ...
+        num_channels_proc, filter_mode, use_parallel);
+
     dates = dir(fullfile(pwd, 'spikes*'));
     dates = dates([dates.isdir]);
     if isempty(dates), error('No spikes folders found.'); end
     [~, idx] = max([dates.datenum]);
     active_spikes_dir = fullfile(pwd, dates(idx).name);
 
-    for k = 1:num_channels_proc
-        ch_info = NSx_proc(k);
-        ch_lbl = ch_info.output_name;
-        % Target the file inside our locked directory
-        spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
-                
-        try
-            % fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
-            SPK = load(spike_file);
-            
-            % Load full spike set
-            if isfield(SPK,'spikes_all')
-                spikes_all = SPK.spikes_all;
-                index_all  = SPK.index_all;
-            else 
-                spikes_all = SPK.spikes;
-                index_all = SPK.index;
-            end
-            % Load existing collision mask. mask_non_collision is TRUE for spikes that passed the initial filtering.
-            if isfield(SPK,'mask_nonart')
-                mask_used = 2;
-                mask_non_collision = SPK.mask_nonart;
-            else
-                mask_used = 1;
-                mask_non_collision = true(size(index_all));
-                warning('ArtifactRemoval:NoCollisionMask', 'No collision mask found for %s. Assuming all spikes are non-collision.', ch_lbl);
-            end
-            
-            if isfield(SPK, 'mask_taskspks')
-                mask_taskspks = SPK.mask_taskspks;
-            else
-                mask_taskspks = true(size(index_all));
-            end
+    chan_lbls = {NSx_proc.output_name};
 
-            % Normalize orientation to avoid implicit expansion (Nx1 & 1xN -> NxN).
-            index_all = index_all(:);
-            mask_non_collision = logical(mask_non_collision(:));
-            mask_taskspks = logical(mask_taskspks(:));
-
-            % map the loaded mask back to the original variable name for saving
-            mask_nonart = mask_non_collision;
-
-            % mask_quarantine_local is TRUE for spikes that FAIL the shape/amplitude QC test
-            % fprintf('ch.%d/%d %s: running waveform QC\n', k, num_channels_proc, ch_lbl);
-            [mask_quarantine_local, quarantine_properties] = analyze_spike_waveforms(spikes_all, qc_params);
-            mask_quarantine_local = logical(mask_quarantine_local(:));
-            
-            % mask_non_quarantine is TRUE for spikes that PASS the shape/amplitude QC test
-            mask_non_quarantine = ~mask_quarantine_local;
-
-            if numel(mask_non_collision) ~= numel(mask_non_quarantine) || numel(mask_taskspks) ~= numel(mask_non_quarantine)
-                error('ArtifactRemoval:MaskLengthMismatch', ...
-                    'Mask lengths differ for %s (collision=%d, quarantine=%d, task=%d).', ...
-                    ch_lbl, numel(mask_non_collision), numel(mask_non_quarantine), numel(mask_taskspks));
-            end
-            
-            % Combine Masks: Spike must pass collision check AND quarantine check
-            mask_total_pass = mask_non_collision & mask_non_quarantine & mask_taskspks;
-
-            % Final cleaned indices
-            index = index_all(mask_total_pass);
-            % Final cleaned waveforms (overwriting 'spikes_coll_only' to hold the fully filtered set)
-            spikes = spikes_all(mask_total_pass, :);
-            
-            % Update the main 'par' structure with the new QC parameters
-            par = SPK.par;
-            par.qc_params = qc_params;
-
-            % fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
-            % fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
-            % Remove -append to fully overwrite file, ensuring old unfiltered spikes don't persist
-
-            index = reshape(index, 1, []);
-            index_all = reshape(index_all, 1, []);
-            mask_nonart = reshape(mask_nonart, 1, []);
-            mask_non_quarantine = reshape(mask_non_quarantine,1,[]);
-            
-            save(spike_file, ...
-                 'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
-                 'mask_non_quarantine', 'quarantine_properties','-append');
-            
-            num_removed_this_step = sum(mask_non_collision) - sum(mask_total_pass);
-            num_total_spikes = numel(index_all);
-            
-            fprintf('ch.%d of %d: %s. Masks used (%d): quarantined %d spikes. Remaining: %d/%d (%.2f%%)\n', ...
-                k, num_channels_proc, ch_lbl, mask_used, num_removed_this_step, sum(mask_total_pass), num_total_spikes, sum(mask_total_pass)/num_total_spikes*100);
-
-            % Release channel-local data before next channel.
-            clear SPK spikes_all index_all index spikes mask_non_collision mask_nonart mask_non_quarantine mask_taskspks mask_total_pass quarantine_properties mask_quarantine_local;
-
-        catch ME
-            fprintf('  -> FAILED to process channel %s: %s\n', ch_lbl, ME.message);
+    % Toggle between parfor and for loops
+    if use_parallel
+        parfor k = 1:num_channels_proc
+            process_within_channel(chan_lbls{k}, active_spikes_dir, qc_params, filter_mode, k, num_channels_proc);
+        end
+    else
+        for k = 1:num_channels_proc
+            process_within_channel(chan_lbls{k}, active_spikes_dir, qc_params, filter_mode, k, num_channels_proc);
         end
     end
-    
+
     within_channel_toc = toc(within_channel_tic);
     fprintf("within_channel DONE in %s seconds.\n", num2str(within_channel_toc, '%2.2f'));
+end
+
+% --- LOCAL HELPER FUNCTION FOR LOOP BODY ---
+function process_within_channel(ch_lbl, active_spikes_dir, qc_params, filter_mode, k, num_channels_proc)
+    % Target the file inside our locked directory
+    spike_file = fullfile(active_spikes_dir, sprintf('%s_spikes.mat', ch_lbl));
+
+    try
+        % fprintf('ch.%d/%d %s: loading %s\n', k, num_channels_proc, ch_lbl, spike_file);
+        SPK = load(spike_file);
+
+        % Load full spike set
+        if isfield(SPK,'spikes_all')
+            spikes_all = SPK.spikes_all;
+            index_all  = SPK.index_all;
+        else
+            spikes_all = SPK.spikes;
+            index_all = SPK.index;
+        end
+        % Load existing collision mask. mask_non_collision is TRUE for spikes that passed the initial filtering.
+        if isfield(SPK,'mask_nonart')
+            mask_used = 2;
+            mask_non_collision = SPK.mask_nonart;
+        else
+            mask_used = 1;
+            mask_non_collision = true(size(index_all));
+            warning('ArtifactRemoval:NoCollisionMask', 'No collision mask found for %s. Assuming all spikes are non-collision.', ch_lbl);
+        end
+
+        if isfield(SPK, 'mask_taskspks')
+            mask_taskspks = SPK.mask_taskspks;
+        else
+            mask_taskspks = true(size(index_all));
+        end
+
+        % Normalize orientation to avoid implicit expansion (Nx1 & 1xN -> NxN).
+        index_all = index_all(:);
+        mask_non_collision = logical(mask_non_collision(:));
+        mask_taskspks = logical(mask_taskspks(:));
+
+        % map the loaded mask back to the original variable name for saving
+        mask_nonart = mask_non_collision;
+
+        % mask_quarantine_local is TRUE for spikes that FAIL the shape/amplitude QC test
+        % fprintf('ch.%d/%d %s: running waveform QC\n', k, num_channels_proc, ch_lbl);
+        [mask_quarantine_local, quarantine_properties] = analyze_spike_waveforms(spikes_all, qc_params);
+        mask_quarantine_local = logical(mask_quarantine_local(:));
+
+        % DECISION MASK LOGIC
+        if strcmpi(filter_mode, 'amp_only')
+            % Just filter out the 5th percentile amplitude spikes
+            mask_non_quarantine = ~quarantine_properties.low_low_amp_spike(:);
+        else
+            % Default: Full decision tree mask
+            mask_non_quarantine = ~mask_quarantine_local;
+        end
+
+        if numel(mask_non_collision) ~= numel(mask_non_quarantine) || numel(mask_taskspks) ~= numel(mask_non_quarantine)
+            error('ArtifactRemoval:MaskLengthMismatch', ...
+                'Mask lengths differ for %s (collision=%d, quarantine=%d, task=%d).', ...
+                ch_lbl, numel(mask_non_collision), numel(mask_non_quarantine), numel(mask_taskspks));
+        end
+
+        % Combine Masks: Spike must pass collision check AND quarantine check
+        mask_total_pass = mask_non_collision & mask_non_quarantine & mask_taskspks;
+
+        % Final cleaned indices
+        index = index_all(mask_total_pass);
+        % Final cleaned waveforms (overwriting 'spikes_coll_only' to hold the fully filtered set)
+        spikes = spikes_all(mask_total_pass, :);
+
+        % Update the main 'par' structure with the new QC parameters
+        par = SPK.par;
+        par.qc_params = qc_params;
+        par.filter_mode = filter_mode; % Save the mode used for logging
+
+        % fprintf('ch.%d/%d %s: saving filtered results\n', k, num_channels_proc, ch_lbl);
+        % fprintf('  -> Quarantined: %d\n', nnz(~mask_non_quarantine));
+        % Remove -append to fully overwrite file, ensuring old unfiltered spikes don't persist
+
+        index = reshape(index, 1, []);
+        index_all = reshape(index_all, 1, []);
+        mask_nonart = reshape(mask_nonart, 1, []);
+        mask_non_quarantine = reshape(mask_non_quarantine,1,[]);
+
+        save(spike_file, ...
+             'index', 'spikes', 'index_all', 'spikes_all', 'par', 'mask_nonart', ...
+             'mask_non_quarantine', 'quarantine_properties','-append');
+
+        num_removed_this_step = sum(mask_non_collision) - sum(mask_total_pass);
+        num_total_spikes = numel(index_all);
+
+        fprintf('ch.%d of %d: %s. Masks used (%d): quarantined %d spikes. Remaining: %d/%d (%.2f%%)\n', ...
+            k, num_channels_proc, ch_lbl, mask_used, num_removed_this_step, sum(mask_total_pass), num_total_spikes, sum(mask_total_pass)/num_total_spikes*100);
+
+    catch ME
+        fprintf('  -> FAILED to process channel %s: %s\n', ch_lbl, ME.message);
+    end
 end
 
 
@@ -372,6 +399,18 @@ function width_val = calc_baseline_width(waveform, peak_idx)
     first_seg = waveform(1:h);
     last_seg = waveform(max(1, n-h+1):n);
     baseline = mean([first_seg, last_seg]);
+
+    % The crossing search below only works correctly when the main feature is a
+    % trough (peak_voltage < baseline): waveform(peak_idx) fails the '>' test,
+    % so the search correctly walks outward to the true half-height crossings.
+    % For a genuine positive-going peak, waveform(peak_idx) trivially satisfies
+    % '>', which collapses the search onto the peak's own sample and returns
+    % NaN. Normalize to trough-shape here so the same logic works either way.
+    if peak_voltage > baseline
+        waveform = -waveform;
+        peak_voltage = -peak_voltage;
+        baseline = -baseline;
+    end
 
     half_amplitude = baseline + (peak_voltage - baseline) / 2;
 

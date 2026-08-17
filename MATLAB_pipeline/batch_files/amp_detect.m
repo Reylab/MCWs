@@ -80,8 +80,8 @@ else
     end
 end
 
-xf        = xf_pad(pad_samp : pad_samp+N-1);
-xf_detect = xfd_pad(pad_samp : pad_samp+N-1);
+xf        = xf_pad(pad_samp + 1 : pad_samp+N);
+xf_detect = xfd_pad(pad_samp + 1 : pad_samp+N);
 
 noise_std_detect = median(abs(xf_detect)) / 0.6745;
 noise_std_sorted = median(abs(xf))        / 0.6745;
@@ -154,7 +154,10 @@ for i = 1:length(crossings)
     end
 
     refined = s + loc - 1;
-
+    
+    if refined <= last_accepted
+        continue
+    end
     % drop locations failing safety bounds
     if refined - pre_safe < 1 || refined + post_safe > N
         continue
