@@ -82,7 +82,7 @@ if isempty(d)
     error('No files matching ''%s'' found in %s', pattern, folder);
 end
 
-% Load existing metadata (if any) so re-runs are additive, like parse_NSx.m
+% Load existing metadata (if any) 
 metadata_file = fullfile(folder, 'NSx.mat');
 if exist(metadata_file, 'file')
     metadata = load(metadata_file);

@@ -80,11 +80,11 @@ function process_refract_channel(ch_lbl, active_spikes_dir, keep_strategy)
 
         % Vectorized Refractory Chain Flagging
         if length(index_all) > 1
-            % 1. Find gaps between consecutive spikes
+            % Find gaps between consecutive spikes
             gaps = diff(index_all);
             in_chain_gap = gaps < ref_val; % True if gap violates refractory window
 
-            % 2. Identify the starts and ends of chains
+            % Identify the starts and ends of chains
             % We pad with false to catch chains at the very edges of the array
             ext_gap = [false; in_chain_gap; false];
 
@@ -92,7 +92,7 @@ function process_refract_channel(ch_lbl, active_spikes_dir, keep_strategy)
             chain_starts = find(diff(ext_gap) == 1);
             chain_ends   = find(diff(ext_gap) == -1);
 
-            % 3. Allocate our violation wmask
+            % Allocate our violation wmask
             mask_refract = false(size(index_all));
 
             switch lower(keep_strategy)

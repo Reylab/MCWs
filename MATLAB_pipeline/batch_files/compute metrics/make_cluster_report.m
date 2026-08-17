@@ -189,7 +189,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 hold(ax1,'on');
                 T = size(waveforms,2);
                 
-                % FIX 1: Summary Mean Plot -> SAMPLES (ignore samplerate)
                 tvec = 1:T;
                 xlabel_str = 'Samples';
                 
@@ -284,7 +283,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 hold(axW,'on');
                 colc = leicolors(mod(cid, size(leicolors,1))+1,:);
                 
-                % FIX 2: Individual Cluster Plots -> SAMPLES (ignore samplerate)
                 tvec = 1:size(W,2);
                 xlabel_str = 'Samples';
                 
@@ -346,7 +344,6 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 % Density image (row2) - match Python layout
                 axD = report_subplot(3, ncols, col + ncols);
                 
-                % FIX 3: Density Plot -> SAMPLES (pass [] for samplerate)
                 density_image_matlab(W, axD, [], 'cmap', 'inferno');
                 
                 % ISI histogram (row3)
@@ -374,7 +371,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 chan_str = sprintf(' | Ch%s', tok_ch{1});
             end
         end
-        title_line1 = sprintf('Cluster Report%s    Page %d/%d', chan_str, page_i, length(pages));
+        title_line1 = sprintf('Cluster Report%s  Page %d/%d', chan_str, page_i, length(pages));
 
         % Line 2: directory up to and including pwd (trim prefix above pwd)
         if isfield(data, 'fullpath') && ~isempty(data.fullpath)
@@ -501,8 +498,6 @@ function figs_bd = make_cluster_breakdown_pages(data, unique_clusters, cluster_i
     has_forced  = isfield(data,'forced')      && ~isempty(data.forced);
     has_pre     = isfield(data,'cluster_class_pre_rescue');
 
-    % ALIGNMENT FIX: We MUST use the post-rescue arrays (cluster_ids, spike_times_ms)
-    % so they index perfectly into data.spikes.
     cids_bd = cluster_ids;
     sts_bd  = spike_times_ms;
     waveforms_all = double(data.spikes);    % full post-rescue spike matrix

@@ -158,7 +158,6 @@ function plot_grapes_as_online(varargin)
     
     ifr_calculator = IFRCalculator(alpha_gauss,sigma_gauss,ifr_resolution,SR,TIME_PRE,TIME_POS);
     
-    %is this doing things for every response?
     [data, rank_config] = create_responses_data_parallel(grapes,all_picsused, ...
                                                          {'mu','class'},ifr_calculator,resp_conf, ...
                                                          [], priority_chs_ranking);

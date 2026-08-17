@@ -34,9 +34,7 @@ function [df_metrics, SS, figs] = compute_cluster_metrics(data, varargin)
         % Alternative for R2017a+ (more readable)
         % features = (features - feat_mean) ./ feat_std;
         
-        
-        %fprintf('DEBUG: Successfully Z-Score normalized %d features.\n', size(features, 2));
-        
+              
         %fprintf('DEBUG: Successfully Z-Score normalized %d features.\n', size(features, 2));
     end
 
@@ -770,7 +768,7 @@ function [violation_rate, fp_rate, num_violations] = isi_violations(spike_times,
         error('censored_period must be smaller than refractory_period');
     end
     
-    % 1) Remove duplicate/too-close spikes (≤ censored_period)
+    % Remove duplicate/too-close spikes (≤ censored_period)
     spike_times_clean = spike_times;
     dup_idx = find(diff(spike_times_clean) <= censored_period);
     if ~isempty(dup_idx)
@@ -778,13 +776,13 @@ function [violation_rate, fp_rate, num_violations] = isi_violations(spike_times,
         spike_times_clean(dup_idx + 1) = [];
     end
     
-    % 2) Calculate ISIs
+    % Calculate ISIs
     isis = diff(spike_times_clean);
     
-    % 3) Count violations strictly inside (censored, refractory)
+    % Count violations strictly inside (censored, refractory)
     num_violations = sum((isis > censored_period) & (isis < refractory_period));
     
-    % 4) Get recording duration
+    % Get recording duration
     if isempty(recording_duration)
         recording_duration = spike_times_clean(end) - spike_times_clean(1);
     end
@@ -796,10 +794,10 @@ function [violation_rate, fp_rate, num_violations] = isi_violations(spike_times,
         return;
     end
     
-    % 5) Unit firing rate (spikes/ms)
+    % Unit firing rate (spikes/ms)
     total_rate = n_spikes / recording_duration;
     
-    % 6) Violation time = total time in which violations could have happened
+    % Violation time = total time in which violations could have happened
     violation_time = 2.0 * n_spikes * (refractory_period - censored_period);
     
     if violation_time <= 0 || total_rate == 0
@@ -808,10 +806,10 @@ function [violation_rate, fp_rate, num_violations] = isi_violations(spike_times,
         return;
     end
     
-    % 7) Violation rate (violations/ms)
+    % Violation rate (violations/ms)
     violation_rate = num_violations / violation_time;
     
-    % 8) False positive rate (contamination fraction in %)
+    % False positive rate (contamination fraction in %)
     fp_rate = (violation_rate / total_rate) * 100.0;
 end
 
@@ -835,7 +833,7 @@ function [hit_rate, miss_rate] = nearest_neighbor_metrics(features, labels, targ
         error('n_neighbors must be >= 1');
     end
     
-    % 1) Separate target and other spikes
+    %  Separate target and other spikes
     is_target = (labels == target_cluster);
     X_target = features(is_target, :);
     X_other = features(~is_target, :);
@@ -851,7 +849,7 @@ function [hit_rate, miss_rate] = nearest_neighbor_metrics(features, labels, targ
         return;
     end
     
-    % 2) Subsample if too many spikes
+    % Subsample if too many spikes
     if total_spikes > max_spikes_for_nn
         ratio = max_spikes_for_nn / total_spikes;
         % Create indices for deterministic subsampling
@@ -864,12 +862,12 @@ function [hit_rate, miss_rate] = nearest_neighbor_metrics(features, labels, targ
         n_target_subsampled = n_target;
     end
     
-    % 3) k-NN using MATLAB's knnsearch
+    % k-NN using MATLAB's knnsearch
     [~, dists] = knnsearch(X, X, 'K', n_neighbors + 1); % +1 to exclude self
     neighbor_indices = knnsearch(X, X, 'K', n_neighbors + 1);
     neighbor_indices = neighbor_indices(:, 2:end); % Remove self
     
-    % 4) Calculate hit and miss rates
+    % Calculate hit and miss rates
     target_rows = 1:n_target_subsampled;
     other_rows = (n_target_subsampled+1):total_spikes;
     

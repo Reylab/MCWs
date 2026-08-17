@@ -3,9 +3,7 @@ function [select_gauss_orig, select_gauss_1pct, select_gauss_2_5pct, select_gaus
     % Builds Q2/Q4 threshold lines, iteratively trims based on distance to center point (intersection),
     % and returns selected Gaussians while optionally saving two figures.
     %
-    % MODIFIED: Now also returns plot-critical variables (x_vals, y_vals, etc.)
-    %           The call to plotSelectedVsAll has been REMOVED and must be called
-    %           from the main script AFTER spikeMatch.
+    
     
     if nargin < 5, folderName = ''; end 
     if nargin < 6, channelNum = ''; end 
@@ -35,7 +33,7 @@ function [select_gauss_orig, select_gauss_1pct, select_gauss_2_5pct, select_gaus
     % Normalize the center point coordinates
     x_inter_norm = (x_inter - x_min) / x_range;
     y_inter_norm = (y_inter - y_min) / y_range;
-    % --- NEW TRIMMING LOGIC: CALCULATE DISTANCE TO CENTER POINT ---
+
     % Euclidean distance in the normalized [0, 1] space.
     dist_to_center_norm = sqrt((x_vals_norm - x_inter_norm).^2 + (y_vals_norm - y_inter_norm).^2);
     %% original boundary

@@ -383,14 +383,13 @@ end
 
 function width_val = calc_baseline_width(waveform, peak_idx)
     % Measure width using a baseline-to-peak half-height rule.
-    % This mirrors the Python helper instead of using findpeaks' built-in width.
     width_val = nan;
 
     if numel(waveform) < peak_idx
         return;
     end
 
-    % Use the same 0-based interpolation approach as the Python implementation
+
     n = numel(waveform);
     peak_voltage = waveform(peak_idx);
 
@@ -414,7 +413,6 @@ function width_val = calc_baseline_width(waveform, peak_idx)
 
     half_amplitude = baseline + (peak_voltage - baseline) / 2;
 
-    % Match Python's width calculation exactly
     peak_idx_0based = peak_idx - 1;  % Convert 1-based peak_idx to 0-based
     
     % LEFT crossing: find last sample > half before the peak
@@ -423,8 +421,8 @@ function width_val = calc_baseline_width(waveform, peak_idx)
     if ~isempty(left_candidates)
         ci_1based = left_candidates(end);  % 1-based MATLAB index
         ci_0based = ci_1based - 1;         % Convert to 0-based
-        % Python: y0=w[ci+1], y1=w[ci]; x0=ci+1, x1=ci
-        % MATLAB: y0=waveform(ci_1based+1), y1=waveform(ci_1based); x0=ci_0based+1, x1=ci_0based
+ 
+        
         if (ci_0based < peak_idx_0based) && (ci_1based + 1 <= peak_idx)
             y0 = waveform(ci_1based + 1);
             y1 = waveform(ci_1based);
@@ -442,9 +440,8 @@ function width_val = calc_baseline_width(waveform, peak_idx)
         ci_local_1based = right_candidates(1);  % 1-based index within waveform(peak_idx:end)
         ci_local_0based = ci_local_1based - 1;
         ci_global_0based = peak_idx_0based + ci_local_0based;  % 0-based global index
-        ci_global_1based = ci_global_0based + 1;  % Convert to 1-based for MATLAB access
-        % Python: y_vals=w[ci_global-1:ci_global+1]; x_vals=[ci_global-1, ci_global]
-        % MATLAB: waveform(ci_global_1based-1:ci_global_1based) gets 0-based positions [ci_global_0based-1, ci_global_0based]
+        ci_global_1based = ci_global_0based + 1;  
+
         if (ci_global_0based - 1 >= 0) && (ci_global_1based <= n)
             y_vals = waveform(ci_global_1based - 1 : ci_global_1based);
             x_vals = [ci_global_0based - 1, ci_global_0based];

@@ -89,6 +89,9 @@ function [cross_correlograms, l1_matrix] = compute_cross_correlograms(spike_time
             cross_correlograms(pair_count).bin_size = bin_size;
 
              l1_matrix = [];
+
+        end
+    end
     if ~isempty(cross_correlograms)
         % Get unique clusters from cross-correlograms
         all_ref_clusters = [cross_correlograms.ref_cluster];
