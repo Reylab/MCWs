@@ -58,6 +58,7 @@ function Do_clustering(input, varargin)
     addParameter(p, 'make_plots', true, @islogical);
     addParameter(p, 'make_templates', false, @islogical);
     addParameter(p, 'resolution', '-r150', @ischar);
+    addParameter(p, 'seed', 0, @isnumeric);
     addParameter(p, 'save_spikes', true, @islogical);
     addParameter(p, 'sdnum', 3, @isnumeric); % temp number for testing
     addParameter(p, 'folder', '', @ischar);
@@ -76,6 +77,7 @@ function Do_clustering(input, varargin)
     times_folder_override = p.Results.times_folder;
     sdnum = p.Results.sdnum;
     run_par_for = parallel;
+    seed = p.Results.seed;
     
     dates_spikes = dir(fullfile(pwd, 'spikes*'));
     dates_spikes = dates_spikes([dates_spikes.isdir]);
@@ -189,7 +191,7 @@ function Do_clustering(input, varargin)
                     full_spike_path = fullfile(target_spikes_folder, filenames{fnum});
                 end                
                 begin_time = tic;
-                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
+                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder,seed);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_times(initial_date, filenames,global_times_folder),Nfiles, filename, time_taken)
@@ -203,7 +205,7 @@ function Do_clustering(input, varargin)
                     full_spike_path = fullfile(target_spikes_folder, filenames{fnum});
                 end                
                 begin_time = tic;
-                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder);
+                do_clustering_single(full_spike_path,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder,seed);
                 time_taken = toc(begin_time);
                 fprintf('%d of %d ''times'' files (%s) done in %0.2f seconds.\n', ...
                     count_new_times(initial_date, filenames,global_times_folder),Nfiles, filename, time_taken)
@@ -577,7 +579,7 @@ function Do_clustering(input, varargin)
     
     end
     
-    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder)
+    function do_clustering_single(filename,min_spikes4SPC, par_file, par_input,fnum,save_spikes,sdnum,global_times_folder,seed)
     
         par = struct;
         par = update_parameters(par,par_file,'clus');
@@ -598,7 +600,7 @@ function Do_clustering(input, varargin)
         par.fname = ['data_' data_handler.nick_name];
         par.nick_name = data_handler.nick_name;
     
-        % par.randomseed = 110; %% test if default seed param valid.
+        par.randomseed = seed; %% test if default seed param valid.
     
         if par.randomseed ~= 0 && isfield(par,'randomseed')
             rng(par.randomseed);

@@ -138,24 +138,26 @@ for i = 1:length(crossings)
     e = min(N, tc + search_forward);
     if e <= s; continue; end
 
-    win = xf(s:e);
-    switch detect
-        case 'pos'
-            % extract index of maximum value
-            [~, loc] = max(win);
-        case 'neg'
-            % extract index of minimum value
-            [~, loc] = min(win);
-        case 'both'
-            % balance peak values prioritizing negative troughs
-            [vmax, imax] = max(win);
-            [vmin, imin] = min(win);
-            if abs(vmin) >= vmax; loc = imin; else; loc = imax; end
-    end
+% Stage 1: locate a candidate peak on the DETECTION signal within the
+    % crossing's own search window (same window amp_detect has always used).
+    tp = s + find_extremum_loc(xf_detect(s:e), detect) - 1;
 
-    refined = s + loc - 1;
-    
-    if refined <= last_accepted
+    % Stage 2: re-center the search on the SORTING signal around the
+    % stage-1 candidate, not the raw crossing. xf and xf_detect are two
+    % differently-ordered filters on the same passband (sort_order vs
+    % detect_order); their decay trajectories can disagree by a few
+    % thousandths right at the threshold, letting xf_detect re-cross
+    % spuriously on the tail of a spike already found. A window anchored
+    % only to that raw crossing can land too far from the true peak to
+    % ever reach it (see refract_viol investigation); re-centering on the
+    % stage-1 candidate gives the search a second, wider-reaching chance,
+    % so both crossings converge on the same true peak and get caught by
+    % the last_accepted check below instead of producing two detections.
+    s2 = max(1, tp - search_forward);
+    e2 = min(N, tp + search_forward);
+    refined = s2 + find_extremum_loc(xf(s2:e2), detect) - 1;
+
+    if refined <= last_accepted + 2
         continue
     end
     % drop locations failing safety bounds
@@ -200,6 +202,22 @@ end
 
 end 
 
+
+function loc = find_extremum_loc(win, detect)
+    switch detect
+        case 'pos'
+            % extract index of maximum value
+            [~, loc] = max(win);
+        case 'neg'
+            % extract index of minimum value
+            [~, loc] = min(win);
+        case 'both'
+            % balance peak values prioritizing negative troughs
+            [vmax, imax] = max(win);
+            [vmin, imin] = min(win);
+            if abs(vmin) >= vmax; loc = imin; else; loc = imax; end
+    end
+end
 
 function filtered = filt_signal(x, order, fmin, fmax, sr, par)
     [b, a] = ellip(order, 0.1, 40, [fmin fmax]*2/sr);
