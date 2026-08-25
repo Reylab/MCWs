@@ -265,24 +265,30 @@ function Do_clustering(input, varargin)
                 continue
             end
             filename = data_handler.nick_name;
+            chan_match = regexp(filename, '\d+$', 'match', 'once');
+            if isempty(chan_match)
+                warning('Could not parse a channel number from ''%s''. Skipping.', filename);
+                continue
+            end
+            chan_num = str2double(chan_match);
             timefile = fullfile(global_times_folder, ['times_' filename '.mat']);
             if ~exist(timefile,'file')
                 cls_centers{fnum} = nan;
                 cls_maxdist{fnum} = inf;
-                channels(end+1) = str2num(filename(end-2:end));
+                channels(end+1) = chan_num;
                 disp([timefile ' not found.'])
                 continue
             end
-    
+
             [~, ~, spikes, ~, ~, ~, classes, ~,~] = data_handler.load_results();
-    
+
             f_in  = spikes(classes~=0,:);
             class_in = classes(classes~=0);
-    
+
             [centers, sd, ~] = build_templates(class_in, f_in);
             cls_centers{fnum} = centers;
             cls_maxdist{fnum} = (par_input.max_std_templates*sd).^2;
-            channels(end+1) = str2num(filename(end-2:end));
+            channels(end+1) = chan_num;
         end
         max_std = par_input.max_std_templates;
         % Save templates directly into the global times folder
