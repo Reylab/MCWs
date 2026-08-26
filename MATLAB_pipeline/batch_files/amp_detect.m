@@ -1,4 +1,4 @@
-function [spikes,thr,index,remove_counter] = amp_detect(x, par, varargin)
+function [spikes,thr,index,remove_counter,refract_chains] = amp_detect(x, par, varargin)
 
 p = inputParser;
 addRequired(p, 'x');
@@ -21,13 +21,24 @@ sr     = par.sr;
 w_pre  = par.w_pre;
 w_post = par.w_post;
 
-% evaluate refractory period
+% Refractory period in ms, single source of truth for both the optional
+% dead-time suppression below and the chain-grouping done later. amp_detect
+% does NOT filter refractory violations out of index/spikes by default
+% (use_ref=false -> ref=0, every crossing is accepted): that filtering is
+% refract_viol's job, run after all segments/channels are detected so it
+% can operate on the full concatenated index_all instead of one segment at
+% a time. use_ref only exists for callers that explicitly want per-segment
+% dead-time suppression during detection itself.
+if isfield(par,'ref_ms')
+    ref_ms_val = par.ref_ms;
+elseif isfield(par,'ref')
+    ref_ms_val = par.ref / (par.sr / 1000);
+else
+    ref_ms_val = 1.5;
+end
+
 if use_ref
-    if isfield(par,'ref_ms')
-        ref = floor(par.ref_ms * par.sr / 1000);
-    else
-        ref = par.ref;
-    end
+    ref = floor(ref_ms_val * par.sr / 1000);
 else
     ref = 0;
 end
@@ -120,6 +131,8 @@ switch detect
         crossings = sort([cross_neg; cross_pos]);
 end
 
+refract_chains = struct('chain_index', {}, 'trace', {}, 'start_samp', {}, 'sr', {});
+
 if isempty(crossings)
     spikes = zeros(0, w_pre+w_post);
     remove_counter = 0;
@@ -190,6 +203,42 @@ end
 aux = find(spikes(:, w_pre) == 0);
 spikes(aux,:) = [];
 index(aux)    = [];
+
+% Refractory violation chains: group consecutive accepted spikes whose gap
+% is below the refractory period (same ref_ms_val amp_detect never enforces
+% above) and save a single continuous, unaligned slice of the real filtered
+% signal (xf) spanning the whole chain, padded by refract_chain_pad samples
+% on each side beyond the normal w_pre/w_post spike window. This is exact
+% (a real contiguous slice of the actual trace) unlike reconstructing a
+% chain by stitching together separately-saved, fixed-width spike windows.
+% amp_detect only ever sees one segment at a time, but that's not a gap:
+% the safety-bounds check above already refuses to accept any spike within
+% pre_safe/post_safe samples of a segment edge, so a chain can never
+% straddle two segments.
+if isfield(par,'refract_chain_pad')
+    chain_pad = par.refract_chain_pad;
+else
+    chain_pad = 12;
+end
+
+nspk_final = numel(index);
+if nspk_final > 1
+    gaps_ms = diff(index) / sr * 1000;
+    in_chain = gaps_ms < ref_ms_val;
+    ext_gap = [false, in_chain, false];
+    chain_starts = find(diff(ext_gap) == 1);
+    chain_ends   = find(diff(ext_gap) == -1);
+
+    for c = 1:numel(chain_starts)
+        members = chain_starts(c):chain_ends(c);
+        s_samp = max(1, index(members(1)) - w_pre  - chain_pad);
+        e_samp = min(N, index(members(end)) + w_post + chain_pad);
+        refract_chains(c).chain_index = members;
+        refract_chains(c).trace      = xf(s_samp:e_samp);
+        refract_chains(c).start_samp = s_samp;
+        refract_chains(c).sr         = sr;
+    end
+end
 
 switch par.interpolation
     case 'n'

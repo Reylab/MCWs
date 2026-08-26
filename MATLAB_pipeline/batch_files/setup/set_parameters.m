@@ -47,6 +47,7 @@ par.sort_fmin = 300;                 % high pass filter for sorting
 par.sort_fmax = 3000;                % low pass filter for sorting (default 3000)
 par.sort_order = 2;                  % filter order for sorting. 0 to disable the filter.
 par.ref_ms = 1.5;                    % detector dead time, minimum refractory period (in ms)
+par.refract_chain_pad = 12;          % extra samples saved on each side of a refractory violation chain trace, beyond w_pre/w_post
 par.detection = 'pos';               % type of threshold ('pos','neg','both')
 % par.detection = 'neg';
 % par.detection = 'both';

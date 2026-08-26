@@ -1,10 +1,23 @@
-function bundle_artifact(channels)
+function bundle_artifact(channels, varargin)
+    % Optional name-value args:
+    %   't_win'          (default 0.5) - sliding window length, in ms, used to
+    %                     detect cross-channel spike coincidences.
+    %   'bundle_min_art' (default 6)   - minimum number of distinct channels
+    %                     with a spike inside the window for those spikes to
+    %                     be flagged as bundle-level artifacts.
+
+    p = inputParser;
+    addParameter(p, 't_win', 0.5, @isnumeric);
+    addParameter(p, 'bundle_min_art', 6, @isnumeric);
+    parse(p, varargin{:});
+
+    t_win = p.Results.t_win;
+    bundle_min_art = p.Results.bundle_min_art;
+
 bundle_artifact_tic = tic;
-load('NSx','NSx');  %% change to ge a parameter in spikes.mat so dont need to load in full file just spikes file with 
-% the relative bundle information 
+load('NSx','NSx');  %% change to ge a parameter in spikes.mat so dont need to load in full file just spikes file with
+% the relative bundle information
 NSx = NSx(ismember(cell2mat({NSx.chan_ID}),channels));
-t_win = 0.5;
-bundle_min_art = 6;
 
 dates = dir(fullfile(pwd, 'spikes*'));
 dates = dates([dates.isdir]);

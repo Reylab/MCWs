@@ -152,8 +152,10 @@ function Do_clustering(input, varargin)
         else
             filenames = {input};
         end
+        filenames_all = filenames;
     elseif iscellstr(input)
         filenames = input;
+        filenames_all = filenames;
     else
         ME = MException('MyComponent:noValidInput', 'Invalid input arguments');
         throw(ME)
@@ -248,6 +250,9 @@ function Do_clustering(input, varargin)
     
     make_templates_start_time = tic;
     if make_templates
+        if ~isfield(par_input,'max_std_templates')
+            par_input.max_std_templates = sdnum; % default max radius (in std devs) for template clusters
+        end
         cls_centers = cell(length(filenames_all),1);
         cls_maxdist = cell(length(filenames_all),1);
         channels = [];

@@ -203,13 +203,29 @@ function get_spikes_single(filename, par_input, folder_spikes)
         else
             disp([filename ': Using detected spikes'])
         end
-    else    
+    else
         index = [];
         spikes = [];
-        
+        % refract_chains is only ever populated here, from the real continuous
+        % filtered signal amp_detect sees per segment. The with_spikes branch
+        % above has no such signal (spikes are loaded pre-detected), so this
+        % field is intentionally omitted from the save below in that case -
+        % refract_viol relies on that to tell "no violations found" apart
+        % from "chains were never computed".
+        refract_chains = struct('chain_index', {}, 'trace', {}, 't0_ms', {}, 'sr', {});
+
         for n = 1:data_handler.max_segments
             x = data_handler.get_segment();
-            [new_spikes, aux_th, new_index]  = amp_detect(x, par);
+            [new_spikes, aux_th, new_index, ~, new_chains]  = amp_detect(x, par);
+
+            member_offset = length(index); % spikes accumulated from prior segments
+            for c = 1:numel(new_chains)
+                refract_chains(end+1).chain_index = new_chains(c).chain_index + member_offset;
+                refract_chains(end).trace      = new_chains(c).trace;
+                refract_chains(end).t0_ms      = data_handler.index2ts(new_chains(c).start_samp);
+                refract_chains(end).sr         = new_chains(c).sr;
+            end
+
             index = [index data_handler.index2ts(new_index)]; %new_index to ms
             spikes = [spikes; new_spikes];
             threshold = [threshold, aux_th];
@@ -223,18 +239,24 @@ function get_spikes_single(filename, par_input, folder_spikes)
 
     file_out_spikes = fullfile(folder_spikes, [data_handler.nick_name '_spikes.mat']);
 
+    save_vars = {'spikes', 'index', 'par'};
+    if exist('refract_chains', 'var')
+        save_vars = [save_vars, {'refract_chains'}];
+    end
+
     if par.cont_segment && data_handler.with_raw
         [psegment, sr_psegment] = data_handler.get_signal_sample();
+        save_vars = [save_vars, {'psegment', 'sr_psegment', 'threshold'}];
         try
-			save(file_out_spikes, 'spikes', 'index', 'par','psegment','sr_psegment','threshold')
+			save(file_out_spikes, save_vars{:})
 		catch
-			save(file_out_spikes, 'spikes', 'index', 'par','psegment','sr_psegment','threshold','-v7.3')
+			save(file_out_spikes, save_vars{:}, '-v7.3')
 		end
     else
 		try
-			save(file_out_spikes, 'spikes', 'index', 'par')
+			save(file_out_spikes, save_vars{:})
 		catch
-			save(file_out_spikes, 'spikes', 'index', 'par','-v7.3')
+			save(file_out_spikes, save_vars{:}, '-v7.3')
 		end
     end
 
