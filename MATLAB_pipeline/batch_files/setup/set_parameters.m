@@ -68,11 +68,22 @@ par.features = 'wav';                % type of feature ('wav' or 'pca')
 
 
 % FORCE MEMBERSHIP PARAMETERS
-par.template_sdnum = 3;             % max radius of cluster in std devs.
+par.template_sdnum = 3;             % max radius of cluster in std devs (final pass).
 par.template_k = 10;                % # of nearest neighbors
 par.template_k_min = 10;            % min # of nn for vote
 %par.template_type = 'mahal';       % nn, center, ml, mahal
 par.template_type = 'center';       % nn, center, ml, mahal
+% 'center' path: two-pass std re-estimation + amplitude gate + mahalanobis
+% reassignment (ports force_membership.py). Only affects template_type 'center'.
+par.template_first_pass_sdnum = 1;  % tight first-pass radius to gather the confident
+                                    % core for std re-estimation. Set == template_sdnum
+                                    % to recover legacy single-pass behavior.
+par.template_amp_pct_range = [1 99];% amplitude rejection window (percentiles of member
+                                    % spikes at the template peak sample). [] disables.
+par.template_mahal_reassign = true; % after the two-pass euclidean accept/reject, move
+                                    % every accepted spike to its closest cluster in
+                                    % waveform-space (shrunk) mahalanobis. false = pure
+                                    % euclidean two-pass.
 par.force_feature = 'spk';          % feature use for forcing (whole spike shape)
 %par.force_feature = 'wav';         % feature use for forcing (wavelet coefficients).
 par.force_auto = true;              %automatically force membership (only for batch scripts).

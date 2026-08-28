@@ -40,6 +40,11 @@ p = inputParser;
 addParameter(p, 'restore',       false,    @islogical);
 addParameter(p, 'sdnum',         3,        @(x) isnumeric(x) && isscalar(x) && x > 0);
 addParameter(p, 'template_type', 'center', @ischar);
+% 'center' two-pass options (ported from force_membership.py). Ignored for
+% other template_type values.
+addParameter(p, 'first_pass_sdnum', 1,     @(x) isnumeric(x) && isscalar(x) && x > 0);
+addParameter(p, 'amp_pct_range',  [1 99],  @(x) isnumeric(x) && (isempty(x) || numel(x)==2));
+addParameter(p, 'mahal_reassign', true,    @islogical);
 addParameter(p, 'masks',         {},       @iscell);
 addParameter(p, 'parallel',      false,    @islogical);
 addParameter(p, 'folder_name',   '',       @ischar);   % relative to pwd, same as compute_metrics_batch
@@ -50,6 +55,9 @@ parse(p, varargin{:});
 restore          = p.Results.restore;
 sdnum            = p.Results.sdnum;
 template_type    = p.Results.template_type;
+tm_opts          = struct('first_pass_sdnum', p.Results.first_pass_sdnum, ...
+                          'amp_pct_range',   p.Results.amp_pct_range, ...
+                          'mahal_reassign',  p.Results.mahal_reassign);
 user_masks       = p.Results.masks;
 do_parallel      = p.Results.parallel;
 folder_name      = p.Results.folder_name;
@@ -119,12 +127,12 @@ fprintf('rescue_spikes: %d file(s) to process.\n', numel(file_list));
 if do_parallel
     parfor k = 1:numel(file_list)
         process_one(file_list{k}, active_spikes_dir, restore, sdnum, ...
-                    template_type, user_masks, valid_masks, min_spikes);
+                    template_type, user_masks, valid_masks, min_spikes, tm_opts);
     end
 else
     for k = 1:numel(file_list)
         process_one(file_list{k}, active_spikes_dir, restore, sdnum, ...
-                    template_type, user_masks, valid_masks, min_spikes);
+                    template_type, user_masks, valid_masks, min_spikes, tm_opts);
     end
 end
 
@@ -139,7 +147,7 @@ end
 %  CORE PER-FILE LOGIC
 % ============================================================================
 function process_one(times_file, active_spikes_dir, restore, sdnum, ...
-                     template_type, user_masks, valid_masks, min_spikes)
+                     template_type, user_masks, valid_masks, min_spikes, tm_opts)
 
     [~, fname_noext] = fileparts(times_file);   % e.g. times_mRAMY04_raw_333
     % Strip leading 'times_' to get the channel label used in spikes folder
@@ -281,6 +289,10 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     par_tmpl.template_k      = 10;
     par_tmpl.template_k_min  = 5;
     par_tmpl.sdnum           = sdnum;
+    % 'center' two-pass options (port of force_membership.py)
+    par_tmpl.template_first_pass_sdnum = tm_opts.first_pass_sdnum;
+    par_tmpl.template_amp_pct_range    = tm_opts.amp_pct_range;
+    par_tmpl.template_mahal_reassign   = tm_opts.mahal_reassign;
 
     fprintf('  [%s] Template matching (%s, sdnum=%.1f)...\n', ch_lbl, template_type, sdnum);
     class_quar = force_membership_wc(spikes_tmpl, class_good, spikes_quar, par_tmpl);
