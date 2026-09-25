@@ -21,10 +21,28 @@ if ~isempty(aux) && par.mintemp==0 && aux==2
 end
 
 tree = tree(1:end-1,5:end);
+dt = diff(tree);
+
+% if sum(dt(1:end,:) > min_clus,'all') == 0 || sum(tree(:,2:end) >= min_clus,'all') == 0)
+%     min_clus = min(max(dt,[],'all'),max(tree(:,2:end),[],'all') - 1;
+% end
+
+% only the reliable (pre-elbow) temperatures should be allowed to set
+% min_clus -- rows at/after aux are already discarded as unreliable, so
+% a spike there (e.g. the main cluster shattering) shouldn't set the bar
+if ~isempty(aux) && aux > 2
+    dt_reliable = dt(1:aux-2,:);
+else
+    dt_reliable = dt;
+end
+
+if sum(dt_reliable(:,2:end) > min_clus,'all') == 0
+    min_clus = max(dt_reliable(:,2:end),[],'all') - 1;
+end
 clus = zeros(size(tree));
 clus(tree(:,:) >= min_clus)=1; %only check the ones that cross the thr
 
-dt = diff(tree);
+
 clus = clus & [ones(size(clus(1,:)));dt(1:end,:)>min_clus];
 
 for ii = 1:size(clus,1)
