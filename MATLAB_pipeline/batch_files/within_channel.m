@@ -41,12 +41,12 @@ function within_channel(channels, varargin)
     default_detections = {'structural', 'amp', 'width', 'prom_ratio'};
 
     p = inputParser;
-    addParameter(p, 'use_parallel', false, @islogical);
+    addParameter(p, 'parallel', false, @islogical);
     addParameter(p, 'detections', 'all', @(x) ischar(x) || iscellstr(x) || isstring(x));
     addParameter(p, 'filter_mode', 'all', @(x) ischar(x) || isstring(x));
     parse(p, varargin{:});
 
-    use_parallel = p.Results.use_parallel;
+    use_parallel = p.Results.parallel;
 
     % Resolve the active detection set.
     if ismember('detections', p.UsingDefaults)

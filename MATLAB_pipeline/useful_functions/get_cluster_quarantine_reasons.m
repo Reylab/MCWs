@@ -61,7 +61,7 @@ function [cluster_summary, cluster_masks] = get_cluster_quarantine_reasons(spike
 
         row = {c, sum(in_c), sum(quarantined_in_c)};
         for r = 1:numel(reason_categories)
-            row{end+1} = sum(strcmp(reason_in_c, reason_categories{r})); %#ok<AGROW>
+            row{end+1} = sum(strcmp(reason_in_c, reason_categories{r}));
         end
         summary_rows(ci, :) = row;
     end

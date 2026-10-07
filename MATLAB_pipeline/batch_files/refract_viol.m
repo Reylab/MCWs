@@ -28,12 +28,12 @@ function refract_viol(channels,varargin)
 
     p = inputParser;
     addParameter(p, 'keep_strategy', 'none', @ischar);
-    addParameter(p, 'use_parallel', false, @islogical);
+    addParameter(p, 'parallel', false, @islogical);
     addParameter(p, 'allow_stitch_fallback', false, @islogical);
     parse(p, varargin{:});
 
     keep_strategy = p.Results.keep_strategy;
-    use_parallel = p.Results.use_parallel;
+    use_parallel = p.Results.parallel;
     allow_stitch_fallback = p.Results.allow_stitch_fallback;
 
     refract_viol_tic = tic;

@@ -30,16 +30,24 @@ addParameter(p, 'save', true, @islogical);  % save metrics and SS to .mat when t
 addParameter(p, 'show_plots', false, @islogical);  % show plots during processing
 addParameter(p, 'rescue', false, @islogical);  % save to 'metrics rescue/' folder if true
 addParameter(p, 'folder_name', '', @ischar);  % optional folder name to look for times files (overrides active times dir search
+addParameter(p, 'times_dir', '', @ischar);    % absolute times folder override (wins over folder_name)
+addParameter(p, 'spikes_dir', '', @ischar);   % absolute spikes folder override
 
 parse(p, varargin{:});
 
 [~,current_dir_name] = fileparts(pwd);
 root_dir = resolve_session_root();
 
-if ~isempty(p.Results.folder_name)
+if ~isempty(p.Results.times_dir)
+    active_times_dir = p.Results.times_dir;
+    if ~exist(active_times_dir, 'dir')
+        error('The specified times_dir "%s" does not exist.', active_times_dir);
+    end
+    fprintf('Using user-specified times_dir: %s\n', active_times_dir);
+elseif ~isempty(p.Results.folder_name)
     % Priority 1: Use the user-provided folder
     active_times_dir = fullfile(pwd, p.Results.folder_name);
-    
+
     if ~exist(active_times_dir, 'dir')
         error('The specified folder "%s" does not exist.', p.Results.folder_name);
     end
@@ -58,11 +66,19 @@ else
     fprintf('No folder specified. Auto-detecting most recent: %s\n', dates_times(idx_t).name);
 end
 
-dates_spikes = dir(fullfile(root_dir, 'spikes*'));
-dates_spikes = dates_spikes([dates_spikes.isdir]);
-if isempty(dates_spikes), error('No spikes folders found.'); end
-[~, idx_s] = max([dates_spikes.datenum]);
-active_spikes_dir = fullfile(root_dir, dates_spikes(idx_s).name);
+if ~isempty(p.Results.spikes_dir)
+    active_spikes_dir = p.Results.spikes_dir;
+    if ~exist(active_spikes_dir, 'dir')
+        error('The specified spikes_dir "%s" does not exist.', active_spikes_dir);
+    end
+    fprintf('Using user-specified spikes_dir: %s\n', active_spikes_dir);
+else
+    dates_spikes = dir(fullfile(root_dir, 'spikes*'));
+    dates_spikes = dates_spikes([dates_spikes.isdir]);
+    if isempty(dates_spikes), error('No spikes folders found.'); end
+    [~, idx_s] = max([dates_spikes.datenum]);
+    active_spikes_dir = fullfile(root_dir, dates_spikes(idx_s).name);
+end
 
 if ischar(file_pattern) || isStringScalar(file_pattern)
     % string pattern or 'all'
@@ -100,7 +116,7 @@ elseif isnumeric(file_pattern) || (iscell(file_pattern) && all(cellfun(@isnumeri
             if ~isempty(tok)
                 file_chan = str2double(tok{1});
                 if ~isnan(file_chan) && file_chan == double(ci)
-                    file_list{end+1} = nm; %#ok<AGROW>
+                    file_list{end+1} = nm;
                     found = true;
                 end
             end

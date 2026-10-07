@@ -751,7 +751,9 @@ function Do_clustering(input, varargin)
             class_in = classes(classes~=0);
             par.template_sdnum = sdnum;
             
-            class_out = force_membership_wc(f_in, class_in, f_out, par);
+            % SPC features (inspk) are the Mahalanobis space for the reassignment step
+            class_out = force_membership_wc(f_in, class_in, f_out, par, ...
+                                            inspk(classes~=0,:), inspk(classes==0,:));
             forced = classes==0;
             classes(classes==0) = class_out;
             forced(classes==0) = 0;

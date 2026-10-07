@@ -201,7 +201,7 @@ if par.do_power_plot
 %     new_check_lfp_power_NSX(channels,'parallel',true)
     do_power_plot_start = tic;
     fprintf('power spectrum BEGIN..\n')
-    new_check_lfp_power_NSX(channels,'parallel',true,'with_NoNotch',true)
+    new_check_lfp_power_NSX(328,'parallel',false,'with_NoNotch',true)
     time_taken = toc(do_power_plot_start);
     time_taken_mins = floor(time_taken / 60);
     time_taken_secs = mod(time_taken, 60);

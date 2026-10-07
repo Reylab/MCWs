@@ -293,12 +293,14 @@ function save_plot_files(figs, data, plot_params)
     end
 
 
+    page_no = 0;
     for i = 1:length(figs)
         fig = figs{i};
         if ~isgraphics(fig), continue; end
         try
+            page_no = page_no + 1;
             % construct base filename per-page (keeps same scheme as other saves)
-            fname_base = sprintf('%s_plots%03d%s', base_name, i, test_suffix);
+            fname_base = sprintf('%s_plots%03d%s', base_name, page_no, test_suffix);
 
             png_fn = fullfile(outdir, [fname_base, '.png']);
 

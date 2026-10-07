@@ -1,10 +1,14 @@
-function class_out = force_membership_wc(f_in, class_in, f_out, par)
-% class = function force_membership_wc(f_in, class_in, f_out, par)
+function class_out = force_membership_wc(f_in, class_in, f_out, par, feat_in, feat_out)
+% class = function force_membership_wc(f_in, class_in, f_out, par, feat_in, feat_out)
 % Given classified points, try to classify new points via template matching
 %
 % f_in:          features of classified points  (# input spikes x n_features)
 % class_in:      classification of those points
 % f_out:         features of points to be classified (nspk x n_features)
+% feat_in/out    (optional) SPC feature vectors (inspk) of the same rows as
+%                f_in / f_out. Used as the Mahalanobis space for the 'center'
+%                reassignment step (matches force_membership.py). If omitted,
+%                empty, or row counts don't match, falls back to f_in / f_out.
 % par        environment variables, of which the following are
 %                required:
 %                    o par.template_sdnum - max radius of cluster,
@@ -26,8 +30,8 @@ function class_out = force_membership_wc(f_in, class_in, f_out, par)
 %   3. re-estimate templates + std from f_in members PLUS the first-pass core.
 %   4. second pass: assign all f_out within template_sdnum*(refined std).
 %   5. (optional) keep the euclidean accept/reject, then move every accepted
-%      spike to the cluster it is closest to in waveform-space (shrunk)
-%      Mahalanobis distance.
+%      spike to the cluster it is closest to in feature-space (shrunk)
+%      Mahalanobis distance (feat_in/feat_out; waveforms if not given).
 
 nspk = size(f_out,1);
 class_out = zeros(1,size(f_out,1));
@@ -89,12 +93,22 @@ switch par.template_type
 
         % --- optional post-step: waveform-space Mahalanobis reassignment ---
         if do_mahal
-            if any(core)
-                comb_feat = [f_in; f_out(core,:)];
-            else
-                comb_feat = f_in;
+            have_feats = nargin >= 6 && ~isempty(feat_in) && ~isempty(feat_out);
+            if have_feats && (size(feat_in,1) ~= size(f_in,1) || size(feat_out,1) ~= nspk)
+                warning('force_membership_wc: feat_in/out rows do not match f_in/f_out; using waveform-space Mahalanobis.');
+                have_feats = false;
             end
-            labels = mahalanobis_reassign(comb_cls, comb_feat, f_out, labels);
+            if have_feats
+                m_in = double(feat_in);  m_out = double(feat_out);
+            else
+                m_in = f_in;             m_out = f_out;
+            end
+            if any(core)
+                comb_feat = [m_in; m_out(core,:)];
+            else
+                comb_feat = m_in;
+            end
+            labels = mahalanobis_reassign(comb_cls, comb_feat, m_out, labels);
         end
 
         class_out = labels(:)';

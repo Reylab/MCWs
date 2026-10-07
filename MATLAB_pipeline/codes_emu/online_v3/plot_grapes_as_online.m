@@ -19,8 +19,19 @@ function plot_grapes_as_online(varargin)
     addParameter(ipr, 'circshiftblanks', false, @islogical);    
     addParameter(ipr, 'short_win', false, @islogical);
     % Add this parameter at the end of your addParameter list:
-    addParameter(ipr, 'target_dir', ''); 
-    
+    addParameter(ipr, 'target_dir', '');
+
+    % Plot from a do_structure_rescue_BCM_online3 companion file
+    % (grapes*_rescue.mat) instead of the standard grapes*.mat.
+    addParameter(ipr, 'rescue', false, @islogical);
+    % Which unit variant to plot from a rescue file:
+    %   'post'      - post-rescue population   (mu, classN)            [default]
+    %   'prerescue' - pre-rescue baseline      (mu_prerescue, classN_prerescue)
+    %   'rescued'   - re-admitted spikes only  (classN_rescue)
+    %   'all'       - every field, plotted as separate units
+    addParameter(ipr, 'rescue_units', 'post', ...
+                 @(x) any(strcmpi(char(x), {'post','prerescue','rescued','all'})));
+
     % Add this to your result extraction:
 
     % Check if varargin exists or is empty
@@ -32,6 +43,15 @@ function plot_grapes_as_online(varargin)
     target_dir = ipr.Results.target_dir;
     grapes_offline = ipr.Results.grapes_offline;
     channels2plot = ipr.Results.channels2plot;
+    % channel-number offset: >2000 -> -2000, >1000 -> -1000 (kept in sync with
+    % characterize_grapes_responses; grapes rasters are keyed on the raw number)
+    if ~(ischar(channels2plot) || isstring(channels2plot))
+        if min(channels2plot) > 2000
+            channels2plot = channels2plot - 2000;
+        elseif min(channels2plot) > 1000
+            channels2plot = channels2plot - 1000;
+        end
+    end
     is_online = ipr.Results.is_online;
     plot_best_stims_only = ipr.Results.plot_best_stims_only;
     copy2miniscrfolder = ipr.Results.copy2miniscrfolder;
@@ -46,7 +66,12 @@ function plot_grapes_as_online(varargin)
     use_blanks = ipr.Results.use_blanks;
     circshiftblanks = ipr.Results.circshiftblanks;
     short_win = ipr.Results.short_win;
+    use_rescue = ipr.Results.rescue;
+    rescue_units = lower(char(ipr.Results.rescue_units));
 
+    if use_rescue && ~grapes_offline
+        error('plot_grapes_as_online: ''rescue'' requires grapes_offline = true.');
+    end
 
     root = resolve_session_root();
 
@@ -74,7 +99,12 @@ function plot_grapes_as_online(varargin)
         resp_conf.tmin_base = -900;
 	    resp_conf.tmax_base = -100;
     end
-    
+
+    if use_rescue
+        grapes_name = [grapes_name '_rescue'];
+        extra_lbl   = [extra_lbl '_rescue-' rescue_units];
+    end
+
     %this should be imported from config files
     TIME_PRE=1e3;
     TIME_POS=2e3;
@@ -142,7 +172,10 @@ function plot_grapes_as_online(varargin)
     if is_online
         folder_suffix = [folder_suffix filesep 'plots_without_online_best'];
     end
-    
+    if use_rescue
+        folder_suffix = [folder_suffix '_rescue_' rescue_units];
+    end
+
     output_dir = fullfile(target_dir, folder_suffix);
     if ~exist(output_dir, 'dir')
         mkdir(output_dir);
@@ -168,7 +201,11 @@ function plot_grapes_as_online(varargin)
             error('Could not find grapes file at: %s', grapes_full_path);
         end
         grapes = load(grapes_full_path);
-        
+
+        if use_rescue
+            grapes = select_rescue_units(grapes, rescue_units);
+        end
+
         % Update folder path references
         grapes.ImageNames = table(repmat({fullfile(root, 'pics_used')}, ...
                                        numel(grapes.ImageNames), 1), grapes.ImageNames, ...

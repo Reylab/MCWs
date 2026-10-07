@@ -12,6 +12,7 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
     addParameter(p, 'n_neighbors', 5, @isscalar);
     addParameter(p, 'max_waveforms_per_cluster', 1000, @isscalar);
     addParameter(p, 'show_figures', false, @islogical);
+    addParameter(p, 'corr_ymax', 500, @isscalar);   % correlogram y-axis cap (Inf = no cap)
     parse(p, varargin{:});
 
     % --- Setup ---
@@ -104,6 +105,15 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         else
             forced = false(size(cluster_ids));
         end
+    end
+
+    % Spike times of genuinely-clustered (non-forced) spikes, used for the "(N)"
+    % count in the per-cluster panel titles when rescue happened. `forced` is then
+    % aligned to the pre-rescue cluster_class, so derive the times from there; the
+    % per-cluster plots themselves index the post-rescue arrays by these times.
+    unforced_sts = [];
+    if isfield(data,'cluster_class_pre_rescue')
+        unforced_sts = cluster_class_pre(~forced(:), 2);
     end
 
     if p.Results.calc_metrics
@@ -221,27 +231,25 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 ax2 = report_subplot(3, ncols, ncols+1);
                 cluster_activity_kde_mat(spike_times_ms, cluster_ids, recording_duration_ms, ax2, 100, 'inferno');
 
-                % SNR bar (row3)
+                % Temperature diagram (row3) -- wave_clus style, drawn from the
+                % data_<name>.dg_01 next to the times file. (SNR moved to the
+                % Cluster Metrics Overview page.)
                 ax3 = report_subplot(3, ncols, 2*ncols+1);
-                if istable(df_metrics) && all(ismember({'cluster_id','snr'}, df_metrics.Properties.VariableNames))
-                    [lia, ~] = ismember(df_metrics.cluster_id, unique_clusters);
-                    table_clusters = df_metrics.cluster_id(lia);
-                    table_snrs = df_metrics.snr(lia);
-                    
-                    [~, color_indices] = ismember(table_clusters, unique_clusters);
-                    bar_colors = leicolors(mod(table_clusters, size(leicolors,1))+1, :);
-
-                    h = bar(ax3, 1:numel(table_clusters), table_snrs, 'FaceColor', 'flat', 'BarWidth', 0.9);
-                    h.CData = bar_colors; 
-                    
-                    set(ax3, 'XTick', 1:numel(table_clusters), 'XTickLabel', arrayfun(@(c)sprintf('C%d',c), table_clusters, 'UniformOutput',false), 'XTickLabelRotation',90);ylabel(ax3,'SNR'); title(ax3,'SNR by cluster');
-                    
-                    box(ax3, 'off');
-                    grid(ax3, 'on');
-                    set(ax3, 'GridAlpha', 0.25, 'LineWidth', 0.8, 'XGrid', 'off');
+                temp_ok = false;
+                try
+                    if isfield(data, 'fullpath') && isfield(data, 'filename')
+                        temp_ok = temperature_diagram(fileparts(data.fullpath), ...
+                            regexprep(data.filename, '^times[_\-]*', '', 'ignorecase'), [], '', ax3);
+                    end
+                catch ME_t
+                    warning('%s', ['Temperature diagram failed: ' ME_t.message]);
+                end
+                if temp_ok
+                    title(ax3, 'Temperature diagram');
+                    grid(ax3, 'on'); set(ax3, 'GridAlpha', 0.25, 'LineWidth', 0.8);
                 else
-                    text(ax3,0.5,0.5,'metrics_df missing (cluster_id,snr)','HorizontalAlignment','center');
-                    axis(ax3,'off');
+                    text(ax3, 0.5, 0.5, 'no data\_*.dg\_01 in this folder', 'HorizontalAlignment', 'center', 'Units', 'normalized');
+                    axis(ax3, 'off');
                 end
             else
                 page_col_idx = col - double(show_summary_col);
@@ -262,11 +270,11 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 
                 % waveform panel (row1)
                 axW = report_subplot(3, ncols, col);
-                if isfield(data,'rescue_mask')
-                    mask = (cluster_ids_pre==cid);
-                else
-                    mask = (cluster_ids==cid);
-                end
+                % Always index the post-rescue arrays (waveforms, spike_times_ms,
+                % cluster_ids all share the same post-rescue, time-sorted order).
+                % Using cluster_ids_pre here would positionally scramble the rows
+                % because rescued spikes are interleaved by the time sort.
+                mask = (cluster_ids==cid);
                     W = waveforms(mask,:);
                 if isempty(W)
                     axis(axW,'off'); continue;
@@ -289,8 +297,14 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                 plot(axW, tvec, W(idx,:)', 'Color', [colc, 0.15], 'LineWidth', 0.8); 
                 plot(axW, tvec, mean(W,1), 'Color', 'k', 'LineWidth', 2.4);
                 
-                % Calculate unforced spike count (spikes that weren't force-classified)
-                n_unforced = sum(mask(:) & ~forced(:));
+                % Calculate unforced spike count (spikes that weren't force-classified).
+                if isfield(data,'cluster_class_pre_rescue')
+                    % `forced` is aligned to the pre-rescue cluster_class; match by
+                    % spike time against the post-rescue-aligned `mask`.
+                    n_unforced = sum(mask(:) & ismember(spike_times_ms(:), unforced_sts));
+                else
+                    n_unforced = sum(mask(:) & ~forced(:));
+                end
                 
                 % Updated title format matching Do_clustering
                 tot_cluster_spikes = sum(cluster_ids == cid);
@@ -426,15 +440,26 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
         end
         Kc = numel(cluster_list);
         if Kc >= 1
-            % Create Kc x Kc grid: diagonal = auto-correlograms, off-diagonal = cross-correlograms
+            % Compact grid: every cross-correlogram (each pair once) packed
+            % into the top rows, the autocorrelograms along the bottom row.
             ncols = Kc;
-            nrows = Kc;
+            cross_rows = ceil((Kc*(Kc-1)/2) / ncols);
+            nrows = cross_rows + 1;
+            cross_k = 0;
             fig_corr = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
                              'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                              'RendererMode', 'manual', 'Renderer', 'painters');
+            corr_ymax = p.Results.corr_ymax;
             for i = 1:Kc
-                for j = 1:Kc
-                    ax = subplot(nrows, ncols, (i-1)*ncols + j);
+                % Each pair once: Cb vs Ca is just Ca vs Cb with the lag axis mirrored.
+                for j = i:Kc
+                    if i == j
+                        slot = cross_rows*ncols + i;
+                    else
+                        cross_k = cross_k + 1;
+                        slot = cross_k;
+                    end
+                    ax = subplot(nrows, ncols, slot);
                     a = cluster_list(i);
                     b = cluster_list(j);
                     times_a = spike_times_ms(cluster_ids == a);
@@ -444,23 +469,38 @@ function [figs, df_metrics, SS] = make_cluster_report(data, varargin)
                     end
                     [lags, counts] = compute_cross_correlogram(times_a, times_b, 1.0, 50.0); % bin=1ms, maxlag=50ms
                     if i == j
+                        % Autocorrelogram: drop each spike's match with itself
+                        % (lag exactly 0), otherwise the 0-lag bar is always
+                        % the cluster's spike count and hides everything else.
+                        zb = find(lags > 0, 1, 'first');
+                        counts(zb) = max(counts(zb) - numel(times_a), 0);
+                    end
+                    if i == j
                         bar_color = [0.05 0.05 0.4]; % Darker blue for auto-correlograms
                     else
                         bar_color = [0.2 0.2 0.7]; % Lighter blue for cross-correlograms
                     end
                     bar(ax, lags, counts, 'FaceColor', bar_color, 'EdgeColor','none');
-                    xlabel(ax,'Lag (ms)', 'FontSize', 8); 
+                    % Cap the y-axis so the structure around zero lag is
+                    % readable (an autocorrelogram's 0-lag bin is the whole
+                    % spike count); say so on the panel when bars are cut off.
+                    if max(counts) > corr_ymax
+                        ylim(ax, [0 corr_ymax]);
+                        text(ax, 0.98, 0.96, sprintf('clipped (peak %d)', max(counts)), 'Units', 'normalized', ...
+                            'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', 'FontSize', 7, 'Color', [0.7 0 0]);
+                    end
+                    xlabel(ax,'Lag (ms)', 'FontSize', 8);
                     ylabel(ax,'Count', 'FontSize', 8);
                     if i == j
                         title(ax, sprintf('C%d (auto)', a), 'FontSize', 9, 'FontWeight', 'bold');
                     else
-                        title(ax, sprintf('C%d � C%d', a, b), 'FontSize', 9);
+                        title(ax, sprintf('C%d vs C%d', a, b), 'FontSize', 9);
                     end
                     box(ax,'off'); grid(ax,'on');
                     set(ax, 'FontSize', 7);
                 end
             end
-            sgtitle(sprintf('Correlograms (diagonal: auto, off-diagonal: cross)', Kc), 'FontSize', 14);
+            sgtitle(sprintf('Correlograms (bottom row: auto, self-matches removed; above: cross, each pair once, lag = second cluster - first; y-axis capped at %g)', corr_ymax), 'FontSize', 12);
             figs{end+1} = fig_corr;
         end
     catch ME_corr
@@ -793,6 +833,8 @@ end
 
 function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, mean_waveforms, mean_waveform_cluster_ids, data)
     % CREATE_METRICS_OVERVIEW_PAGE - Create summary page with all metrics
+    has_spikes_all = isfield(data,'spikes_all') && isfield(data,'index_all');
+
     figM = figure('Visible', visstr, 'Units','normalized','OuterPosition',[0 0 1 1], ...
                  'PaperUnits', 'inches', 'PaperType', 'A4', 'PaperOrientation', 'landscape', 'PaperPositionMode', 'auto', ...
                  'RendererMode', 'manual', 'Renderer', 'painters');
@@ -806,9 +848,11 @@ function figM = create_metrics_overview_page(df_metrics, SS, visstr, leicolors, 
         spike_times_ms = [];
     end
 
-    exclude = {'cluster_id', 'snr', 'SNR', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
+    exclude = {'cluster_id', 'presence_ratio', 'presence ratio', 'PresenceRatio', 'num_spikes'};
     cols = df_metrics.Properties.VariableNames;
     metrics_cols = cols(~ismember(cols, exclude));
+    is_snr = strcmpi(metrics_cols, 'snr');
+    metrics_cols = [metrics_cols(is_snr), metrics_cols(~is_snr)];   % SNR is the first panel
 
     all_unique_clusters = unique(df_metrics.cluster_id); 
     
@@ -1294,7 +1338,9 @@ function [lags_ms, counts] = compute_cross_correlogram(times1_ms, times2_ms, bin
         for i = 1:numel(t2)
             window_idx = find(t1 >= (t2(i)-maxlag) & t1 <= (t2(i)+maxlag));
             if ~isempty(window_idx)
-                diffs = [diffs; (t1(window_idx) - t2(i))]; 
+                % always t2 - t1, same sign as the branch above (this one
+                % used t1 - t2, so lag direction flipped with cluster size)
+                diffs = [diffs; (t2(i) - t1(window_idx))];
             end
         end
     end

@@ -26,8 +26,13 @@ function rescue_spikes(input, varargin)
 %   'template_type' 'center'  Matching method: 'center','nn','mahal','ml'
 %   'masks'         {}        Cell array of mask field names that define quarantine.
 %                             Default auto-detects from: mask_nonart,
-%                             mask_non_quarantine, mask_non_refract.
-%                             mask_taskspks is never used.
+%                             mask_non_quarantine. mask_taskspks is never used.
+%   'rescue_refractory' false Refractory violations (mask_non_refract) are a
+%                             timing conflict, not a waveform-shape problem, so by
+%                             default a spike that failed mask_non_refract is never
+%                             a rescue candidate -- even if it also failed another
+%                             mask, and even if 'masks' lists mask_non_refract.
+%                             true = rescue them like any other quarantined spike.
 %   'parallel'      false     Use parfor across channels
 %   'folder'        ''        Override: path to times folder (or subfolder such
 %                             as a merge folder). Relative to pwd or absolute.
@@ -38,7 +43,7 @@ function rescue_spikes(input, varargin)
 % ---- Parse arguments -------------------------------------------------------
 p = inputParser;
 addParameter(p, 'restore',       false,    @islogical);
-addParameter(p, 'sdnum',         3,        @(x) isnumeric(x) && isscalar(x) && x > 0);
+addParameter(p, 'sdnum',         1,        @(x) isnumeric(x) && isscalar(x) && x > 0);
 addParameter(p, 'template_type', 'center', @ischar);
 % 'center' two-pass options (ported from force_membership.py). Ignored for
 % other template_type values.
@@ -46,6 +51,7 @@ addParameter(p, 'first_pass_sdnum', 1,     @(x) isnumeric(x) && isscalar(x) && x
 addParameter(p, 'amp_pct_range',  [1 99],  @(x) isnumeric(x) && (isempty(x) || numel(x)==2));
 addParameter(p, 'mahal_reassign', true,    @islogical);
 addParameter(p, 'masks',         {},       @iscell);
+addParameter(p, 'rescue_refractory', false, @islogical);
 addParameter(p, 'parallel',      false,    @islogical);
 addParameter(p, 'folder_name',   '',       @ischar);   % relative to pwd, same as compute_metrics_batch
 addParameter(p, 'spikes_folder', '',       @ischar);   % override spikes dir (default: root_dir/spikes*)
@@ -59,6 +65,7 @@ tm_opts          = struct('first_pass_sdnum', p.Results.first_pass_sdnum, ...
                           'amp_pct_range',   p.Results.amp_pct_range, ...
                           'mahal_reassign',  p.Results.mahal_reassign);
 user_masks       = p.Results.masks;
+rescue_refract   = p.Results.rescue_refractory;
 do_parallel      = p.Results.parallel;
 folder_name      = p.Results.folder_name;
 spikes_folder_in = p.Results.spikes_folder;
@@ -127,12 +134,12 @@ fprintf('rescue_spikes: %d file(s) to process.\n', numel(file_list));
 if do_parallel
     parfor k = 1:numel(file_list)
         process_one(file_list{k}, active_spikes_dir, restore, sdnum, ...
-                    template_type, user_masks, valid_masks, min_spikes, tm_opts);
+                    template_type, user_masks, valid_masks, min_spikes, tm_opts, rescue_refract);
     end
 else
     for k = 1:numel(file_list)
         process_one(file_list{k}, active_spikes_dir, restore, sdnum, ...
-                    template_type, user_masks, valid_masks, min_spikes, tm_opts);
+                    template_type, user_masks, valid_masks, min_spikes, tm_opts, rescue_refract);
     end
 end
 
@@ -147,7 +154,7 @@ end
 %  CORE PER-FILE LOGIC
 % ============================================================================
 function process_one(times_file, active_spikes_dir, restore, sdnum, ...
-                     template_type, user_masks, valid_masks, min_spikes, tm_opts)
+                     template_type, user_masks, valid_masks, min_spikes, tm_opts, rescue_refract)
 
     [~, fname_noext] = fileparts(times_file);   % e.g. times_mRAMY04_raw_333
     % Strip leading 'times_' to get the channel label used in spikes folder
@@ -185,7 +192,11 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     % ---- Build quarantine mask from spikes file ----------------------------
     masks_to_use = user_masks;
     if isempty(masks_to_use)
-        masks_to_use = valid_masks(isfield(SPK, valid_masks));
+        default_masks = valid_masks;
+        if ~rescue_refract
+            default_masks = setdiff(valid_masks, {'mask_non_refract'}, 'stable');
+        end
+        masks_to_use = default_masks(isfield(SPK, default_masks));
     else
         missing = masks_to_use(~isfield(SPK, masks_to_use));
         if ~isempty(missing)
@@ -212,6 +223,18 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     end
     mask_quar = ~mask_pass;   % TRUE = quarantined -> rescue candidate
 
+    % Refractory-flagged spikes stay quarantined unless opted in, also when
+    % another selected mask flagged them too.
+    if ~rescue_refract && isfield(SPK, 'mask_non_refract')
+        refr_fail = ~logical(reshape(SPK.mask_non_refract, 1, []));
+        if numel(refr_fail) == n_all
+            if any(strcmp(masks_to_use, 'mask_non_refract'))
+                fprintf('  [%s] mask_non_refract listed but rescue_refractory=false: refractory spikes are not rescued.\n', ch_lbl);
+            end
+            mask_quar = mask_quar & ~refr_fail;
+        end
+    end
+
     n_quar = sum(mask_quar);
     if n_quar < min_spikes
         fprintf('  [%s] Only %d quarantined spikes (min %d). Skipping.\n', ...
@@ -233,12 +256,26 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     % ---- Backup: save pre-rescue state (only on FIRST rescue pass) ---------
     if ~isfield(T, 'cluster_class_pre_rescue')
         fprintf('  [%s] Saving pre-rescue backup...\n', ch_lbl);
-        cluster_class_pre_rescue = T.cluster_class;   
-        spikes_pre_rescue        = T.spikes;          
-        inspk_pre_rescue         = T.inspk;           
+        cluster_class_pre_rescue = T.cluster_class;
+        spikes_pre_rescue        = T.spikes;
+        inspk_pre_rescue         = T.inspk;
         save(times_file, ...
              'cluster_class_pre_rescue', 'spikes_pre_rescue', 'inspk_pre_rescue', ...
              '-append');
+        % also back up the GUI-facing per-spike arrays so restore is exact and
+        % the post-rescue file stays loadable in the wave_clus GUI
+        if isfield(T, 'forced')
+            forced_pre_rescue = T.forced;
+            save(times_file, 'forced_pre_rescue', '-append');
+        end
+        if isfield(T, 'ipermut')
+            ipermut_pre_rescue = T.ipermut;
+            save(times_file, 'ipermut_pre_rescue', '-append');
+        end
+        if isfield(T, 'gui_status')
+            gui_status_pre_rescue = T.gui_status;
+            save(times_file, 'gui_status_pre_rescue', '-append');
+        end
     else
         fprintf('  [%s] Pre-rescue backup already exists; running additional pass.\n', ch_lbl);
     end
@@ -274,8 +311,16 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
 
     % Feature extraction (wavelet) matching dimensionality of inspk_tmpl
     inspk_quar_full = local_wavelet_decomp(spikes_quar);
+    % inspk columns are the SELECTED coefficients, in the order of coeff
+    % (wave_features: inspk(i,j) = cc(i,coeff(j))), not the first n_coeff.
     n_coeff = size(inspk_tmpl, 2);
-    if size(inspk_quar_full, 2) >= n_coeff
+    coeff   = double(coeff(:)');
+    if numel(coeff) >= n_coeff && all(coeff(1:n_coeff) >= 1) && ...
+            all(coeff(1:n_coeff) <= size(inspk_quar_full, 2))
+        inspk_quar = inspk_quar_full(:, coeff(1:n_coeff));
+    elseif size(inspk_quar_full, 2) >= n_coeff
+        warning('  [%s] coeff does not match inspk (%d columns); using the first %d coefficients.', ...
+                ch_lbl, n_coeff, n_coeff);
         inspk_quar = inspk_quar_full(:, 1:n_coeff);
     else
         % Pad with zeros if shorter (should not normally happen)
@@ -295,7 +340,9 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     par_tmpl.template_mahal_reassign   = tm_opts.mahal_reassign;
 
     fprintf('  [%s] Template matching (%s, sdnum=%.1f)...\n', ch_lbl, template_type, sdnum);
-    class_quar = force_membership_wc(spikes_tmpl, class_good, spikes_quar, par_tmpl);
+    % SPC features (inspk) are the Mahalanobis space for the reassignment step
+    class_quar = force_membership_wc(spikes_tmpl, class_good, spikes_quar, par_tmpl, ...
+                                     inspk_tmpl, inspk_quar);
 
     rescued_local = find(class_quar ~= 0);   % indices into spikes_quar
     n_rescued = numel(rescued_local);
@@ -333,19 +380,61 @@ function process_one(times_file, active_spikes_dir, restore, sdnum, ...
     inspk_new       = inspk_combined(sort_idx, :);
     cluster_class_new = [class_combined(sort_idx), index_combined(sort_idx)];
 
+    % ---- Keep the GUI-facing per-spike arrays consistent -----------------
+    % (forced / gui_status.original_classes must be the same length as
+    %  cluster_class or the wave_clus GUI crashes on load)
+    % ipermut is different: ipermut(j) is the spike ROW of column j+2 of the
+    % SPC .dg_01.lab file, so it must keep its length (= spikes given to SPC)
+    % and only have its row indices remapped through the time re-sort.
+    % Padding it makes the GUI index past the end of clu.
+    n_old = size(cluster_class, 1);
+    n_new = size(cluster_class_new, 1);
+    n_add = n_new - n_old;
+    if isfield(T, 'forced') && numel(T.forced) == n_old
+        forced_comb = [logical(T.forced(:)); true(n_add, 1)];   % rescued = force-assigned
+        forced_new  = forced_comb(sort_idx);
+    else
+        forced_new  = false(n_new, 1);
+    end
+    ipermut_new = [];
+    if isfield(T, 'ipermut') && ~isempty(T.ipermut) && ...
+            numel(T.ipermut) <= n_old && max(T.ipermut(:)) <= n_old
+        new_row = zeros(n_new, 1);
+        new_row(sort_idx) = 1:n_new;            % old/combined row -> new row
+        ipermut_new = reshape(new_row(T.ipermut(:)), size(T.ipermut));
+    end
+    gui_status_new = [];
+    if isfield(T, 'gui_status') && isstruct(T.gui_status)
+        gui_status_new = T.gui_status;
+        if isfield(gui_status_new, 'original_classes') && ...
+                numel(gui_status_new.original_classes) == n_old
+            oc = [gui_status_new.original_classes(:); class_resc(:)];
+            gui_status_new.original_classes = oc(sort_idx);
+        end
+    end
+
     % ---- Metadata ----------------------------------------------------------
     quarantine_masks_used = masks_to_use;   
     rescue_meta = make_rescue_meta(sdnum, template_type, masks_to_use, n_quar, n_rescued);  
 
     % ---- Save times file ---------------------------------------------------
-    spikes = spikes_new;           
-    inspk  = inspk_new;            
-    cluster_class = cluster_class_new;  
+    spikes = spikes_new;
+    inspk  = inspk_new;
+    cluster_class = cluster_class_new;
+    forced = forced_new;
 
     save(times_file, ...
-         'spikes', 'inspk', 'cluster_class', ...
+         'spikes', 'inspk', 'cluster_class', 'forced', ...
          'rescue_mask', 'quarantine_masks_used', 'rescue_meta', ...
          '-append');
+    if ~isempty(ipermut_new)
+        ipermut = ipermut_new;
+        save(times_file, 'ipermut', '-append');
+    end
+    if ~isempty(gui_status_new)
+        gui_status = gui_status_new;
+        save(times_file, 'gui_status', '-append');
+    end
 
     fprintf('  [%s] Done. %d rescued spikes added to times file.\n', ch_lbl, n_rescued);
 end
@@ -370,9 +459,13 @@ function do_restore(times_file, spike_file, ch_lbl)
     T.cluster_class = T.cluster_class_pre_rescue;
     T.spikes        = T.spikes_pre_rescue;
     T.inspk         = T.inspk_pre_rescue;
+    if isfield(T, 'forced_pre_rescue'),     T.forced     = T.forced_pre_rescue;     end
+    if isfield(T, 'ipermut_pre_rescue'),    T.ipermut    = T.ipermut_pre_rescue;    end
+    if isfield(T, 'gui_status_pre_rescue'), T.gui_status = T.gui_status_pre_rescue; end
 
     % Remove all rescue-related fields
     rescue_fields = {'cluster_class_pre_rescue', 'spikes_pre_rescue', 'inspk_pre_rescue', ...
+                     'forced_pre_rescue', 'ipermut_pre_rescue', 'gui_status_pre_rescue', ...
                      'rescue_mask', 'quarantine_masks_used', 'rescue_meta', ...
                      'class_quar', 'index_quar', 'rescued_idx'};
     for fi = 1:numel(rescue_fields)
