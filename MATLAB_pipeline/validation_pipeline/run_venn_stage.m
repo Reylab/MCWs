@@ -28,6 +28,9 @@ function run_venn_stage(cfg, arm_classes)
 %
 % OUTPUTS (under cfg.out_dir/venn_three_set)
 %   venn3_ch<ch>_<arm>_cluster.png / _full.png
+%   venn3_ch<ch>_<arm>_detections.png - only with cfg.venn_detections = true: two-set
+%       venn of every GT spike vs every arm spike on the channel (any class, incl. 0,
+%       quarantined or not), waveforms of both / GT only / arm only
 %   venn3_counts.csv - every region count, one row per (arm, scope)
 
 here = fileparts(mfilename('fullpath'));
@@ -83,6 +86,17 @@ for k = 1:n_arms
         'desc',   {sprintf('%s class %d vs %s class %d', cfg.gt.name, cfg.gt.class, arms(k).name, arm_classes(k)), ...
                    sprintf('%s all classes vs %s all classes', cfg.gt.name, arms(k).name)});
 
+    % all detections (cfg.venn_detections): every GT spike vs every arm spike
+    % on the channel, any class incl. 0 -- two sets, no quarantine split:
+    % how the two detectors differ, not the sorting
+    if isfield(cfg, 'venn_detections') && cfg.venn_detections
+        D = plot_detection_venn(cfg, arms(k).name, gt_cc, times_gt, t, W_arm, tmpl_clu, arm_classes(k), out_dir);
+        rows(end+1, :) = {arms(k).name, 'detections', arm_classes(k), D.n_gt, D.n_arm, 0, ...
+            D.gt_only, D.arm_only, 0, D.both, 0, 0, 0, 0}; %#ok<AGROW>
+        fprintf('[venn3] %s detections: gt=%d arm=%d | both %d | gt only %d | arm only %d\n', ...
+            arms(k).name, D.n_gt, D.n_arm, D.both, D.gt_only, D.arm_only);
+    end
+
     for si = 1:numel(scopes)
         sc = scopes(si);
         S = three_set_membership(gt_cc(sc.gt_rows, 2), lab, t, q, sc.in_arm, cfg.tol);
@@ -133,6 +147,50 @@ if ~isempty(rows)
         'gt_only','arm_only','q_only','gt_arm','gt_q','arm_q','gt_arm_q','q_rescued_other_class'}), ...
         fullfile(out_dir, 'venn3_counts.csv'));
 end
+end
+
+function D = plot_detection_venn(cfg, arm_name, gt_cc, times_gt, arm_t, W_arm, tmpl_clu, cls, out_dir)
+% Two-set venn of every GT spike vs every arm spike on the channel (any
+% class, incl. 0; quarantined or not -- all detections), one-to-one within
+% cfg.tol, with waveform panels: detected by both | GT only | arm only.
+    [gs, go] = sort(gt_cc(:, 2));
+    gm = nearest_match(gs, arm_t, cfg.tol);
+    gm_u = enforce_one_to_one(gs, arm_t, gm, cfg.tol);
+    gt_hit = false(size(gs)); gt_hit(gm_u > 0) = true;
+    arm_hit = false(size(arm_t)); arm_hit(gm_u(gm_u > 0)) = true;
+    D = struct('n_gt', numel(gs), 'n_arm', numel(arm_t), 'both', nnz(gt_hit), ...
+               'gt_only', nnz(~gt_hit), 'arm_only', nnz(~arm_hit));
+    f = figure('Visible', 'off', 'Position', [100 100 2000 760], 'Color', 'w');
+    ax = axes(f, 'Position', [0.03 0.10 0.29 0.70]);
+    draw_membership_venn(ax, 0, arm_name, 0, D.n_gt, D.n_arm, D.both, D.gt_only, D.arm_only, cfg.gt.name, cfg.ch);
+    xlim(ax, [-2.0 2.0]); ylim(ax, [-1.1 1.1]);
+    title(ax, sprintf('%s n=%d  |  %s n=%d\nboth %d = %.1f%% of %s, %.1f%% of %s', cfg.gt.name, D.n_gt, ...
+        arm_name, D.n_arm, D.both, 100*D.both/max(D.n_gt,1), cfg.gt.name, 100*D.both/max(D.n_arm,1), arm_name), ...
+        'Interpreter', 'none', 'FontSize', 11);
+    grp = @(name, W, color) struct('name', name, 'W', W, 'color', color);
+    G = [grp(sprintf('detected by both (n=%d)', D.both), W_arm(gm_u(gm_u > 0), :), [0.2 0.7 0.3]), ...
+         grp(sprintf('%s only (n=%d)', cfg.gt.name, D.gt_only), double(times_gt.spikes(go(~gt_hit), :)), [0.85 0.3 0.3]), ...
+         grp(sprintf('%s only (n=%d)', arm_name, D.arm_only), W_arm(~arm_hit, :), [0.3 0.4 0.85])];
+    T = struct('name', sprintf('sd1 template (class %d)', cls), 'wave', tmpl_clu, 'color', [0.85 0.1 0.6], 'style', '--');
+    yl = [inf -inf];
+    for g = G
+        if size(g.W, 1) >= 5
+            mu = mean(g.W, 1); sd = std(g.W, 0, 1);
+            yl = [min(yl(1), min(mu - sd)), max(yl(2), max(mu + sd))];
+        end
+    end
+    yl = yl + [-0.08 0.08] * diff(yl);
+    for i = 1:numel(G)
+        a = axes(f, 'Position', [0.36 + (i-1)*0.215, 0.12, 0.19, 0.70]);
+        draw_wave_group(a, G(i), T, yl, i == 1);
+        title(a, G(i).name, 'Interpreter', 'none', 'FontSize', 11);
+        xlabel(a, 'sample'); if i == 1, ylabel(a, 'amplitude'); end
+    end
+    annotation(f, 'textbox', [0 0.92 1 0.07], 'EdgeColor', 'none', 'HorizontalAlignment', 'center', 'FontSize', 13, ...
+        'FontWeight', 'bold', 'Interpreter', 'none', 'String', sprintf(['ch%d  all %s spikes vs all %s spikes on the channel ' ...
+        '(every class incl. 0, quarantined or not) -- detectors, not sorting; spike-time match %.1f ms'], cfg.ch, cfg.gt.name, arm_name, cfg.tol));
+    print(f, fullfile(out_dir, sprintf('venn3_ch%d_%s_detections.png', cfg.ch, arm_name)), '-dpng', '-r130');
+    close(f);
 end
 
 function s = wset(W, color, name)

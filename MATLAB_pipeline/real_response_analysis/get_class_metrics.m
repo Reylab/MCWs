@@ -35,6 +35,7 @@ function m = get_class_metrics(dir_path, grapes_filename, ch, class_num, stim_li
     tag = matlab.lang.makeValidName(gbase);
     T = out.(tag).metrics;
     m.rank_config = out.(tag).rank_config;
+    m.resp_conf   = out.(tag).resp_conf;   % median windows (tmin/tmax_median) behind median_post / sign test
     m.ejex        = T.Properties.UserData.ifr_ejex;
     clname = sprintf('class%d', class_num);
     sel_class = T.channel_num == ch & strcmp(cellstr(T.class), clname);

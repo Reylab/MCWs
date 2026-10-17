@@ -1,4 +1,4 @@
-function [T, DET, COMP] = match_cc(ccg, cca, ch, tol, min_recall)
+function [T, DET, COMP] = match_cc(ccg, cca, ch, tol, min_recall, force_class)
 % MATCH_CC  Match every ground-truth class to an arm class by one-to-one
 % nearest spike-time overlap on two [class time_ms] matrices, and fully
 % account for where each class's spikes go. Shared by
@@ -13,6 +13,9 @@ function [T, DET, COMP] = match_cc(ccg, cca, ch, tol, min_recall)
 %   min_recall  a ground-truth class is "matched" when the best arm class's
 %               recall >= this; otherwise "merged"/"split"/"lost" per the
 %               status logic below.
+%   force_class (optional) use this arm class as every ground-truth class's
+%               match instead of the one with the most overlap (when the
+%               caller fixed the class); recall / precision / COMP follow it.
 %
 % OUTPUT
 %   T    - one row per ground-truth class (the headline match + where its
@@ -68,6 +71,10 @@ function [T, DET, COMP] = match_cc(ccg, cca, ch, tol, min_recall)
 
         [best_n, bj] = max(cnt);
         arm_class = ar_cls(bj);
+        if nargin >= 6 && ~isempty(force_class)
+            arm_class = force_class;
+            best_n = sum(cnt(ar_cls == force_class));
+        end
         recall    = best_n / max(n_gt,1);
         n_elsewhere = sum(cnt) - best_n;
 

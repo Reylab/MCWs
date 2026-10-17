@@ -1,4 +1,4 @@
-function omap = build_all_stim_onset_map(stimulus_struct, finalevents_struct, Nscr, stim_list)
+function omap = build_all_stim_onset_map(stimulus_struct, finalevents_struct, Nscr, stim_list, exp_prop)
 % BUILD_ALL_STIM_ONSET_MAP  Same onset-map-building loop already used at the
 % top of test_rescue_grape_metrics.m, generalized to take an explicit
 % stim_list so it can build either the stim_list-scoped map (existing
@@ -11,6 +11,11 @@ function omap = build_all_stim_onset_map(stimulus_struct, finalevents_struct, Ns
 %   stim_list - which stim IDs to include (pass unique(per_stim_all.stim_number)
 %               for the session-wide map, or your usual stim_list for the
 %               original scoped map)
+%   exp_prop  - OPTIONAL loaded experiment_properties_online3.mat. When given,
+%               stimulus j of sub-screening i is keyed by scr_config_cell{i}.pics2use(j)
+%               -- the raster index update_grapes_blanks writes it under -- instead
+%               of stimulus(j).ID. Same number on RSVP sessions; on the category
+%               localizer the ID carries a '.1' suffix (198.1) and never matches.
 %   omap      - output: containers.Map, stim ID -> real onset times (ms)
 %   want      - Map used as an O(1) membership test for stim_list
 %   i/pic_on/stim - sub-screening loop variables (index, onset grid, stimulus list)
@@ -23,7 +28,11 @@ function omap = build_all_stim_onset_map(stimulus_struct, finalevents_struct, Ns
         pic_on = finalevents_struct.pics_onset{i};
         stim = stimulus_struct.stimulus{i};
         for j = 1:numel(stim)
-            stim_num = stim(j).ID;
+            if nargin >= 5 && ~isempty(exp_prop)
+                stim_num = exp_prop.scr_config_cell{i}.pics2use(j);   % raster index, as in update_grapes_blanks
+            else
+                stim_num = stim(j).ID;
+            end
             if ~isKey(want, stim_num), continue; end
             terna = stim(j).terna_onset;
             if ndims(pic_on) == 3

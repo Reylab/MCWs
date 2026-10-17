@@ -76,6 +76,11 @@ function plot_three_set_venn(S, names, ttl, out_png, wf)
         'gt_q',     subtract(intersect(P{1},P{3}),P{2}), 'lost'; ...
         'arm_q',    subtract(intersect(P{2},P{3}),P{1}), 'rescued, extra'; ...
         'gt_arm_q', intersect(intersect(P{1},P{2}),P{3}), 'rescued, in GT'};
+    if isfield(S, 'tags')   % caller-specific wording, e.g. the all-detections venn
+        for i = 1:size(regions, 1)
+            if isfield(S.tags, regions{i,1}), regions{i,3} = S.tags.(regions{i,1}); end
+        end
+    end
 
     % Fills. With waveform panels, ONLY the regions that have a waveform
     % group are filled, each in that group's own color (wf.region_colors),
@@ -104,6 +109,7 @@ function plot_three_set_venn(S, names, ttl, out_png, wf)
     outside = [];                        % [region row, anchor x, anchor y, angle]
     for i = 1:size(regions,1)
         key = regions{i,1}; poly = regions{i,2};
+        if isfield(S, 'hide') && any(strcmp(S.hide, key)), continue; end   % regions that cannot occur in this venn
         [px, py, rin] = widest_point(poly);
         lbl = region_label(c.(key), pct(c.(key)), regions{i,3}, pct_ga(key, c.(key)));
         if rin >= fit_r
@@ -159,8 +165,8 @@ end
 
 function draw_waveform_panels(f, wf)
 % 3x2 grid right of the venn: one panel per wf.panels entry, the last cell
-% holds the template legend. Each set: up to 100 faint single traces, then its
-% mean +/- std band and mean line; the templates go on top of every panel.
+% holds the template legend. Each set: up to 5000 faint single traces, then its
+% mean line (no std band); the templates go on top of every panel.
 % One y range for every panel so amplitudes compare across them.
     x0 = 0.385; x1 = 0.99; y0 = 0.07; y1 = 0.88;
     ncol = 3; nrow = 2; gx = 0.035; gy = 0.10;
@@ -189,13 +195,12 @@ function draw_waveform_panels(f, wf)
             n_s = size(s.W,1);
             parts{end+1} = sprintf('%s n=%d', s.name, n_s); %#ok<AGROW>
             if n_s == 0, continue; end
-            pick = randperm(rs, n_s, min(n_s, 100));
-            plot(ax, s.W(pick,:)', 'Color', [s.color 0.06], 'LineWidth', 0.4);
+            pick = randperm(rs, n_s, min(n_s, 5000));
+            plot_traces(ax, s.W(pick,:), s.color, 0.06);
         end
         for s = p.sets(:)'
             if isempty(s.W), continue; end
-            mu = mean(s.W,1); sd = std(s.W,0,1); xx = 1:numel(mu);
-            fill(ax, [xx fliplr(xx)], [mu+sd fliplr(mu-sd)], s.color, 'FaceAlpha', 0.22, 'EdgeColor', 'none');
+            mu = mean(s.W,1); xx = 1:numel(mu);
             plot(ax, xx, mu, 'Color', s.color, 'LineWidth', 2.0);
         end
         for t = wf.templates(:)'

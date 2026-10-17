@@ -30,7 +30,11 @@ function [tmpl_clu, tmpl_res, info] = sd1_pass_templates(T, cls, sdnum, amp_pct)
     W = double(T.spikes);
     lab = T.cluster_class(:,1);
     q = logical(T.quarantine.all(:));
-    resc = logical(T.quarantine.rescued(:));
+    if isfield(T.quarantine, 'rescued')
+        resc = logical(T.quarantine.rescued(:));
+    else
+        resc = false(size(T.cluster_class, 1), 1);   % no rescue step (clustering-only run)
+    end
     forced = logical(T.forced(:));
 
     % clustering pass 1

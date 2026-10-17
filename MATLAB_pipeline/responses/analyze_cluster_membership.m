@@ -1607,7 +1607,7 @@ end
 
 % ======================================================================
 %  WAVEFORM OVERLAY (adapted from validate_recluster_vs_handselect's
-%  waveform_overlay -- same plot design: mean +/- std fill, one line per
+%  waveform_overlay -- same plot design: mean line (no std fill), one line per
 %  trial, GT in black -- reshaped for our trials(name/grapes_file/
 %  times_file/spikes_file) struct instead of its arm_info)
 % ======================================================================
@@ -1648,9 +1648,7 @@ function waveform_overlay_plot(ch, gtc, ref, trials, ref_i, armmap, ref_spikes_f
             idx = idx(idx>0);
             w = SA(idx,:);
             if ~isempty(w)
-                mu = mean(w,1); sd = std(w,0,1); xx = 1:numel(mu);
-                fill(ax, [xx fliplr(xx)], [mu+sd fliplr(mu-sd)], [0 0 0], ...
-                    'FaceAlpha',0.12,'EdgeColor','none','HandleVisibility','off');
+                mu = mean(w,1); xx = 1:numel(mu);
                 h = plot(ax, xx, mu, '-', 'Color',[0 0 0],'LineWidth',2.5);
                 hh(end+1) = h;
                 leg{end+1} = sprintf('handselect (gt c%d, %s, n=%d)', gtc, gt_scope, size(w,1));
@@ -1684,10 +1682,8 @@ function waveform_overlay_plot(ch, gtc, ref, trials, ref_i, armmap, ref_spikes_f
         idx = idx(idx>0);
         w = SA(idx,:);
         if isempty(w), continue; end
-        mu = mean(w,1); sd = std(w,0,1); xx = 1:numel(mu);
+        mu = mean(w,1); xx = 1:numel(mu);
         cc = cmap(i,:);
-        fill(ax, [xx fliplr(xx)], [mu+sd fliplr(mu-sd)], cc, ...
-            'FaceAlpha',0.12,'EdgeColor','none','HandleVisibility','off');
         h = plot(ax, xx, mu, '-', 'Color', cc, 'LineWidth', 1.2);
         hh(end+1) = h;
         leg{end+1} = sprintf('%s (c%d, %s, n=%d)', trials(i).name, acl, arm_scope, size(w,1));
@@ -1696,7 +1692,7 @@ function waveform_overlay_plot(ch, gtc, ref, trials, ref_i, armmap, ref_spikes_f
     if ~plotted, close(f); return; end
     hold(ax,'off'); grid(ax,'on');
     legend(ax, hh, leg, 'Interpreter','none','Location','best');
-    title(ax, sprintf('ch%d  ground-truth class %d  mean waveform +/- std', ch, gtc), 'Interpreter','none');
+    title(ax, sprintf('ch%d  ground-truth class %d  mean waveform', ch, gtc), 'Interpreter','none');
     xlabel(ax,'sample'); ylabel(ax,'amplitude');
     save_fig_local(f, fullfile(out_dir, sprintf('waveform_overlay_ch%d_gt%d.png', ch, gtc)));
 end

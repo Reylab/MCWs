@@ -21,7 +21,14 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
     % original behavior). Points with equal values otherwise sit exactly on
     % top of each other at x=1 (GT) / x=2 (ARM).
     addParameter(ipr, 'x_jitter', 0, @(x) isnumeric(x) && isscalar(x) && x >= 0);
+    % names of the reference and this arm in the summary / sign-test figures
+    addParameter(ipr, 'ref_name', 'GT', @(x) ischar(x) || isstring(x));
+    addParameter(ipr, 'arm_name', 'ARM', @(x) ischar(x) || isstring(x));
+    % one line at the bottom of every page (e.g. which response window the green lines are)
+    addParameter(ipr, 'footer', '', @(x) ischar(x) || isstring(x));
     parse(ipr, varargin{:});
+    footer = char(ipr.Results.footer);
+    nm = struct('ref', char(ipr.Results.ref_name), 'arm', char(ipr.Results.arm_name));
     image_cache = ipr.Results.image_cache;
     output_dir  = ipr.Results.output_dir;
     clip_to_window = ipr.Results.clip_to_window;
@@ -42,16 +49,12 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
     if ~exist('is_ch_grapes', 'var')         is_ch_grapes         = false; end
     if ~exist('priority_chs_ranking', 'var') priority_chs_ranking = []; end
 
-    % 4 sub-rows per stimulus (image, raster, PSTH, + a GT-vs-ARM actual-value
-    % bar -- the last one only actually drawn when data_table carries the
-    % gt_* reference columns it needs, see plot_arm_gt_value_bar), was 3
-    % originally.
-    % (A "cluster total vs response count" 5th/4th bar row used to live here
-    % too, but that was a whole subplot spent on ONE number that never
-    % changed across a page -- it's now folded into the image panel's own
-    % mu/std text line instead, see plot_img_zscore_class.)
+    % 3 sub-rows per stimulus (image, raster, PSTH) on every page, GT and arm
+    % alike, so a GT page and an arm page of the same stimuli have the same
+    % layout and can be overlaid. GT-vs-ARM comparisons live in the separate
+    % summary figure (plot_gt_arm_summary_figure).
     cols = 5;
-    subrows_per_stim = 4;
+    subrows_per_stim = 3;
     stim_cap = 20;   % max stimuli placed on one page (4 groups of `cols`), same pagination as before
 
     nwins= min(max_nwins,ceil(height(data_table)/stim_cap));
@@ -68,16 +71,11 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
     set(groot,'defaultaxestitlefontweight','normal')
     set(groot,{'DefaultAxesXColor','DefaultAxesYColor','DefaultAxesZColor'},{'k','k','k'})
 
-    grid_w = 798;   % unchanged physical width of the per-stimulus subplot grid
+    fig_w = 798;   % physical width of the per-stimulus subplot grid
     row_px = 80;   % physical pixels per sub-row, held constant regardless of
                    % how many stimulus row-groups a given PAGE actually needs
-    % Right-side margin, reserved once per page for a shared legend (the
-    % med/mean/zscore/resp colors used in plot_arm_gt_value_bar) and the
-    % median_post GT-vs-ARM summary panel (see draw_page_margin) -- added
-    % ON TOP of grid_w so the existing per-stimulus grid keeps its exact
-    % pixel width instead of shrinking to make room.
-    margin_frac = 0.16;
-    fig_w = grid_w / (1 - margin_frac);
+    title_px = 70; % fixed band above the grid for the 3-line page title, so a
+                   % short (1 row-group) page's title does not sit on its images
 
     screen_size = get(0, 'ScreenSize');
     screen_width = screen_size(3);
@@ -97,8 +95,11 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
         real_max_stims = min(stim_cap, size(data_table,1) - order_offset - (nwin-1)*stim_cap);
         n_groups = max(1, ceil(real_max_stims/cols));
         rows = n_groups * subrows_per_stim;
-        [pic_num, rast_num, hist_num, pct_num] = build_row_indices(n_groups, cols, subrows_per_stim);
-        fig_h = row_px * rows;
+        [pic_num, rast_num, hist_num] = build_row_indices(n_groups, cols, subrows_per_stim);
+        tl = title_lines(grapes, rank_config, ss_num, nwin, extra_label);
+        title_px = 14 * numel(tl.lines) + 14;   % band sized to the (wrapped) title lines
+        footer_px = 34 * ~isempty(footer);
+        fig_h = row_px * rows + title_px + footer_px;
 
         if nwin <=3
             pos_x = 10 + (nwin-1) * fig_w;
@@ -149,7 +150,6 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
 
             set(subplot_ax,'xtick',[],'ytick',[]);box off;
             shrink_axes_gap(subplot_ax, 0.72);
-            compress_to_grid_area(subplot_ax, margin_frac);
 
             subplot_ax = subplot(rows,cols,rast_num(i),'align');
             plot_rasters(stim_idx, data_table, grapes, rank_config, ...
@@ -163,7 +163,11 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
                 time_pos_ms = grapes.time_pos;
             end
             shrink_axes_gap(subplot_ax, 0.72);
-            compress_to_grid_area(subplot_ax, margin_frac);
+            % nudge the raster down into the free space above its IFR plot,
+            % clear of the image panel's text lines (mu/sd, counts, sign p)
+            rpos = get(subplot_ax, 'Position');
+            rpos(2) = rpos(2) - 0.25*rpos(4);
+            set(subplot_ax, 'Position', rpos);
 
             subplot_ax = subplot(rows,cols,hist_num(i),'align');
             plot_ifr(stim_idx, data_table, grapes, ejex, ifr_y_max, ...
@@ -186,27 +190,33 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
                 scale_ax(subplot_ax, 0.5);
             end
             % Only the last group's PSTH row actually draws tick labels (see
-            % above), and those labels sit BELOW the axes box, in the same
-            % gap the row-vs-row-below shrink is supposed to protect --
-            % give that specific row extra bottom margin so its own labels
-            % don't bleed into the GT-vs-ARM panel directly underneath it,
-            % while every other (label-less) PSTH row keeps the normal gap.
+            % above), and those labels sit BELOW the axes box -- give that
+            % row extra bottom margin so they stay on the page.
             if this_group == last_group
                 shrink_axes_gap(subplot_ax, 0.60);
             else
                 shrink_axes_gap(subplot_ax, 0.72);
             end
-            compress_to_grid_area(subplot_ax, margin_frac);
-
-            subplot_ax = subplot(rows,cols,pct_num(i),'align');
-            plot_arm_gt_value_bar(stim_idx, data_table, subplot_ax, fontsize_mult);
-            shrink_axes_gap(subplot_ax, 0.72);
-            compress_to_grid_area(subplot_ax, margin_frac);
         end
 
-        draw_page_margin(fig, data_table, margin_frac, fontsize_mult, x_jitter);
-
-        add_figure_title(grapes, rank_config, ss_num, nwin, extra_label)
+        % move the whole grid below the title band, then trim the page so the grid's top row sits right
+        % under the title (subplot's own top margin otherwise leaves a blank gap between title and images)
+        hfrac = title_px / fig_h; ffrac = footer_px / fig_h;
+        axs = findobj(fig, 'Type', 'axes')';
+        top = 0;
+        for ax = axs
+            ap = get(ax, 'Position');
+            set(ax, 'Position', [ap(1), ffrac + ap(2) * (1 - hfrac - ffrac), ap(3), ap(4) * (1 - hfrac - ffrac)]);
+            ap = get(ax, 'Position'); top = max(top, ap(2) + ap(4));
+        end
+        gap_px = floor(((1 - hfrac) - top) * fig_h) - 4;
+        if gap_px > 0
+            set(axs, 'Units', 'pixels');                       % axes keep their pixel place from the bottom
+            fp = get(fig, 'Position'); set(fig, 'Position', fp - [0 0 0 gap_px]);
+            set(axs, 'Units', 'normalized');
+        end
+        add_figure_title(fig, tl)
+        add_footer(fig, footer)
 
         if save_fig
             extra_label_name = extra_label;
@@ -236,7 +246,8 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
         if ~isempty(aaa)
             extra_label_name = extra_label(1:aaa-1);
         end
-        plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fontsize_mult, x_jitter);
+        plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fontsize_mult, x_jitter, nm, footer);
+        plot_sign_test_figure(data_table, output_dir, extra_label_name, fontsize_mult, nm, footer);
     end
 
     warning on
@@ -247,20 +258,19 @@ function fig_cells = loop_plot_responses_BCM_response_window(data_table, grapes,
     set(groot,{'DefaultAxesXColor','DefaultAxesYColor','DefaultAxesZColor'},{'remove','remove','remove'})
 
 end
-function [pic_num, rast_num, hist_num, pct_num] = build_row_indices(n_groups, cols, subrows_per_stim)
+function [pic_num, rast_num, hist_num] = build_row_indices(n_groups, cols, subrows_per_stim)
 % BUILD_ROW_INDICES  subplot() linear indices for N_GROUPS stimulus
 % row-groups (each COLS stimuli wide, SUBROWS_PER_STIM grid-rows tall:
-% image/raster/PSTH/GT-vs-ARM-value-bar, in that top-to-bottom order), so the caller can
+% image/raster/PSTH, in that top-to-bottom order), so the caller can
 % size its subplot(rows,cols,...) grid to exactly how many groups THIS page
 % actually needs instead of a fixed worst-case capacity.
-    pic_num = zeros(1, n_groups*cols); rast_num = pic_num; hist_num = pic_num; pct_num = pic_num;
+    pic_num = zeros(1, n_groups*cols); rast_num = pic_num; hist_num = pic_num;
     for g = 0:n_groups-1
         base = g*subrows_per_stim*cols;
         sel = g*cols+(1:cols);
         pic_num(sel)  = base + (1:cols);
         rast_num(sel) = base + cols + (1:cols);
         hist_num(sel) = base + 2*cols + (1:cols);
-        pct_num(sel)  = base + 3*cols + (1:cols);
     end
 end
 
@@ -277,8 +287,8 @@ function shrink_axes_gap(ax, shrink)
 % center by SHRINK (e.g. 0.72 keeps 72% of the row's height), leaving a
 % real blank gap split evenly above and below. subplot(...,'align') packs
 % rows edge-to-edge with only a tiny built-in margin that doesn't scale up
-% with how many sub-rows/text elements are packed into the figure -- with 5
-% sub-rows per stimulus (image/raster/PSTH/GT-vs-ARM-value-bar) plus the
+% with how many sub-rows/text elements are packed into the figure -- with the
+% sub-rows per stimulus (image/raster/PSTH) plus the
 % image panel's own overflow zscore/mu-std/filename text and every bar
 % panel's title (drawn just above its own axes box), that tiny margin isn't
 % enough and content bleeds into the neighboring row. Applying this to every
@@ -291,54 +301,6 @@ function shrink_axes_gap(ax, shrink)
     pos(2) = pos(2) + (pos(4) - new_h)/2;
     pos(4) = new_h;
     set(ax, 'Position', pos);
-end
-
-function compress_to_grid_area(ax, margin_frac)
-% COMPRESS_TO_GRID_AREA  Rescales this axes' [x, width] into the left
-% (1-margin_frac) fraction of the figure, freeing a right-side margin
-% strip for the page-level legend + median_post summary panel (see
-% draw_page_margin) without shrinking the per-stimulus grid's actual
-% pixel size -- fig_w already grew by the same margin_frac, so this just
-% compresses the grid back to the footprint it had before the figure grew.
-    pos = get(ax, 'Position');
-    pos(1) = pos(1) * (1 - margin_frac);
-    pos(3) = pos(3) * (1 - margin_frac);
-    set(ax, 'Position', pos);
-end
-
-function draw_page_margin(fig, data_table, margin_frac, fontsize_mult, x_jitter)
-% DRAW_PAGE_MARGIN  Once per page (not per stimulus, per compress_to_grid_
-% area's freed-up right-side strip): a shared legend for plot_arm_gt_value
-% _bar's med/mean/zscore/resp line colors (metric_line_colors), plus the
-% median_post GT-vs-ARM summary panel -- the SAME picture plot_gt_arm_
-% summary_figure draws in its own separate figure (via the shared
-% plot_gt_arm_metric_panel), folded into this page too so it's visible
-% without opening that other file. Silently skips the summary panel (but
-% still draws the legend) when data_table doesn't carry the gt_median_post
-% reference column -- a GT-side page, or an arm page whose gt_ref join
-% found nothing.
-    x0 = 1 - margin_frac + 0.015;
-    w  = margin_frac - 0.03;
-
-    % Both moved down from the top edge (legend was crowding it), and the
-    % median panel moved down MORE than the legend so there's a real gap
-    % between the two instead of the legend's box bleeding into the panel
-    % title underneath it.
-    leg_ax = axes(fig, 'Position', [x0, 0.78, w, 0.12]);
-    hold(leg_ax, 'on');
-    c = metric_line_colors();
-    plot(leg_ax, NaN, NaN, '-s', 'Color', c.med,    'MarkerFaceColor', c.med,    'DisplayName','med');
-    plot(leg_ax, NaN, NaN, '-^', 'Color', c.mean,   'MarkerFaceColor', c.mean,   'DisplayName','mean');
-    plot(leg_ax, NaN, NaN, '-d', 'Color', c.zscore, 'MarkerFaceColor', c.zscore, 'DisplayName','zscore');
-    plot(leg_ax, NaN, NaN, '-o', 'Color', c.resp,   'MarkerFaceColor', c.resp,   'DisplayName','resp');
-    legend(leg_ax, 'Location','north', 'FontSize', 7*fontsize_mult, 'Interpreter','none', 'Box','off');
-    axis(leg_ax, 'off');
-
-    if all(ismember({'median_post','gt_median_post'}, data_table.Properties.VariableNames))
-        med_ax = axes(fig, 'Position', [x0, 0.28, w, 0.30]);
-        plot_gt_arm_metric_panel(med_ax, data_table, 'median_post', 'gt_median_post', ...
-            'median post (all stimuli)', '%.3f', fontsize_mult, x_jitter);
-    end
 end
 
 function scale_factor = plot_img_zscore_class(stim_idx, data_table, grapes, subplot_ax, fontsize_mult, image_cache)
@@ -474,13 +436,23 @@ function scale_factor = plot_img_zscore_class(stim_idx, data_table, grapes, subp
             else
                 mu_sd_lines = {mu_sd_txt, stat_txt};
             end
+            % Third line: this page's own unit's grapes sign-test p for this
+            % stimulus (p_value_sign, create_responses_data_parallel) and its
+            % rank among the stimuli on this page (rank 1 = smallest p) --
+            % GT's on the GT raster, the arm's on the arm raster.
+            if ismember('p_value_sign', data_table.Properties.VariableNames)
+                mu_sd_lines{end+1} = sprintf('sign p=%.2g (rank %s)', data_table.p_value_sign(stim_idx), ...
+                    p_rank_str(data_table.p_value_sign, stim_idx));
+            end
             % VerticalAlignment 'top' pins the FIRST line to this y and lets
             % the block only grow downward -- without it, a 2-line block is
             % vertically CENTERED on this anchor by default, pushing the
             % first line up far enough to collide with the filename text
             % directly above (a real overlap this surfaced on the first try).
-            text(img_name_pos_x, img_name_pos_y+30*scale_factor, mu_sd_lines, ...
-                'fontsize',3.5*fontsize_mult, 'HorizontalAlignment','center', 'VerticalAlignment','top');
+            % three lines now (mu/sd, counts, sign test): start a little higher
+            % and a touch smaller so the block ends above the raster row
+            text(img_name_pos_x, img_name_pos_y+18*scale_factor, mu_sd_lines, ...
+                'fontsize',3.1*fontsize_mult, 'HorizontalAlignment','center', 'VerticalAlignment','top');
         end
     else
         if exist(imagename,'file')
@@ -503,7 +475,7 @@ function scale_factor = plot_img_zscore_class(stim_idx, data_table, grapes, subp
                      erase( data_table.class{stim_idx} , 'class' )]};
 
     ylabel(image_ylabel,'rotation',0,'fontsize',5*fontsize_mult,...
-        'HorizontalAlignment','right','FontWeight','bold','units','normalized','position',[-0.1 -0.2 0]);
+        'HorizontalAlignment','right','VerticalAlignment','bottom','FontWeight','bold','units','normalized','position',[-0.1 0 0]);
 end
 
 function add_bundle_label(stim_idx, data_table, grapes, ...
@@ -530,85 +502,14 @@ function add_bundle_label(stim_idx, data_table, grapes, ...
     end
 end
 
-function plot_arm_gt_value_bar(stim_idx, data_table, subplot_ax, fontsize_mult)
-% PLOT_ARM_GT_VALUE_BAR  4th sub-row: this stimulus's ACTUAL GT vs ARM
-% values (not a %% difference -- see plot_gt_arm_summary_figure for the
-% across-stimuli trend view), for the four quantities that are actually
-% FUNCTIONS OF THIS STIMULUS (see codes_emu/tasks_tools/
-% create_responses_data_parallel.m): response count (n_response),
-% median_post ("med" -- matches the med=NNN text on the image panel; this is
-% a per-trial MEDIAN, the production pipeline's own field, NOT a mean),
-% mean_post ("mean" -- a genuine per-trial arithmetic MEAN, computed locally
-% since nothing upstream provides one, see plot_response_window_grapes.m),
-% and zscore. Only meaningful for an ARM's page (GT has nothing to compare
-% against itself) -- silently turns off when data_table doesn't carry the
-% gt_* reference columns run_rescue_grape_analysis.m attaches only for arm
-% calls (via plot_response_window_grapes.m's gt_ref argument). Every panel
-% uses the same fixed per-metric colors (metric_line_colors) -- the shared
-% legend explaining them is drawn once per page, in the margin, not
-% repeated on all ~20 individual panels.
-%
-% Drawn as a connected line/marker plot across the {GT, ARM} x-axis, one
-% line per metric -- same idiom as plot_stim_comparison_page_n.m's
-% plot_line_graph_n (the per-stimulus comparison page's top-middle panel),
-% not a bar chart.
-    needed = {'n_response','median_post','mean_post','zscore', ...
-              'gt_n_response','gt_median_post','gt_mean_post','gt_zscore'};
-    if ~all(ismember(needed, data_table.Properties.VariableNames))
-        axis(subplot_ax, 'off');
-        return;
-    end
-    arms = categorical({'GT','ARM'}, {'GT','ARM'});
-    resp = [data_table.gt_n_response(stim_idx),  data_table.n_response(stim_idx)];
-    med  = [data_table.gt_median_post(stim_idx), data_table.median_post(stim_idx)];
-    mn   = [data_table.gt_mean_post(stim_idx),   data_table.mean_post(stim_idx)];
-    zsc  = [data_table.gt_zscore(stim_idx),      data_table.zscore(stim_idx)];
-
-    % Fixed per-metric colors (metric_line_colors), shared with the
-    % page-level legend drawn once in the margin (see
-    % loop_plot_responses_BCM_response_window) -- MATLAB's default color
-    % order resets independently per yyaxis side and isn't guaranteed to
-    % keep med/mean/zscore/resp visually distinct from each other.
-    c = metric_line_colors();
-
-    % resp (n_response) routinely sits in the hundreds while med/mean/zscore
-    % stay under ~20 -- sharing one axis would flatten those three to
-    % near-invisible, so resp gets its own right-hand axis and the other
-    % three (a comparable scale to each other) share the left.
-    yyaxis(subplot_ax, 'left');
-    hold(subplot_ax, 'on');
-    plot(subplot_ax, arms, med, '-s', 'Color', c.med,    'MarkerFaceColor', c.med);
-    plot(subplot_ax, arms, mn,  '-^', 'Color', c.mean,   'MarkerFaceColor', c.mean);
-    plot(subplot_ax, arms, zsc, '-d', 'Color', c.zscore, 'MarkerFaceColor', c.zscore);
-
-    yyaxis(subplot_ax, 'right');
-    hold(subplot_ax, 'on');
-    plot(subplot_ax, arms, resp, '-o', 'Color', c.resp, 'MarkerFaceColor', c.resp);
-    % yyaxis colors its ticks/axis-line by default (blue left, orange
-    % right) regardless of what color the plotted line actually is --
-    % force the right axis itself to match resp's line color.
-    subplot_ax.YAxis(2).Color = c.resp;
-
-    % No per-panel legend -- repeating it on ~20 tiny subplots was clutter;
-    % one shared legend is drawn once per page instead (see
-    % loop_plot_responses_BCM_response_window's margin_legend).
-    set(subplot_ax, 'FontSize', 3.5*fontsize_mult);
-    title(subplot_ax, 'GT vs ARM values', 'FontSize', 4*fontsize_mult, 'Interpreter','none');
-    grid(subplot_ax, 'on');
-    box(subplot_ax, 'off');
+function s = p_rank_str(p_all, i)
+% rank of p_all(i) among the finite values of p_all (1 = smallest p), as 'r/N'
+    v = isfinite(p_all);
+    if ~v(i), s = '-'; return; end
+    s = sprintf('%d/%d', nnz(p_all(v) < p_all(i)) + 1, nnz(v));
 end
 
-function c = metric_line_colors()
-% METRIC_LINE_COLORS  Fixed color per line in plot_arm_gt_value_bar's
-% med/mean/zscore/resp panel, reused by the page-level margin legend so
-% the swatch colors always match what's actually drawn on every panel.
-    c.med    = [0.00 0.45 0.74];   % blue
-    c.mean   = [0.85 0.33 0.10];   % orange
-    c.zscore = [0.49 0.18 0.56];   % purple
-    c.resp   = [0.00 0.00 0.00];   % black
-end
-
-function plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fontsize_mult, x_jitter)
+function plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fontsize_mult, x_jitter, nm, footer)
 % PLOT_GT_ARM_SUMMARY_FIGURE  One extra, SEPARATE figure (not folded into the
 % per-stimulus page grid) summarizing this whole channel/class's GT-vs-ARM
 % agreement ACROSS every stimulus at once: one subplot per metric, x-axis =
@@ -621,6 +522,11 @@ function plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fo
 % (extra decimal places on mean_post specifically -- with only 1 decimal it
 % was hard to tell whether zscore, which is sensitive to small differences
 % in the per-trial mean, was actually being computed correctly).
+%
+% Each panel's title also carries paired, two-sided GT-vs-ARM tests across
+% stimuli (paired_gt_arm_tests): sign test and Wilcoxon signed-rank. A
+% seventh panel, the per-stimulus sign-test p (p_value_sign), is added when
+% GT's column was joined.
 %
 % Six metrics: n_response/median_post/mean_post/zscore vary genuinely
 % per-stimulus; mu_base/std_base are session-wide CONSTANTS (see
@@ -640,19 +546,31 @@ function plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fo
     if ~all(ismember({metrics.gt_field}, data_table.Properties.VariableNames))
         return;
     end
+    % per-stimulus sign-test p (GT's own vs the arm's own), when available
+    if all(ismember({'p_value_sign','gt_p_value_sign'}, data_table.Properties.VariableNames))
+        metrics(end+1) = struct('field', 'p_value_sign', 'gt_field', 'gt_p_value_sign', ...
+            'label', 'sign-test p (per stimulus)', 'fmt', '%.3g');
+    end
 
-    fig = figure('Visible','off','Color',[1 1 1],'Position',[10 10 900 550], ...
-        'GraphicsSmoothing','off','Name','GT vs ARM summary');
     ncols = 3; nrows = ceil(numel(metrics)/ncols);
+    fig = figure('Visible','off','Color',[1 1 1],'Position',[10 10 1500 380*nrows], ...
+        'GraphicsSmoothing','off','Name',sprintf('%s vs %s summary', nm.ref, nm.arm));
 
     for m = 1:numel(metrics)
         ax = subplot(nrows, ncols, m);
         plot_gt_arm_metric_panel(ax, data_table, metrics(m).field, metrics(m).gt_field, ...
-            metrics(m).label, metrics(m).fmt, fontsize_mult, x_jitter);
+            metrics(m).label, metrics(m).fmt, fontsize_mult, x_jitter, nm);
+        % paired GT-vs-ARM tests across stimuli, two-sided
+        T = paired_gt_arm_tests(data_table.(metrics(m).gt_field), data_table.(metrics(m).field));
+        title(ax, {metrics(m).label, ...
+            sprintf('sign test p=%.3g  (%s higher in %d, lower in %d)', T.p_sign, nm.arm, T.n_up, T.n_down), ...
+            sprintf('signed-rank p=%.3g', T.p_rank)}, 'Interpreter','none', 'FontSize', 6*fontsize_mult);
     end
 
-    sgtitle(fig, sprintf('%s: GT vs ARM per-stimulus summary', extra_label_name), 'Interpreter','none');
+    sgtitle(fig, {sprintf('%s: %s (reference) vs %s per-stimulus summary', extra_label_name, nm.ref, nm.arm), ...
+        'tests: paired across stimuli, two-sided'}, 'Interpreter','none', 'FontSize', 8*fontsize_mult);
 
+    add_footer(fig, footer)
     fig_filename = fullfile(output_dir, sprintf('%s_gt_vs_arm_summary.png', extra_label_name));
     try
         print(fig, fig_filename, '-dpng', '-r150');
@@ -662,17 +580,74 @@ function plot_gt_arm_summary_figure(data_table, output_dir, extra_label_name, fo
     close(fig);
 end
 
-function plot_gt_arm_metric_panel(ax, data_table, field, gt_field, label, fmt, fontsize_mult, x_jitter)
+function T = paired_gt_arm_tests(gt_vals, arm_vals)
+% PAIRED_GT_ARM_TESTS  Paired, two-sided tests of ARM vs GT across stimuli:
+% sign test (direction only: how many stimuli went up vs down) and Wilcoxon
+% signed-rank (also uses the size of each difference). Stimuli with a
+% non-finite value on either side are left out; ties don't count as up/down.
+    v = isfinite(gt_vals) & isfinite(arm_vals);
+    g = gt_vals(v); a = arm_vals(v);
+    d = a - g;
+    T.n_up = nnz(d > 0); T.n_down = nnz(d < 0); T.n = numel(d);
+    T.p_sign = NaN; T.p_rank = NaN;
+    if T.n_up + T.n_down == 0
+        T.p_sign = 1; T.p_rank = 1;
+        return;
+    end
+    T.p_sign = signtest(a, g);
+    T.p_rank = signrank(a, g);
+end
+
+function plot_sign_test_figure(data_table, output_dir, extra_label_name, fontsize_mult, nm, footer)
+% PLOT_SIGN_TEST_FIGURE  Separate page: every stimulus's sign-test p
+% (p_value_sign -- baseline vs post spike counts per trial, one-sided, the
+% test behind the '*' on the raster pages), GT and ARM side by side as
+% -log10(p), with the p = 0.05 line. Silently skipped without the GT column.
+    if ~all(ismember({'p_value_sign','gt_p_value_sign','stim_number'}, data_table.Properties.VariableNames))
+        return;
+    end
+    pg = data_table.gt_p_value_sign; pa = data_table.p_value_sign;
+    n = height(data_table);
+    lg = -log10(max(pg, 1e-300)); la = -log10(max(pa, 1e-300));
+    fig = figure('Visible','off','Color',[1 1 1],'Position',[10 10 max(700, 60*n + 200) 500], ...
+        'GraphicsSmoothing','off','Name','sign test per stimulus');
+    ax = axes(fig); hold(ax, 'on');
+    hb = bar(ax, 1:n, [lg la], 'grouped');
+    hb(1).FaceColor = [0.15 0.15 0.15]; hb(2).FaceColor = [0.75 0.1 0.1];
+    yline(ax, -log10(0.05), 'k--', 'p = 0.05', 'LabelHorizontalAlignment', 'left', 'FontSize', 6*fontsize_mult);
+    set(ax, 'XTick', 1:n, 'XTickLabel', arrayfun(@(s) sprintf('%d', s), data_table.stim_number, 'UniformOutput', false), ...
+        'XTickLabelRotation', 90, 'FontSize', 6*fontsize_mult);
+    xlabel(ax, 'stimulus'); ylabel(ax, '-log_{10}(sign-test p)');
+    legend(ax, {sprintf('%s  (%d/%d p<=0.05)', nm.ref, nnz(pg <= 0.05), nnz(isfinite(pg))), ...
+                sprintf('%s (%d/%d p<=0.05)', nm.arm, nnz(pa <= 0.05), nnz(isfinite(pa)))}, 'Interpreter', 'none', ...
+        'Location', 'northeast', 'FontSize', 6*fontsize_mult, 'Box', 'off');
+    title(ax, sprintf('%s: per-stimulus sign test (baseline vs post, one-sided)', extra_label_name), ...
+        'Interpreter', 'none', 'FontSize', 7*fontsize_mult);
+    grid(ax, 'on'); box(ax, 'off');
+    add_footer(fig, footer)
+    fig_filename = fullfile(output_dir, sprintf('%s_sign_test.png', extra_label_name));
+    try
+        print(fig, fig_filename, '-dpng', '-r150');
+    catch
+        print(fig, '-dpng','-r150', fig_filename);
+    end
+    close(fig);
+end
+
+function plot_gt_arm_metric_panel(ax, data_table, field, gt_field, label, fmt, fontsize_mult, x_jitter, nm)
 % PLOT_GT_ARM_METRIC_PANEL  One GT-vs-ARM paired-line + mean/std-box panel
-% for a single metric, across every stimulus in data_table -- the shared
-% body behind plot_gt_arm_summary_figure's per-metric loop AND the single
-% median_post panel folded into the main raster page's side margin (see
-% loop_plot_responses_BCM_response_window), so both places draw the exact
-% same picture instead of two hand-kept copies.
+% for a single metric, across every stimulus in data_table (one panel of
+% plot_gt_arm_summary_figure). The sign-test p panel (p_value_sign) uses a
+% log y-axis so small p values, and small changes between them, are visible.
     gt_vals  = data_table.(gt_field);
     arm_vals = data_table.(field);
     valid = isfinite(gt_vals) & isfinite(arm_vals);
     gt_vals = gt_vals(valid); arm_vals = arm_vals(valid);
+    log_y = strcmp(field, 'p_value_sign');
+    if log_y   % a p of exactly 0 cannot sit on a log axis
+        gt_vals = max(gt_vals, realmin); arm_vals = max(arm_vals, realmin);
+        set(ax, 'YScale', 'log');
+    end
 
     % Optional x jitter, one offset per stimulus shared by both ends so each
     % paired line stays traceable. Fixed-seed local stream: the same page
@@ -694,30 +669,48 @@ function plot_gt_arm_metric_panel(ax, data_table, field, gt_field, label, fmt, f
     scatter(ax, x_gt,  gt_vals,  10, [0.15 0.15 0.15], 'filled');
     scatter(ax, x_arm, arm_vals, 10, [0.75 0.1 0.1], 'filled');
 
-    draw_mean_std_box(ax, 1, gt_vals,  [0.15 0.15 0.15], fmt, fontsize_mult);
-    draw_mean_std_box(ax, 2, arm_vals, [0.75 0.1 0.1],   fmt, fontsize_mult);
+    draw_mean_std_box(ax, 1, gt_vals,  [0.15 0.15 0.15], fmt, fontsize_mult, log_y);
+    draw_mean_std_box(ax, 2, arm_vals, [0.75 0.1 0.1],   fmt, fontsize_mult, log_y);
 
-    set(ax, 'XLim', [0.5 2.5], 'XTick', [1 2], 'XTickLabel', {'GT','ARM'}, 'FontSize', 6*fontsize_mult);
+    if nargin < 9, nm = struct('ref', 'GT', 'arm', 'ARM'); end
+    set(ax, 'XLim', [0.5 2.5], 'XTick', [1 2], 'XTickLabel', {nm.ref, nm.arm}, 'TickLabelInterpreter', 'none', ...
+        'FontSize', 6*fontsize_mult);
+    % headroom above the data so the mean/std labels never run into the title
+    yl = ylim(ax);
+    if log_y
+        ylim(ax, [yl(1), yl(2) * (yl(2)/yl(1))^0.2]);
+    else
+        yr = max(diff(yl), eps);
+        ylim(ax, [yl(1), yl(2) + 0.2*yr]);
+    end
     title(ax, label, 'Interpreter','none', 'FontSize', 7*fontsize_mult);
     box(ax, 'off');
 end
 
-function draw_mean_std_box(ax, x, vals, color, fmt, fontsize_mult)
+function draw_mean_std_box(ax, x, vals, color, fmt, fontsize_mult, log_y)
 % DRAW_MEAN_STD_BOX  A box+whiskers centered on MEAN +/- STD (deliberately
 % not the usual quartile boxplot -- see plot_gt_arm_summary_figure), plus a
 % text annotation giving the exact numbers at the precision requested for
-% each metric (metrics.fmt).
+% each metric (metrics.fmt). On a log axis (LOG_Y) the box's lower edge is
+% held at the smallest value when mean - std would go below zero.
     if isempty(vals), return; end
+    if nargin < 7, log_y = false; end
     mu = mean(vals,'omitnan'); sd = std(vals,'omitnan');
+    lo = mu - sd;
+    if log_y && lo <= 0, lo = min(vals); end
     box_w = 0.15;
-    patch(ax, x+box_w*[-1 1 1 -1], [mu-sd mu-sd mu+sd mu+sd], color, ...
+    patch(ax, x+box_w*[-1 1 1 -1], [lo lo mu+sd mu+sd], color, ...
           'FaceAlpha', 0.15, 'EdgeColor', color, 'LineWidth', 1.2);
-    line(ax, [x x], [mu-sd mu+sd], 'Color', color, 'LineWidth', 1.2);
+    line(ax, [x x], [lo mu+sd], 'Color', color, 'LineWidth', 1.2);
     line(ax, x+box_w*[-1 1], [mu mu], 'Color', color, 'LineWidth', 1.8);
     txt = sprintf(['mu=' fmt ' sd=' fmt], mu, sd);
     ylims = ylim(ax);
-    yoff = 0.04*diff(ylims);
-    text(ax, x, mu+sd+yoff, txt, 'FontSize', 4.5*fontsize_mult, 'Color', color, ...
+    if log_y
+        y_txt = (mu+sd) * (ylims(2)/ylims(1))^0.04;
+    else
+        y_txt = mu + sd + 0.04*diff(ylims);
+    end
+    text(ax, x, y_txt, txt, 'FontSize', 4.5*fontsize_mult, 'Color', color, ...
         'HorizontalAlignment','center', 'VerticalAlignment','bottom');
 end
 
@@ -810,9 +803,9 @@ function plot_ifr(stim_idx, data_table, grapes, ifr_x, ...
     xlim([-time_pre_ms time_pos_ms])
 
     if ~data_table.good_lat(stim_idx)
-        title(sprintf('lat=%3.0f dur=%3.0f',data_table.onset(stim_idx),data_table.dura(stim_idx)),'fontsize',5*fontsize_mult,'interpreter','none','VerticalAlignment','middle');
+        title(sprintf('lat=%3.0f dur=%3.0f',data_table.onset(stim_idx),data_table.dura(stim_idx)),'fontsize',5*fontsize_mult,'interpreter','none','VerticalAlignment','bottom');
     else
-        title(sprintf('lat=%3.0f dur=%3.0f',data_table.onset(stim_idx),data_table.dura(stim_idx)),'fontsize',5*fontsize_mult,'FontWeight','bold','interpreter','none','VerticalAlignment','middle');
+        title(sprintf('lat=%3.0f dur=%3.0f',data_table.onset(stim_idx),data_table.dura(stim_idx)),'fontsize',5*fontsize_mult,'FontWeight','bold','interpreter','none','VerticalAlignment','bottom');
     end
     box off
     line(xlim,[data_table.ifr_thr(stim_idx) data_table.ifr_thr(stim_idx)],'linestyle','--','color','k')
@@ -850,12 +843,57 @@ function plot_ifr(stim_idx, data_table, grapes, ifr_x, ...
     uistack(lo, 'top');
 end
 
-function add_figure_title(grapes, rank_config, ss_num, fig_num, extra_label)
-% Split across 2 lines -- a single line with everything (label + exp_type +
-% subscr/fig + resp_win + legend note) ran past the figure width and was
-% clipped off on BOTH edges instead of wrapping.
-    line1 = sprintf('%s, %s responses (subscr:%d fig:%d)', extra_label, grapes.exp_type, ss_num, fig_num);
-    line2 = sprintf('resp_win: %dms cent dura (ntsd=%d) -- GREEN lines = in/out boundary', ...
+function add_footer(fig, footer)
+% one bold line at the very bottom of the page (wrapped if long)
+    if isempty(footer), return; end
+    fp = getpixelposition(fig);
+    annotation(fig, 'textbox', [0.01, 2 / fp(4), 0.98, 30 / fp(4)], 'String', strjoin(wrap_line(footer, 125), newline), ...
+        'Interpreter', 'none', 'FontSize', 7, 'FontWeight', 'bold', 'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'bottom', 'LineStyle', 'none', 'Margin', 0, 'FitBoxToText', 'off');
+end
+
+function tl = title_lines(grapes, rank_config, ss_num, fig_num, extra_label)
+% Title lines (label / in-out percentages in bold / exp_type + subscr/fig / resp_win). Lines longer
+% than the page are wrapped here (at spaces / underscores), so every line has its own slot.
+    line2 = sprintf('%s responses (subscr:%d fig:%d)', grapes.exp_type, ss_num, fig_num);
+    line3 = sprintf('resp_win: %dms cent dura (ntsd=%d) -- GREEN lines = in/out boundary (window: see bottom of page)', ...
         rank_config.win_length, rank_config.nstd);
-    sgtitle({line1, line2}, 'interpreter','none', 'fontsize', 8);
+    % in / out percentages (plot_response_window_grapes appends them after ' | in ') on a bold line of their own
+    k = strfind(extra_label, ' | in ');
+    if isempty(k)
+        raw = {extra_label, line2, line3}; b = [false false false];
+    else
+        raw = {extra_label(1:k(1) - 1), ['spikes in the green windows of these stimuli: ' extra_label(k(1) + 3:end)], line2, line3};
+        b = [false true false false];
+    end
+    tl.lines = {}; tl.bold = false(0);
+    for i = 1:numel(raw)
+        w = wrap_line(raw{i}, 115);
+        tl.lines = [tl.lines, w]; tl.bold = [tl.bold, repmat(b(i), 1, numel(w))];
+    end
+end
+
+function out = wrap_line(s, n)
+% split S into pieces of at most N characters, breaking after a space or underscore when possible
+    out = {};
+    while numel(s) > n
+        cut = find(s(1:n) == ' ' | s(1:n) == '_', 1, 'last');
+        if isempty(cut) || cut < n / 2, cut = n; end
+        out{end + 1} = strtrim(s(1:cut)); %#ok<AGROW>
+        s = s(cut + 1:end);
+    end
+    out{end + 1} = strtrim(s);
+end
+
+function add_figure_title(fig, tl)
+% one text box per title line at a fixed pixel height from the top of the page, so they never overlap
+% each other or the grid (which starts below the band sized for these lines)
+    fp = getpixelposition(fig); line_px = 14;
+    for i = 1:numel(tl.lines)
+        fw = 'normal'; if tl.bold(i), fw = 'bold'; end
+        annotation(fig, 'textbox', [0, (fp(4) - 4 - i * line_px) / fp(4), 1, line_px / fp(4)], 'String', tl.lines{i}, ...
+            'Interpreter', 'none', 'FontSize', 8, 'FontWeight', fw, ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', 'LineStyle', 'none', ...
+            'Margin', 0, 'FitBoxToText', 'off');
+    end
 end

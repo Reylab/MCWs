@@ -26,10 +26,17 @@ function G = arm_wave_groups(T, cls, gt_t, tol)
 % G.masks          - logical row masks: in_cls, resc, q, is_c0, is_qnr, and the
 %                    pie groups is_I, is_core (II-I), is_III (III-II), is_IV
 % G.venn_rows      - arm-file rows of each cluster-venn region (S.rows)
+% G.has_mahal / G.masks.is_mahal - only when the times file has per-spike
+%                    mahal_reassigned (class set by the Mahalanobis step, not the
+%                    template match); otherwise has_mahal = false -- never estimated
 % Each group is a struct with .name, .W (n x samples), .color.
 
     lab = T.cluster_class(:,1);
-    resc = logical(T.quarantine.rescued(:));
+    if isfield(T.quarantine, 'rescued')
+        resc = logical(T.quarantine.rescued(:));
+    else
+        resc = false(size(T.cluster_class, 1), 1);   % no rescue step (clustering-only run)
+    end
     forced = logical(T.forced(:));
     q = logical(T.quarantine.all(:));
     W = double(T.spikes);
@@ -85,12 +92,23 @@ function G = arm_wave_groups(T, cls, gt_t, tol)
     end
     G.per_class = struct('class', cls, 'templates', G.templates, 'resc_by_prop', gp);
 
+    % how each forced / rescued spike got its class, ONLY when the run saved it
+    % (per-spike mahal_reassigned, newer Python second pass). Never estimated.
+    if isfield(T, 'mahal_reassigned') && numel(T.mahal_reassigned) == numel(lab)
+        is_mahal = logical(T.mahal_reassigned(:));
+        G.has_mahal = true;
+    else
+        is_mahal = false(size(lab));
+        G.has_mahal = false;
+    end
+
     G.counts = struct('n_I', nnz(is_I), 'n_core', nnz(is_core), 'n_II', nnz(is_I) + nnz(is_core), ...
         'n_III_II', nnz(is_III), 'n_IV', nnz(is_IV), 'n_total', nnz(in_cls), ...
         'n_core_moved', nnz(core & ~in_cls), 'n_sd1_core', info.clu_core);
     G.lab = lab;
     G.masks = struct('in_cls', in_cls, 'resc', resc, 'q', q, 'is_c0', is_c0, 'is_qnr', is_qnr, ...
-        'is_I', is_I, 'is_core', is_core, 'is_III', is_III, 'is_IV', is_IV);
+        'is_I', is_I, 'is_core', is_core, 'is_III', is_III, 'is_IV', is_IV, ...
+        'is_mahal', is_mahal);
     % cluster-venn region of every arm spike in CLS (three_set_membership:
     % GT matched to the arm first, then split by quarantine)
     G.venn_rows = S.rows;

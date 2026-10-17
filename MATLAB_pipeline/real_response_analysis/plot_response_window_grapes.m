@@ -58,10 +58,9 @@ function data_table = plot_response_window_grapes(grapes, per_stim, ch, class_nu
 %                   loop) -- when given, this stimulus's arm values are joined against GT's
 %                   SAME stim_number row to add gt_n_response/gt_median_post/gt_mean_post/
 %                   gt_mu_base/gt_std_base/gt_cluster_total/gt_zscore columns to data_table,
-%                   which the engine reads for both its per-stimulus GT-vs-ARM value bar
-%                   (plot_arm_gt_value_bar) and its page-level GT-vs-ARM paired-line summary
-%                   figure (plot_gt_arm_summary_figure). Omit (or pass [] / call for GT
-%                   itself) to skip -- the engine just turns both off.
+%                   which the engine reads for its GT-vs-ARM paired-line summary figure
+%                   (plot_gt_arm_summary_figure). Omit (or pass [] / call for GT
+%                   itself) to skip -- the engine just leaves that figure out.
 %
 %   varargin      - OPTIONAL name-value pairs forwarded to loop_plot_responses_BCM_response_window
 %                   (e.g. 'x_jitter', 0.12 to jitter the GT-vs-ARM paired-line panels).
@@ -129,6 +128,14 @@ function data_table = plot_response_window_grapes(grapes, per_stim, ch, class_nu
         lbl = sprintf('%s_ch_%s_%s (%d response spks)(ifr_t=%.1fHz)', extra_label_base, ...
                       grapes.rasters.(cf).details.ch_label, cls, n_response_spikes, ifr_thr);
     end
+    % inside = spikes in the green windows of the stimuli on this page (the stim list only, every
+    % presentation); outside = every other spike of the unit / subset
+    if ~isempty(cluster_total) && cluster_total > 0
+        n_out = cluster_total - n_response_spikes;
+        lbl = sprintf('%s | in %d (%.1f%% of all) | out %d (%.1f%% of all) | in/out %.1f%%', lbl, ...
+                      n_response_spikes, 100 * n_response_spikes / cluster_total, n_out, ...
+                      100 * n_out / cluster_total, 100 * n_response_spikes / max(n_out, 1));
+    end
 
     % OPTIONAL: per-stimulus response count AND mean_post, folded into the
     % image panel's own mu/std text line (see
@@ -175,13 +182,12 @@ function data_table = plot_response_window_grapes(grapes, per_stim, ch, class_nu
     end
 
     % OPTIONAL: join GT's reference values onto this arm's data_table by
-    % stim_number, for the engine's per-stimulus GT-vs-ARM value bar
-    % (plot_arm_gt_value_bar) and its page-level paired-line summary figure
+    % stim_number, for the engine's GT-vs-ARM paired-line summary figure
     % (plot_gt_arm_summary_figure). Only meaningful when gt_ref itself
     % carries n_response/cluster_total (i.e. GT's own call was also given a
     % cluster_total) -- otherwise there's nothing to compare against, so skip
     % quietly and leave data_table without gt_* columns (the engine turns
-    % both off in that case too). gt_mu_base/gt_std_base/gt_cluster_total are
+    % that figure out in that case too). gt_mu_base/gt_std_base/gt_cluster_total are
     % pooled, session-wide CONSTANTS (see codes_emu/tasks_tools/
     % create_responses_data_parallel.m) -- still joined below since
     % plot_gt_arm_summary_figure and test_rescue_grape_metrics.m-style
@@ -214,9 +220,20 @@ function data_table = plot_response_window_grapes(grapes, per_stim, ch, class_nu
         data_table.gt_std_base      = gt_std_base;
         data_table.gt_cluster_total = gt_cluster_total;
         data_table.gt_zscore        = gt_zscore;
-
-        save(fullfile(output_dir,'data_table.mat'),'data_table');
+        % GT's own per-stimulus sign-test p (same test the production grapes
+        % plots mark with '*'), for the GT-vs-ARM summary and sign-test pages
+        if ismember('p_value_sign', gt_ref.Properties.VariableNames)
+            gt_p_value_sign = nan(n_stims,1);
+            for i = 1:n_stims
+                gi = find(gt_ref.stim_number == data_table.stim_number(i), 1);
+                if ~isempty(gi), gt_p_value_sign(i) = gt_ref.p_value_sign(gi); end
+            end
+            data_table.gt_p_value_sign = gt_p_value_sign;
+        end
     end
+    % every call, with or without a GT join (GT itself, subsets): the numbers
+    % behind the page
+    save(fullfile(output_dir,'data_table.mat'),'data_table');
 
     nwins2plot = max(1, ceil(height(data_table)/20));
 

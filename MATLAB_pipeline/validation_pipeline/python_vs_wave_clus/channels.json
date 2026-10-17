@@ -1,0 +1,311 @@
+{
+  "single_channel": "/mnt/data0/MCWs Sessions/matlab validation/single channel",
+  "out_dir": "/mnt/data0/MCWs Sessions/matlab validation/single channel/analysis_python_vs_wave_clus",
+  "recluster_runs": "/mnt/data0/recluster_runs",
+  "python_arm": "python_recluster_20261012_second_pass",
+  "python_before": "python_recluster_20261007_rescued",
+  "second_pass_subdir": "10_12_reclust_test",
+  "fair_min": 0.8,
+  "units": [
+    {
+      "session": "pt6_ch333",
+      "folder": "pt 6 emu 13 ch 333",
+      "ch": 333,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS04 raw_333.mat",
+      "run": "p06_EMU-013_ch333_zuck-ticks-wwe",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-013_ch333_zuck-ticks-wwe/times_2026-10-07_23-15-30",
+      "id": "ch333_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt6_ch333",
+      "folder": "pt 6 emu 13 ch 333",
+      "ch": 333,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS04 raw_333.mat",
+      "run": "p06_EMU-013_ch333_zuck-ticks-wwe",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-013_ch333_zuck-ticks-wwe/times_2026-10-07_23-15-30",
+      "id": "ch333_GT1_pyc1",
+      "python_class": 1,
+      "py_tag": "_pyc1",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt6_ch333",
+      "folder": "pt 6 emu 13 ch 333",
+      "ch": 333,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS04 raw_333.mat",
+      "run": "p06_EMU-013_ch333_zuck-ticks-wwe",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-013_ch333_zuck-ticks-wwe/times_2026-10-07_23-15-30",
+      "id": "ch333_GT1_pyc1_wc3",
+      "python_class": 1,
+      "py_tag": "_pyc1",
+      "wc_class": 3,
+      "wc_tag": "_wc3",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt4_ch259",
+      "folder": "pt 4 emu 7 ch 259",
+      "ch": 259,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLPBTG03 raw_259.mat",
+      "run": "p04_EMU-007_ch259_selectivity",
+      "wave_clus": [
+        "wave_clus2"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p04_EMU-007_ch259_selectivity/times_2026-10-07_23-16-31",
+      "id": "ch259_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt12_ch299",
+      "folder": "pt 12 emu 18 ch 299",
+      "ch": 299,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mRFUS02 raw_299.mat",
+      "run": "p12_EMU-018_ch299_numb",
+      "wave_clus": [
+        "wave_clus7"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch299_numb/times_2026-10-07_23-14-52",
+      "id": "ch299_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt12_ch300_class1",
+      "folder": "pt 12 emu 18 ch 300",
+      "ch": 300,
+      "gt_class": 1,
+      "tok": "_class1",
+      "times_file": "times_mRFUS03 raw_300.mat",
+      "run": "p12_EMU-018_ch300_faces",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch300_faces/times_2026-10-07_23-16-04",
+      "id": "ch300_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt12_ch300_class2",
+      "folder": "pt 12 emu 18 ch 300",
+      "ch": 300,
+      "gt_class": 2,
+      "tok": "_class2",
+      "times_file": "times_mRFUS03 raw_300.mat",
+      "run": "p12_EMU-018_ch300_faces",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch300_faces/times_2026-10-07_23-16-04",
+      "id": "ch300_GT2",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt11_ch328_second_pass",
+      "folder": "pt 11 emu 17 ch 328",
+      "ch": 328,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS08 raw_328.mat",
+      "run": "p11_EMU-017_ch328",
+      "wave_clus": [
+        "wave_clus_20261008"
+      ],
+      "python_arm": "python_recluster_20261012_second_pass",
+      "python_before": "python_recluster_20261007_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p11_EMU-017_ch328/times_2026-10-07_23-15-08",
+      "id": "ch328_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt10_ch368_recluster_sd1",
+      "folder": "pt 10 emu 7 ch 368",
+      "ch": 368,
+      "gt_class": 3,
+      "tok": "",
+      "times_file": "times_mRFUS07 raw_368.mat",
+      "run": "p10_EMU-007_ch368",
+      "wave_clus": [
+        "wave_clus_forced_20261009"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_20261001_rescued",
+      "second_pass_input": "/mnt/data0/python_p10EMU07CH368/Rescue_STD2/times_2026-10-01_16-23-02",
+      "id": "ch368_GT3",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": "10_12_reclust_test"
+    },
+    {
+      "session": "pt6emu7_ch334_class1",
+      "folder": "pt 6 emu 7 ch 334",
+      "ch": 334,
+      "gt_class": 1,
+      "tok": "_class1",
+      "times_file": "times_mLFUS05 raw_334.mat",
+      "run": "p06_EMU-007_ch334",
+      "wave_clus": [
+        "wave_clus1"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_recluster_20261013_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-007_ch334/times_2026-10-13_22-37-56",
+      "id": "ch334_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": ""
+    },
+    {
+      "session": "pt6emu7_ch334_class2",
+      "folder": "pt 6 emu 7 ch 334",
+      "ch": 334,
+      "gt_class": 2,
+      "tok": "_class2",
+      "times_file": "times_mLFUS05 raw_334.mat",
+      "run": "p06_EMU-007_ch334",
+      "wave_clus": [
+        "wave_clus5"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_recluster_20261013_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-007_ch334/times_2026-10-13_22-37-56",
+      "id": "ch334_GT2",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": ""
+    },
+    {
+      "session": "pt6emu7_ch334_class3",
+      "folder": "pt 6 emu 7 ch 334",
+      "ch": 334,
+      "gt_class": 3,
+      "tok": "_class3",
+      "times_file": "times_mLFUS05 raw_334.mat",
+      "run": "p06_EMU-007_ch334",
+      "wave_clus": [
+        "wave_clus1"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_recluster_20261013_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-007_ch334/times_2026-10-13_22-37-56",
+      "id": "ch334_GT3",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": ""
+    },
+    {
+      "session": "pt9emu3_ch337_class3",
+      "folder": "pt 9 emu 3 ch 337",
+      "ch": 337,
+      "gt_class": 3,
+      "tok": "_class3",
+      "times_file": "times_mLFUS08 raw_337.mat",
+      "run": "p09_EMU-003_ch337",
+      "wave_clus": [
+        "wave_clus1"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_recluster_20261013_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p09_EMU-003_ch337/times_2026-10-13_22-38-10",
+      "id": "ch337_GT3",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": ""
+    },
+    {
+      "session": "pt9emu3_ch337_class4",
+      "folder": "pt 9 emu 3 ch 337",
+      "ch": 337,
+      "gt_class": 4,
+      "tok": "_class4",
+      "times_file": "times_mLFUS08 raw_337.mat",
+      "run": "p09_EMU-003_ch337",
+      "wave_clus": [
+        "wave_clus1"
+      ],
+      "python_arm": "python_recluster_20261013_second_pass",
+      "python_before": "python_recluster_20261013_rescued",
+      "second_pass_input": "/mnt/data0/recluster_runs/p09_EMU-003_ch337/times_2026-10-13_22-38-10",
+      "id": "ch337_GT4",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "",
+      "second_pass_subdir": ""
+    }
+  ],
+  "_note": "wave_clus: the one run per GT unit most similar to both GT and python's GT cluster (mean of GT recovered, GT purity, overlap with python both ways)",
+  "_note_python_arm": "per unit: python_arm = newest second pass (converted), python_before = its input (the pipeline's rescue sort). ch368's second pass ran 2026-10-13 with the same code as the 10_12 runs.",
+  "_note_python_class": "python_class: null = python's cluster matched to GT; a number fixes it (py_tag suffixes that unit's python comparison folders, e.g. ch333 GT1 vs python c1)",
+  "_note_wc_class": "wc_class: null = the wave_clus cluster matched to GT; a number fixes it (wc_tag suffixes that wave_clus-vs-python folder). ch333 python c1 is split 59/38 between wave_clus4 c1 and c3, so both are compared.",
+  "trial_metrics": "/mnt/data0/MCWs Sessions/matlab validation/single channel/analysis_python_vs_wave_clus/trials/trial_metrics.csv",
+  "_note_new_runs": "ch334 (pt6 emu7) and ch337 (pt9 emu3): python run 2026-10-13 with the same pipeline settings (first pass + second pass, second_pass_* at the top of the run folder: second_pass_subdir ''); wave_clus run per GT unit picked by GT F1 + overlap with python's GT cluster"
+}

@@ -1,4 +1,4 @@
-function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir)
+function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir, ref_name)
 % CLASS_MATCH_FIGURE  Per (channel, arm): two stacked-bar panels -
 %   left  = where each ground-truth class's spikes go (arm classK / class0 /
 %           unmatched), as a fraction of the GT class
@@ -8,7 +8,13 @@ function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir)
 % detail_tbl/comp_tbl are match_cc's DET/COMP output, stacked across arms
 % with an added 'arm' column. Shared by validate_recluster_vs_handselect.m
 % and analyze_cluster_membership.m.
+% ref_name (optional) names the reference in every label instead of 'GT'
+% (e.g. 'wave_clus1' when a wave_clus run is the reference); when given,
+% the file is class_match_ch<ch>_<ref>_vs_<arm>.png.
     if isempty(detail_tbl), return; end
+    named = nargin >= 6 && ~isempty(ref_name);
+    if ~named, ref_name = 'GT'; end
+    ref_name = char(ref_name);
     arm_names = cellstr(arm_names);
     for ai = 1:numel(arm_names)
         an = arm_names{ai};
@@ -41,8 +47,8 @@ function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir)
             M2 = zeros(ng, 4); rlab = strings(ng, 1);
             for gi = 1:ng
                 sub = C(C.gt_class == gcs(gi), :);
-                if isempty(sub), rlab(gi) = sprintf('gt %d', gcs(gi)); continue; end
-                rlab(gi) = sprintf('gt %d -> arm %d', gcs(gi), sub.arm_class(1));
+                if isempty(sub), rlab(gi) = sprintf('%s %d', ref_name, gcs(gi)); continue; end
+                rlab(gi) = sprintf('%s %d -> cluster %d', ref_name, gcs(gi), sub.arm_class(1));
                 keys = ["gt_class" + string(gcs(gi)), "gt_other", "gt_class0", "new_no_gt_spike"];
                 for si = 1:4
                     m = sub.src == keys(si);
@@ -52,13 +58,15 @@ function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir)
 
             f = figure('Visible', 'off', 'Position', [80 80 1200 max(340, 70*ng + 200)], 'Color', 'w');
             tl = tiledlayout(f, 1, 2, 'Padding', 'loose', 'TileSpacing', 'loose');
-            title(tl, sprintf('ch%d   %s   -   class matching', ch, an), 'Interpreter', 'none');
+            title(tl, {sprintf('ch%d class matching', ch), sprintf('reference: %s     compared: %s', ref_name, an)}, ...
+                  'Interpreter', 'none');
 
             ax = nexttile(tl);
             barh(ax, 1:ng, M1, 'stacked');
-            yticks(ax, 1:ng); yticklabels(ax, "gt " + string(gcs)); ylim(ax, [0.4 ng+0.6]);
-            xlim(ax, [0 1]); xlabel(ax, 'fraction of ground-truth class');
-            title(ax, 'where each GT class''s spikes go');
+            yticks(ax, 1:ng); yticklabels(ax, string(ref_name) + " " + string(gcs)); ylim(ax, [0.4 ng+0.6]);
+            set(ax, 'TickLabelInterpreter', 'none');
+            xlim(ax, [0 1]); xlabel(ax, sprintf('fraction of %s class', ref_name), 'Interpreter', 'none');
+            title(ax, sprintf('where each %s class''s spikes go', ref_name), 'Interpreter', 'none');
             legend(ax, cellstr(dests), 'Interpreter', 'none', 'Location', 'southoutside', ...
                    'Orientation', 'horizontal', 'NumColumns', 4);
 
@@ -66,13 +74,19 @@ function class_match_figure(detail_tbl, comp_tbl, channels, arm_names, cmp_dir)
             barh(ax, 1:ng, M2, 'stacked');
             yticks(ax, 1:ng); yticklabels(ax, rlab); ylim(ax, [0.4 ng+0.6]);
             set(ax, 'TickLabelInterpreter', 'none');
-            xlim(ax, [0 1]); xlabel(ax, 'fraction of matched arm cluster');
-            title(ax, 'what the matched arm cluster is made of');
-            legend(ax, {'this GT class', 'other GT', 'GT class0', 'new (no GT spike)'}, ...
-                   'Location', 'southoutside', 'Orientation', 'horizontal', 'NumColumns', 4);
+            xlim(ax, [0 1]); xlabel(ax, 'fraction of the matched cluster');
+            title(ax, 'what the matched cluster is made of');
+            legend(ax, {sprintf('this %s class', ref_name), sprintf('other %s', ref_name), ...
+                        sprintf('%s class0', ref_name), sprintf('new (no %s spike)', ref_name)}, ...
+                   'Interpreter', 'none', 'Location', 'southoutside', 'Orientation', 'horizontal', 'NumColumns', 2);
 
-            save_fig_local(f, fullfile(cmp_dir, sprintf('class_match_ch%d_%s.png', ch, ...
-                     matlab.lang.makeValidName(an))));
+            if named
+                fn = sprintf('class_match_ch%d_%s_vs_%s.png', ch, matlab.lang.makeValidName(ref_name), ...
+                    matlab.lang.makeValidName(an));
+            else
+                fn = sprintf('class_match_ch%d_%s.png', ch, matlab.lang.makeValidName(an));
+            end
+            save_fig_local(f, fullfile(cmp_dir, fn));
         end
     end
 end

@@ -878,11 +878,9 @@ function waveform_overlay(ch, gt_class, arm_info, match_tbl, NSx, spk_work, gt_c
             w = S.spikes(S.cluster_class(:, 1) == acl, :);
         end
         if isempty(w), continue; end
-        mu = mean(w, 1); sd = std(w, 0, 1); xx = 1:numel(mu);
+        mu = mean(w, 1); xx = 1:numel(mu);
         lw = 2.5 * is_hs + 1.2 * ~is_hs;
         cc = cols(ai, :); if is_hs, cc = [0 0 0]; end
-        fill(ax, [xx fliplr(xx)], [mu+sd fliplr(mu-sd)], cc, ...
-             'FaceAlpha', 0.12, 'EdgeColor', 'none', 'HandleVisibility', 'off');
         h = plot(ax, xx, mu, '-', 'Color', cc, 'LineWidth', lw);
         hh(end+1) = h;
         if is_hs
@@ -895,7 +893,7 @@ function waveform_overlay(ch, gt_class, arm_info, match_tbl, NSx, spk_work, gt_c
     if ~plotted, close(f); return; end
     hold(ax, 'off'); grid(ax, 'on');
     legend(ax, hh, leg, 'Interpreter', 'none', 'Location', 'best');
-    title(ax, sprintf('ch%d  ground-truth class %d  mean waveform +/- std', ch, gt_class), ...
+    title(ax, sprintf('ch%d  ground-truth class %d  mean waveform', ch, gt_class), ...
           'Interpreter', 'none');
     xlabel(ax, 'sample'); ylabel(ax, 'amplitude');
     save_fig(f, fullfile(plot_dir, 'waveform_overlay.png'));
