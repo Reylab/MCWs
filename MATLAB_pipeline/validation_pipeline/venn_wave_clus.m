@@ -32,22 +32,24 @@ addpath(here, fullfile(fileparts(here), 'real_response_analysis'), fullfile(file
 cfg = validation_sessions(session); root = cfg.root; tf = cfg.gt.times_file; g = cfg.gt.class;
 if ~isempty(o.tol), cfg.tol = o.tol; end
 wc = fullfile(root, wc_folder);
+pp = ppt_paths(cfg); wo = wc;                % where the venns go: the run folder, or <tag> validation/<wc_folder>
+if ~isempty(cfg.tag), wo = fullfile(pp.val, wc_folder); end
 assert(exist(fullfile(wc, tf), 'file') == 2, 'venn_wave_clus: no %s in %s', tf, wc);
 assert(exist(fullfile(wc, 'grapes_blanks.mat'), 'file') == 2, 'venn_wave_clus: no grapes_blanks.mat in %s (build_wave_clus_arm)', wc);
 if isempty(o.python)
-    d = dir(fullfile(root, 'python_recluster_*_second_pass')); o.python = d(end).name;
+    o.python = pp.py;
 end
 base = cfg; base.stages = {'class_match', 'venn'}; base.venn_detections = true;
 
 % GT vs wave_clus
 c = base; c.arms = struct('name', 'wave_clus', 'dir', wc, 'times_file', tf, 'grapes_file', 'grapes_blanks.mat', 'class', []);
-c.out_dir = fullfile(wc, sprintf('venn_gt_vs_wave_clus_class%d', g)); run_validation(c);
+c.out_dir = fullfile(wo, sprintf('venn_gt_vs_wave_clus_class%d', g)); run_validation(c);
 
 % GT vs python: kept in the channel folder, or only matched in a temp folder to find python's class X
 c = base; c.arms = struct('name', 'python_sd1', 'dir', fullfile(root, o.python), 'times_file', tf, ...
                           'grapes_file', 'grapes_blanks_rescue.mat', 'class', []);
 if o.gt_vs_python
-    c.out_dir = fullfile(root, sprintf('venn_gt_vs_python_class%d', g));
+    c.out_dir = fullfile(pp.val, sprintf('venn_gt_vs_python_class%d', g));
 else
     c.out_dir = fullfile(tempdir, 'venn_wave_clus_gt_vs_python'); c.stages = {'class_match'};
 end
@@ -56,6 +58,6 @@ A = readtable(fullfile(c.out_dir, 'arm_classes.csv')); X = A.class(1);
 
 % wave_clus vs python, around python cluster X
 python_cluster_validation(session, wc_folder, X, 'python', o.python, 'tol', cfg.tol, ...
-    'out_dir', fullfile(wc, sprintf('venn_wave_clus_vs_python_c%d', X)));
+    'out_dir', fullfile(wo, sprintf('venn_wave_clus_vs_python_c%d', X)));
 fprintf('[venn_wave_clus] %s / %s: done (GT class %d, python %s c%d)\n', session, wc_folder, g, o.python, X);
 end

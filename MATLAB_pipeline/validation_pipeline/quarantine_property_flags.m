@@ -13,14 +13,16 @@ function [M, labels, active] = quarantine_property_flags(T)
 %                         Python quarantine reason
 %   refractory            refractory_period           (MATLAB mask_non_refract)
 %   task-specific         task_specific               (MATLAB mask_taskspks)
+%   opposite peak         within_channel: opposite-polarity ratio > threshold on BOTH sides of the peak
+%                         (python 2026-10-19 on; inactive for runs without the rule)
 %
-%   M      - n_spikes x 9 logical, failed that mask AND the mask fed this
+%   M      - n_spikes x 10 logical, failed that mask AND the mask fed this
 %            run's quarantine (all-false column for an inactive mask)
-%   labels - the 9 names above
-%   active - 1 x 9 logical: the mask fed this run's quarantine. The union of
+%   labels - the 10 names above
+%   active - 1 x 10 logical: the mask fed this run's quarantine. The union of
 %            the active columns is quarantine.all.
     labels = {'bundle collision', 'collision', 'structural', 'low amplitude', 'bad width', ...
-              'bad prominence ratio', 'multipeak', 'refractory', 'task-specific'};
+              'bad prominence ratio', 'multipeak', 'refractory', 'task-specific', 'opposite peak'};
     sp = adapt_python_spikes_for_matlab(T);
     n = numel(sp.index_all);
     M = false(n, numel(labels));
@@ -40,6 +42,9 @@ function [M, labels, active] = quarantine_property_flags(T)
             if isfield(qp, wc{i})
                 M(:, 2+i) = logical(qp.(wc{i})(:)); active(2+i) = true;
             end
+        end
+        if isfield(qp, 'fail_opposite_peak')
+            M(:, 10) = logical(qp.fail_opposite_peak(:)); active(10) = true;
         end
         if ~any(active(3:6))
             warning('quarantine_property_flags: within_channel present but its per-check flags could not be rebuilt.');

@@ -5,6 +5,7 @@ and .odp; never touches any other file.
 
     python build_channel_deck.py "<channel>/for ppt"            # one GT unit
     python build_channel_deck.py "<channel>/for ppt/GT c3"      # a channel with several GT units
+    python build_channel_deck.py "<channel>/10_19 for ppt"      # a tagged run: arm from '<channel>/python second pass 10_19'
 
 Needs python-pptx (scratch venv) and LibreOffice (/opt/libreoffice7.5) for the .odp.
 """
@@ -51,7 +52,8 @@ def table(slide, rows, x, y, w, col_w, size=9):
 
 def build(rep):
     rep = rep.rstrip('/')
-    chan_dir = rep.split('/for ppt')[0]; chan = os.path.basename(chan_dir)
+    m = re.match(r'(.*)/(?:(\S+) )?for ppt(?: (\S+))?(?:/|$)', rep)  # <channel>/[<tag> ]for ppt[ <tag>][/GT c<g>]
+    chan_dir, tag = m.group(1), m.group(2) or m.group(3) or ''; chan = os.path.basename(chan_dir)
     wn = os.path.join(rep, 'wave_clus notch')
     mm = first(rep + '/membership_ch*.mat'); ch = re.search(r'membership_ch(\d+)', mm).group(1)
     acc = list(csv.DictReader(open(os.path.join(rep, 'accounting.csv'))))
@@ -60,7 +62,8 @@ def build(rep):
     gt_c = re.search(r'gt class c(\d+)', ' '.join(r['region'] for r in acc)).group(1)
     wc_c = re.search(r'wc_notch class c(\d+)', ' '.join(r['region'] for r in acc)).group(1)
     py_c = re.search(r'python class c(\d+)', ' '.join(r['region'] for r in acc)).group(1)
-    py_arm = os.path.basename(sorted(glob.glob(chan_dir + '/python_recluster_*_second_pass'))[-1])
+    arm_dir = (os.path.join(chan_dir, f'run {tag}') if tag[:1].isalpha() else os.path.join(chan_dir, f'python second pass {tag}')) if tag else chan_dir
+    py_arm = os.path.basename(sorted(glob.glob(arm_dir + '/python_recluster_*_second_pass'))[-1])
 
     def n(cmp, reg, f='n_spikes'):
         return cls.get(cmp + '|' + reg, {}).get(f, '?')
@@ -70,7 +73,7 @@ def build(rep):
 
     # 1 title
     s = prs.slides.add_slide(prs.slide_layouts[0])
-    s.shapes.title.text = chan
+    s.shapes.title.text = chan + (f' ({tag} run)' if tag else '')
     s.placeholders[1].text = (f'GT c{gt_c}  |  wave_clus notch c{wc_c}  |  python c{py_c} ({py_arm})\n'
                               'wave_clus and python both with GT\'s notch')
     # 2 wave_clus
@@ -146,7 +149,7 @@ def build(rep):
     else:
         text(s, 'no flags', 0.3, 0.8, 12, 0.5, 12)
 
-    out = os.path.join(rep, f'{chan} wc_mcws_auto.pptx')
+    out = os.path.join(rep, f'{chan}{" " + tag if tag else ""} wc_mcws_auto.pptx')
     prs.save(out)
     prof = tempfile.mkdtemp(prefix='lo_')
     subprocess.run([SOFFICE, f'-env:UserInstallation=file://{prof}', '--headless', '--convert-to', 'odp',

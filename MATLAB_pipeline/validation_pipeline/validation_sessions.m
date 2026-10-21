@@ -1,10 +1,13 @@
-function cfg = validation_sessions(id)
+function cfg = validation_sessions(id, varargin)
 % VALIDATION_SESSIONS  Every validation run as one row; returns the cfg for
 % run_validation.
 %
 %   run_validation('pt11_ch328_second_pass')      % run_validation looks the id up
 %   cfg = validation_sessions('pt11_ch328_second_pass');
 %   validation_sessions()                         % list every id
+%   validation_sessions('add', id, folder, ch, stims, gt_times_file, gt_class)
+%                                                 % add a session for this MATLAB session only
+%                                                 % (folder = absolute channel folder; used by mcws_validation)
 %
 % Row: id | channel folder | ch | stim list | reference | arm(s) | output folder | flags
 %   reference / arm: {name, subfolder, times file, grapes file, class}
@@ -14,7 +17,7 @@ function cfg = validation_sessions(id)
 % Shared settings for every run: tol 0.5 ms, min_recall 0.5, dyn_buffer 30 ms,
 % x_jitter 0.12.
 
-SC = '/mnt/data0/MCWs Sessions/matlab validation/single channel/';
+SC = [mcws_paths().single_channel filesep];   % single channel root: mcws_paths.m
 t368 = 'times_mRFUS07 raw_368.mat'; t328 = 'times_mLFUS08 raw_328.mat';
 gb = 'grapes_blanks.mat'; gr = 'grapes_blanks_rescue.mat';
 s368 = [410 330 532 776 492 496 72 124 951 130 166 273 585 35 533 16 542 3 490 180];
@@ -84,15 +87,28 @@ R = {
 'pt6emu13_ch334_class3',             'pt 6 emu 13 ch 334',    334, [133 418 404 717 39 180 3 107 53 265 60 175 134 132 7], gt('times_mLFUS05 raw_334.mat', 3), {rec14('times_mLFUS05 raw_334.mat')}, 'validation_gt_vs_python_recluster_20261014_class3', {}
 'pt6emu13_ch334_class4',             'pt 6 emu 13 ch 334',    334, [736 839 744 159 239 366 9 8 214 48 7 11 10 350 524 29 642 270 331 486], gt('times_mLFUS05 raw_334.mat', 4), {rec14('times_mLFUS05 raw_334.mat')}, 'validation_gt_vs_python_recluster_20261014_class4', {}
 };
+persistent EXTRA                                 % sessions added at run time ('add')
+if isempty(EXTRA), EXTRA = cell(0, size(R, 2)); end
+if nargin >= 1 && strcmp(id, 'add')
+    [nid, folder, ch, stims, tf, g] = varargin{1:6};
+    row = {nid, folder, ch, stims, {'gt', 'hand selected', tf, gb, g}, {{'python', '', tf, gr, []}}, ...
+           sprintf('validation_gt_vs_python_class%d', g), {}};
+    EXTRA(strcmp(EXTRA(:, 1), nid), :) = []; EXTRA(end + 1, :) = row;
+    cfg = nid; return
+end
+R = [R; EXTRA];
 
 if nargin < 1
     fprintf('%s\n', R{:, 1});
     cfg = R(:, 1);
     return
 end
+% 'id@tag' = the same session with a tagged python run: arm = newest python_recluster_*_second_pass in
+% '<channel>/python second pass <tag>', validation in '<channel>/<tag> validation', report in '<channel>/<tag> for ppt' (ppt_paths)
+tag = ''; k = strfind(id, '@'); if ~isempty(k), tag = id(k + 1:end); id = id(1:k - 1); end
 r = R(strcmp(R(:, 1), id), :);
 assert(~isempty(r), 'validation_sessions: unknown id ''%s'' -- validation_sessions() lists them', id);
-cfg.root = [SC r{2}];
+cfg.root = [SC r{2}]; if startsWith(r{2}, filesep), cfg.root = r{2}; end   % added sessions give an absolute folder
 cfg.ch = r{3};
 cfg.stim_list = r{4};
 cfg.gt = unit(cfg.root, r{5});
@@ -105,6 +121,12 @@ cfg.dyn_buffer = 30;    % ms on each side of onset..onset+dura (green window lin
 cfg.x_jitter   = 0.12;  % half-width of x jitter on the GT-vs-ARM paired-line panels
 if any(strcmp(r{8}, 'detections')), cfg.venn_detections = true; end
 if any(strcmp(r{8}, 'channel')),    cfg.channel_subsets = true; end
+cfg.tag = tag;
+if ~isempty(tag)                    % the tagged python arm, and the run's output in the tag's validation folder
+    p = ppt_paths(cfg);
+    for j = 1:numel(cfg.arms), cfg.arms(j).dir = fullfile(cfg.root, p.py); end
+    cfg.out_dir = fullfile(p.val, sprintf('validation_gt_vs_%s_class%d', p.pyname, cfg.gt.class));
+end
 end
 
 function u = unit(root, c)

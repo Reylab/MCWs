@@ -29,6 +29,8 @@ function T = convert_recluster_runs(runs_root, sc_root, varargin)
 %   'top_level'    convert the two top-level times files, default true
 %   'runs'         subset of run folder names, default all
 %   'dry_run'      match and check only, default false
+%   'arm_subdir'   put the arms in this subfolder of the channel folder, default '' (the channel folder),
+%                  e.g. 'python second pass 10_19'
 %
 % OUTPUT
 %   T - one row per (run, arm): run, folder, channel, arm, source, status
@@ -40,6 +42,7 @@ addParameter(p, 'second_pass', false);
 addParameter(p, 'top_level', true);
 addParameter(p, 'runs', {});
 addParameter(p, 'dry_run', false);
+addParameter(p, 'arm_subdir', '');
 parse(p, varargin{:});
 o = p.Results;
 
@@ -116,14 +119,14 @@ for r = runs'
         if ~o.dry_run
             try
                 build_python_arm_from_times('root', root, 'channel', ch, 'exp_type', exp_type, ...
-                    'arm_name', jobs{j,1}, 'python_times_file', jobs{j,2});
+                    'arm_name', fullfile(o.arm_subdir, jobs{j,1}), 'python_times_file', jobs{j,2});
                 status = 'converted';
             catch ME
                 status = ['FAILED: ' ME.message];
             end
             cd(old);
         end
-        rows(end+1, :) = {r.name, hit.name, ch, jobs{j,1}, jobs{j,2}, status}; %#ok<AGROW>
+        rows(end+1, :) = {r.name, hit.name, ch, fullfile(o.arm_subdir, jobs{j,1}), jobs{j,2}, status}; %#ok<AGROW>
         fprintf('[convert] %s -> %s / %s: %s\n', r.name, hit.name, jobs{j,1}, status);
     end
 end

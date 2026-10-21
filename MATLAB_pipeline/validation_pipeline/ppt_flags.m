@@ -11,13 +11,13 @@ function F = ppt_flags(session, multi)
 if nargin < 2, multi = false; end
 here = fileparts(mfilename('fullpath')); addpath(here, fullfile(fileparts(here), 'real_response_analysis'));
 cfg = validation_sessions(session); g = cfg.gt.class; ch = cfg.ch; root = cfg.root;
-out = fullfile(root, 'for ppt'); if multi, out = fullfile(out, sprintf('GT c%d', g)); end
+pp = ppt_paths(cfg, multi); out = pp.rep;
 M = load(fullfile(out, sprintf('membership_ch%d.mat', ch)));
 A = readtable(fullfile(out, 'accounting.csv'), 'TextType', 'string');
-wc = fullfile(root, 'wave_clus notch'); d = dir(fullfile(root, 'python_recluster_*_second_pass')); py = d(end).name;
+wc = pp.wcval; py = pp.pyname;   % validation runs of the wave_clus side; python arm name
 py_c = M.classes.python; wc_c = M.classes.wc_notch;
 runs = {'wave_clus notch vs python', fullfile(wc, sprintf('validation_wave_clus_vs_python_c%d', py_c)), 'wave_clus notch', 'python'; ...
-        'GT vs python', fullfile(root, sprintf('validation_gt_vs_%s_class%d', py, g)), 'GT', 'python'; ...
+        'GT vs python', fullfile(pp.val, sprintf('validation_gt_vs_%s_class%d', py, g)), 'GT', 'python'; ...
         'GT vs wave_clus notch', fullfile(wc, sprintf('validation_gt_vs_wave_clus_notch_class%d', g)), 'GT', 'wave_clus notch'};
 F = cell(0, 5);   % severity | comparison | finding | likely explanation | figures
 

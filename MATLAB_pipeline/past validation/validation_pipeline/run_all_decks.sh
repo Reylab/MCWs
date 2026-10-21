@@ -12,8 +12,8 @@ while ! grep -q "ALL DONE" "$STATUS" 2>/dev/null; do sleep 120; done
 grep -o "\[ppt_check\] [^:]*: PASS" "$STATUS" | sed 's/\[ppt_check\] //; s/: PASS//' > /tmp/deck_units_$$.txt
 grep -q "^pt4_ch259 PASS" "$STATUS" && echo pt4_ch259 >> /tmp/deck_units_$$.txt
 while read -r id; do
-  rep=$(matlab -singleCompThread -batch "addpath('$V'); cfg = validation_sessions('$id'); r = fullfile(cfg.root, 'for ppt'); m = exist(fullfile(r, sprintf('GT c%d', cfg.gt.class)), 'dir') == 7; if m, r = fullfile(r, sprintf('GT c%d', cfg.gt.class)); end; ppt_flags('$id', m); fprintf('REPORT=%s\n', r);" 2>&1 | grep -o "REPORT=.*" | sed 's/REPORT=//')
-  if [ -n "$rep" ] && "$PY" "$V/build_channel_deck.py" "$rep" >> "$OUT.log" 2>&1; then
+  rep=$(matlab -singleCompThread -batch "addpath('$V'); cfg = validation_sessions('$id'); r = fullfile(cfg.root, 'for ppt'); m = exist(fullfile(r, sprintf('GT c%d', cfg.gt.class)), 'dir') == 7; if m, r = fullfile(r, sprintf('GT c%d', cfg.gt.class)); end; ppt_flags('$id', m); fprintf('REPORT=%s\n', r);" < /dev/null 2>&1 | grep -o "REPORT=.*" | sed 's/REPORT=//')
+  if [ -n "$rep" ] && "$PY" "$V/build_channel_deck.py" "$rep" >> "$OUT.log" 2>&1 < /dev/null; then
     echo "$id deck OK  ($(grep -c . "$rep/flags.csv" | awk '{print $1-1}') flags) -> $rep" >> "$OUT"
   else
     echo "$id deck FAILED (see $OUT.log)" >> "$OUT"

@@ -1,0 +1,168 @@
+{
+  "single_channel": "/mnt/data0/MCWs Sessions/matlab validation/single channel",
+  "out_dir": "/mnt/data0/MCWs Sessions/matlab validation/single channel/analysis_python_tuned",
+  "recluster_runs": "/mnt/data0/recluster_runs",
+  "python_arm": "python_recluster_20261012_second_pass",
+  "python_before": "python_recluster_20261007_rescued",
+  "second_pass_subdir": "tuned_width_logdet",
+  "fair_min": 0.8,
+  "units": [
+    {
+      "session": "pt6_ch333",
+      "folder": "pt 6 emu 13 ch 333",
+      "ch": 333,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS04 raw_333.mat",
+      "run": "p06_EMU-013_ch333_zuck-ticks-wwe",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p06_EMU-013_ch333_zuck-ticks-wwe/times_2026-10-07_23-15-30",
+      "id": "ch333_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt4_ch259",
+      "folder": "pt 4 emu 7 ch 259",
+      "ch": 259,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLPBTG03 raw_259.mat",
+      "run": "p04_EMU-007_ch259_selectivity",
+      "wave_clus": [
+        "wave_clus2"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p04_EMU-007_ch259_selectivity/times_2026-10-07_23-16-31",
+      "id": "ch259_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt12_ch299",
+      "folder": "pt 12 emu 18 ch 299",
+      "ch": 299,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mRFUS02 raw_299.mat",
+      "run": "p12_EMU-018_ch299_numb",
+      "wave_clus": [
+        "wave_clus7"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch299_numb/times_2026-10-07_23-14-52",
+      "id": "ch299_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt12_ch300_class1",
+      "folder": "pt 12 emu 18 ch 300",
+      "ch": 300,
+      "gt_class": 1,
+      "tok": "_class1",
+      "times_file": "times_mRFUS03 raw_300.mat",
+      "run": "p12_EMU-018_ch300_faces",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch300_faces/times_2026-10-07_23-16-04",
+      "id": "ch300_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt12_ch300_class2",
+      "folder": "pt 12 emu 18 ch 300",
+      "ch": 300,
+      "gt_class": 2,
+      "tok": "_class2",
+      "times_file": "times_mRFUS03 raw_300.mat",
+      "run": "p12_EMU-018_ch300_faces",
+      "wave_clus": [
+        "wave_clus4"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p12_EMU-018_ch300_faces/times_2026-10-07_23-16-04",
+      "id": "ch300_GT2",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt11_ch328_second_pass",
+      "folder": "pt 11 emu 17 ch 328",
+      "ch": 328,
+      "gt_class": 1,
+      "tok": "",
+      "times_file": "times_mLFUS08 raw_328.mat",
+      "run": "p11_EMU-017_ch328",
+      "wave_clus": [
+        "wave_clus_20261008"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261012_second_pass",
+      "second_pass_input": "/mnt/data0/recluster_runs/p11_EMU-017_ch328/times_2026-10-07_23-15-08",
+      "id": "ch328_GT1",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    },
+    {
+      "session": "pt10_ch368_recluster_sd1",
+      "folder": "pt 10 emu 7 ch 368",
+      "ch": 368,
+      "gt_class": 3,
+      "tok": "",
+      "times_file": "times_mRFUS07 raw_368.mat",
+      "run": "p10_EMU-007_ch368",
+      "wave_clus": [
+        "wave_clus_forced_20261009"
+      ],
+      "python_arm": "python_tuned_width_logdet",
+      "python_before": "python_recluster_20261013_second_pass",
+      "second_pass_input": "/mnt/data0/python_p10EMU07CH368/Rescue_STD2/times_2026-10-01_16-23-02",
+      "id": "ch368_GT3",
+      "python_class": null,
+      "py_tag": "",
+      "wc_class": null,
+      "wc_tag": "_tuned"
+    }
+  ],
+  "before_label": "tuning (python as run -> tuned)",
+  "trial_metrics": "/mnt/data0/MCWs Sessions/matlab validation/single channel/analysis_python_vs_wave_clus/trials/trial_metrics.csv",
+  "trial": {
+    "name": "width_logdet",
+    "within_channel": {
+      "prom_ratio": 2.0,
+      "width_lower": 3.0,
+      "width_upper": 25.0,
+      "low_amp_percentile": 5.0
+    },
+    "mahalanobis": "log-determinant added (Gaussian likelihood)",
+    "same_on_every_channel": true,
+    "chosen_because": "highest mean F1 of 6 trials (as_run 0.699 -> 0.730), largest single-unit loss -0.012; beats wave_clus F1 on every unit"
+  },
+  "_note": "tuned trial: python_arm = the width+log-det trial (same parameters on every channel), python_before = python as run; wave_clus-vs-python folders tagged _tuned",
+  "before_name": "python as run",
+  "after_name": "python tuned"
+}

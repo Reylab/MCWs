@@ -373,6 +373,10 @@ function L = replay_detection(x, par, sr)
 % G, fast_filtfilt), segment by segment, keeping a log: every accepted detection
 % (crossing sample, index, removed by the artifact check) and every below-threshold sample that the
 % dead time skipped (with the detection that blocked it). Global 1-based samples (= index ms * sr/1000).
+for f = {'segments_length', 'w_pre', 'w_post', 'ref_ms', 'detect_order', 'detect_fmin', 'detect_fmax', ...
+         'sort_order', 'sort_fmin', 'sort_fmax', 'stdmin', 'stdmax'}      % python's par stores some as integers
+    if isfield(par, f{1}), par.(f{1}) = double(par.(f{1})); end
+end
 seg = round(par.segments_length * 60 * sr); n = numel(x);
 w_pre = par.w_pre; w_post = par.w_post; ref = floor(par.ref_ms * sr / 1000); sref = floor(ref / 2);
 [b, a] = ellip(par.detect_order, 0.1, 40, [par.detect_fmin par.detect_fmax] * 2 / sr);

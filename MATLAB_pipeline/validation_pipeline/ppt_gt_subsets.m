@@ -16,14 +16,14 @@ function ppt_gt_subsets(session, multi)
 if nargin < 2, multi = false; end
 here = fileparts(mfilename('fullpath')); addpath(here, fullfile(fileparts(here), 'real_response_analysis'));
 cfg = validation_sessions(session); g = cfg.gt.class; ch = cfg.ch; root = cfg.root; tf = cfg.gt.times_file;
-out = fullfile(root, 'for ppt'); if multi, out = fullfile(out, sprintf('GT c%d', g)); end
+pp = ppt_paths(cfg, multi); out = pp.rep;
 M = load(fullfile(out, sprintf('membership_ch%d.mat', ch)));
-d = dir(fullfile(root, 'python_recluster_*_second_pass')); py = d(end).name;
+py = pp.py;
 col.gt = [0 0 0]; col.py = [0.90 0.60 0.00]; col.wc = [0.00 0.45 0.70]; col.q = [0.80 0.15 0.15]; col.m = [0.35 0.35 0.35];
 wc = fullfile(root, 'wave_clus notch');
 
 cmp = struct('arm', {'python', 'wc_notch'}, 'label', {'python', 'wave_clus notch'}, ...
-    'venn', {fullfile(root, sprintf('venn_gt_vs_python_class%d', g)), fullfile(wc, sprintf('venn_gt_vs_wave_clus_class%d', g))}, ...
+    'venn', {fullfile(pp.val, sprintf('venn_gt_vs_python_class%d', g)), fullfile(pp.wcval, sprintf('venn_gt_vs_wave_clus_class%d', g))}, ...
     'dir', {fullfile(out, '09_gt_vs_python'), fullfile(out, 'wave_clus notch', '09_gt_vs_wave_clus')}, ...
     'color', {col.py, col.wc});
 for c = cmp
@@ -48,9 +48,9 @@ for c = cmp
     % sort's spikes: the sort's table) and its pages are the summary
     % summary: the full GT vs <sort> raster pages + per-stimulus summary + sign test
     if strcmp(c.arm, 'python')
-        vd = fullfile(root, sprintf('validation_gt_vs_%s_class%d', py, g));
+        vd = fullfile(pp.val, sprintf('validation_gt_vs_%s_class%d', pp.pyname, g));
     else
-        vd = fullfile(wc, sprintf('validation_gt_vs_wave_clus_notch_class%d', g)); ok = false;
+        vd = fullfile(pp.wcval, sprintf('validation_gt_vs_wave_clus_notch_class%d', g)); ok = false;
         if exist(fullfile(vd, 'validation_state.mat'), 'file')
             w = load(fullfile(vd, 'validation_state.mat'), 'cfg', 'ref_tables'); ok = isfield(w.cfg, 'max_lat') && ~isempty(w.ref_tables);
         end
@@ -79,6 +79,13 @@ for c = cmp
         writetable(Tb, fullfile(sd, [nm(4:end) '_spikes.csv']));
         grp(end + 1) = struct('name', strrep(nm(4:end), '_', ' '), 'W', Wv, 'color', cc); %#ok<AGROW>
         sub_rasters(state, t, nm(4:end), sd, two, ternary(gside, 'gt', 'arm'));
+        % where the region's spikes are in the other sort (GT spikes: in the compared sort; its spikes: in GT)
+        if ~strcmp(nm, '03_matched') && any(m)
+            if gside, oc = ac(m); onm = c.label; oc_match = a; else, oc = gc(m); onm = 'GT'; oc_match = g; end
+            ppt_by_destination(t, Wv, oc, oc_match, onm, tm, fullfile(sd, 'by_destination'), state, two, ...
+                ternary(gside, 'gt', 'arm'), cc, sprintf('ch%d: %s (GT c%d vs %s), by where they are in %s', ...
+                ch, strrep(nm(4:end), '_', ' '), g, lab_a, onm));
+        end
         if isq && any(strcmp(nm, {'04_gt_x_quarantine', '06_quarantine_only'}))   % by quarantine property
             if gside, idx = G.([c.arm '_idx'])(m); else, idx = find(m); end
             by_property(R, idx, t, Wv, tm, sd, state, two, ternary(gside, 'gt', 'arm'), col.q, sprintf('ch%d: %s, by quarantine property (GT c%d vs %s)', ...

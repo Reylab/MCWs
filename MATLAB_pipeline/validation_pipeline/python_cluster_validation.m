@@ -28,9 +28,7 @@ cfg = validation_sessions(session);
 if ~isempty(o.tol), cfg.tol = o.tol; end
 root = cfg.root; tf = cfg.gt.times_file;
 if isempty(o.python)
-    d = dir(fullfile(root, 'python_recluster_*_second_pass'));
-    assert(~isempty(d), 'python_cluster_validation: no python_recluster_*_second_pass folder in %s', root);
-    o.python = d(end).name;
+    pp = ppt_paths(cfg); o.python = pp.py;   % newest python arm (of the run tag, if any)
 end
 P = load(fullfile(root, o.python, tf), 'cluster_class');
 W = load(fullfile(root, wc_run, tf), 'cluster_class');

@@ -111,6 +111,17 @@ function qp = derive_waveform_qc_flags(qp, qc)
         worst = max([double(qp.left_peak_ratio(:)), double(qp.right_peak_ratio(:))], [], 2);
         qp.fail_multipeak = worst > thr & isfinite(worst);
     end
+    % opposite-peak rule (python, 2026-10-19 on; part of within_channel there): quarantined when the
+    % opposite-polarity ratio on BOTH sides of the main peak is above qc.opposite_peak_ratio_both_sides.
+    % Only for runs that had the rule (the threshold is in qc_params); python's own flag when saved.
+    if isfield(qc, 'opposite_peak_ratio_both_sides')
+        if isfield(qp, 'opposite_both_sides')
+            v = double(qp.opposite_both_sides(:)); qp.fail_opposite_peak = v > 0 & isfinite(v);
+        elseif all(isfield(qp, {'left_ratio_used', 'right_ratio_used'}))
+            thr = double(qc.opposite_peak_ratio_both_sides);
+            qp.fail_opposite_peak = double(qp.left_ratio_used(:)) > thr & double(qp.right_ratio_used(:)) > thr;
+        end
+    end
 end
 
 function qp_out = flatten_quarantine_properties(qp_raw)

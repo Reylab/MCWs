@@ -17,7 +17,7 @@ function M = build_ppt_report(o)
 % Layout of <out>:
 %   01_metrics/{gt, python}/        GT metric pages | python report cluster page
 %   02_venns/gt_vs_python/          GT vs python class matches + venns
-%   06_all_classes/                 rasters of every GT and python class
+%   06_all_classes/                 rasters of every GT and python class (windows of the sort's matched class)
 %   07_no_notch_vs_notch/           compare_detections pages
 %   membership_ch<ch>.mat           every spike of every sort, where it is in every other (build_sort_membership)
 %   <run folder>/                   per compared wave_clus run:
@@ -27,7 +27,7 @@ function M = build_ppt_report(o)
 %     04_subsets/                   python class / wave_clus class / matched: waveforms + rasters
 %     05_wave_clus_x_quarantine/    wave_clus class spikes python quarantined and not in its class,
 %                                   then by quarantine property (waveforms, rasters, counts)
-%     06_all_classes/               rasters of every class of this run
+%     06_all_classes/               rasters of every class of this run (windows of its matched class)
 %   (every raster folder <name> gets a <name>_default_window twin when the run has late-latency or
 %    long-duration stimuli; each page's footer says which window it uses)
 %     08_rasters_wave_clus_vs_python/  full comparison (run class = reference, python class = arm): both raster
@@ -40,13 +40,15 @@ here = fileparts(mfilename('fullpath'));
 addpath(here, fullfile(fileparts(here), 'real_response_analysis'));
 cfg = validation_sessions(o.session); g = cfg.gt.class; tf = cfg.gt.times_file; ch = cfg.ch;
 o.root = cfg.root; stem = tf(7:end - 4);
+pp = ppt_paths(cfg);   % python arm, validation and report folders (run tag: ppt_paths)
 if ~isfield(o, 'python') || isempty(o.python)
-    d = dir(fullfile(o.root, 'python_recluster_*_second_pass')); o.python = d(end).name;
+    o.python = pp.py;
 end
-if ~isfield(o, 'state') || isempty(o.state), o.state = sprintf('validation_gt_vs_%s_class%d', o.python, g); end
-if ~isfield(o, 'out'), o.out = fullfile(o.root, 'for ppt'); end
+[~, pyn] = fileparts(o.python);
+if ~isfield(o, 'state') || isempty(o.state), state = fullfile(pp.val, sprintf('validation_gt_vs_%s_class%d', pyn, g));
+else, state = fullfile(o.root, o.state); end
+if ~isfield(o, 'out'), o.out = pp.rep; end
 out = o.out; if ~exist(out, 'dir'), mkdir(out); end
-state = fullfile(o.root, o.state);
 st = fullfile(state, 'validation_state.mat'); have = false;
 if exist(st, 'file')                                      % tables made with the current window rule (cfg.max_dura)
     w = load(st, 'ref_tables', 'cfg'); have = isfield(w, 'ref_tables') && ~isempty(w.ref_tables) && isfield(w.cfg, 'max_lat');
@@ -62,7 +64,7 @@ col.wc = [0.00 0.45 0.70]; col.py = [0.90 0.60 0.00]; col.both = [0.35 0.35 0.35
 %% shared: GT / python metrics, GT vs python venns
 copy_into(dir(fullfile(o.root, 'hand selected', 'metrics', '*.png')), fullfile(out, '01_metrics', 'gt'));
 pdf_pages(fullfile(o.root, o.python, 'metrics'), fullfile(out, '01_metrics', 'python'));
-copy_venns(fullfile(o.root, sprintf('venn_gt_vs_python_class%d', g)), fullfile(out, '02_venns', 'gt_vs_python'));
+copy_venns(fullfile(pp.val, sprintf('venn_gt_vs_python_class%d', g)), fullfile(out, '02_venns', 'gt_vs_python'));
 
 %% membership: GT, python and every wave_clus run
 rn = arrayfun(@(r) matlab.lang.makeValidName(['wc_' r.label]), o.runs, 'UniformOutput', false);
@@ -71,12 +73,14 @@ sorts = struct('name', [{'gt', 'python'}, rn], 'file', [{fullfile(o.root, 'hand 
 M = build_sort_membership(sorts, 'tol', o.tol, 'out_file', fullfile(out, sprintf('membership_ch%d.mat', ch)));
 P = M.python; G = M.gt;
 py_c = mode(G.python_class(G.class == g & G.python_class > 0));
-% 06: every GT and python class, each with its own full-class response windows
-cls_dirs = {'gt', fullfile(o.root, 'hand selected'), 'grapes_blanks.mat'; 'python', fullfile(o.root, o.python), 'grapes_blanks_rescue.mat'};
-for i = 1:size(cls_dirs, 1)
-    T = M.(cls_dirs{i, 1});
+% 06: every GT and python class, all with the windows of that sort's MATCHED class (GT's class g, python's
+% matched class): the GT vs python run's reference table for GT spikes, its arm table for python spikes
+w = load(fullfile(state, 'validation_state.mat'), 'ref_tables_default');
+two_g = isfield(w, 'ref_tables_default') && ~isempty(w.ref_tables_default);
+for s = {'gt', 'gt'; 'python', 'arm'}'
+    T = M.(s{1});
     for k = unique(T.class(T.class > 0))'
-        plot_class_rasters(state, cls_dirs{i, 2}, cls_dirs{i, 3}, tf, k, sprintf('%s_c%d', cls_dirs{i, 1}, k), fullfile(out, '06_all_classes'));
+        subset_rasters(state, T.t(T.class == k), sprintf('%s_c%d', s{1}, k), fullfile(out, '06_all_classes'), two_g, s{2});
     end
 end
 M.classes = struct('gt', g, 'python', py_c);
@@ -84,6 +88,7 @@ M.classes = struct('gt', g, 'python', py_c);
 %% per wave_clus run
 for r = 1:numel(o.runs)
     run = o.runs(r); nm = rn{r}; R = run.folder; wcf = fullfile(o.root, R);
+    wco = wcf; if ~isempty(cfg.tag), wco = fullfile(pp.val, R); end   % its validation runs / venns
     W = M.(nm); wave = M.waves.(nm);
     wc_c = mode(P.([nm '_class'])(P.class == py_c & P.([nm '_class']) > 0));
     M.classes.(nm) = wc_c;
@@ -94,7 +99,7 @@ for r = 1:numel(o.runs)
 
     % 08 (made first: its windows are the subsets' windows): full raster comparison, this run's class (reference) vs python's class: both raster pages and the
     % per-stimulus summary (n response, median / mean post, z-score, baseline, sign-test p; paired tests)
-    vd = fullfile(wcf, sprintf('validation_wave_clus_vs_python_c%d', py_c));
+    vd = fullfile(wco, sprintf('validation_wave_clus_vs_python_c%d', py_c));
     sm = dir(fullfile(vd, 'stimulus_rasters', '**', '*_gt_vs_arm_summary.png')); ok = false;
     if ~isempty(sm), w = load(fullfile(vd, 'validation_state.mat'), 'cfg'); ok = isfield(w.cfg, 'max_lat'); end
     if ~ok
@@ -114,8 +119,8 @@ for r = 1:numel(o.runs)
 
     % 01 / 02: copies
     copy_into(dir(fullfile(wcf, 'fig2print*.png')), fullfile(out, R, '01_metrics'));
-    copy_venns(fullfile(wcf, sprintf('venn_wave_clus_vs_python_c%d', py_c)), fullfile(out, R, '02_venns', 'wave_clus_vs_python'));
-    copy_venns(fullfile(wcf, sprintf('venn_gt_vs_wave_clus_class%d', g)), fullfile(out, R, '02_venns', 'gt_vs_wave_clus'));
+    copy_venns(fullfile(wco, sprintf('venn_wave_clus_vs_python_c%d', py_c)), fullfile(out, R, '02_venns', 'wave_clus_vs_python'));
+    copy_venns(fullfile(wco, sprintf('venn_gt_vs_wave_clus_class%d', g)), fullfile(out, R, '02_venns', 'gt_vs_wave_clus'));
 
     % 03: wave_clus class spikes python has neither in its class nor in quarantine (the venn's wave_clus-only)
     in_wc = W.class == wc_c;
@@ -178,8 +183,8 @@ for r = 1:numel(o.runs)
     writetable(table(combo, accumarray(k, 1), 'VariableNames', {'properties', 'n_spikes'}), fullfile(out, s5, 'counts_by_combination.csv'));
 
     % 06: every class of this run
-    for k = unique(W.class(W.class > 0))'                  % each class with its own full-class windows
-        plot_class_rasters(state, wcf, 'grapes_blanks.mat', tf, k, sprintf('wave_clus_c%d', k), fullfile(out, R, '06_all_classes'));
+    for k = unique(W.class(W.class > 0))'                  % every class with the matched wave_clus class's windows
+        rw(W.t(W.class == k), sprintf('wave_clus_c%d', k), fullfile(R, '06_all_classes'));
     end
 end
 

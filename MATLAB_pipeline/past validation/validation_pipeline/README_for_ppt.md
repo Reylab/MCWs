@@ -44,7 +44,7 @@ Only the notch run is compared. No-notch material is kept out of `for ppt`: `mov
 ```
 01_metrics/{gt, python}          GT metric pages, python report cluster page
 02_venns/gt_vs_python            class matches + venns
-06_all_classes/                  every GT and python class, each with ITS OWN class windows
+06_all_classes/                  every GT and python class, with the windows of that sort's matched class
 09_gt_vs_python/                 01_gt_only 02_python_only 03_matched 04_gt_x_quarantine(+by_property)
                                  05_rescued_only 06_quarantine_only(+by_property)  counts.csv  summary/
 accounting.csv                   the check (section 6)
@@ -58,7 +58,7 @@ wave_clus notch/
   03d_quarantine_only            python quarantined spikes in neither class (+ by quarantine property)
   04_subsets                     python class / wave_clus class / matched
   05_wave_clus_x_quarantine      wave_clus class spikes python quarantined, not in python's class (+ by property)
-  06_all_classes                 every wave_clus class, own class windows
+  06_all_classes                 every wave_clus class, with the matched wave_clus class's windows
   08_rasters_wave_clus_vs_python full run: both raster pages + per-stimulus summary (z-score, sign-test p ...) + sign test
   09_gt_vs_wave_clus             01_gt_only 02_wave_clus_only 03_matched counts.csv summary/
 ```

@@ -38,9 +38,8 @@ function arm = build_python_arm_from_times(varargin)
 %         run_rescue_grape_analysis.m arm.
 
     p = inputParser;
-    addParameter(p, 'root', ['/mnt/data0/MCWs Sessions/matlab validation/' ...
-        'single channel/pt 11 emu 17 ch 328']);
-    addParameter(p, 'python_root', '/mnt/data0/python_p11EMU17CH');
+    addParameter(p, 'root', fullfile(mcws_paths().single_channel, 'pt 11 emu 17 ch 328'));   % folders: mcws_paths.m
+    addParameter(p, 'python_root', fullfile(mcws_paths().data, 'python_p11EMU17CH'));
     addParameter(p, 'channel', 328);
     addParameter(p, 'exp_type', 'RSVP_online');
     addParameter(p, 'arm_name', 'python_rescue_test');

@@ -11,7 +11,7 @@
 %   4  define subsets (examples - edit these)
 
 %% 0  setup -------------------------------------------------------------------------------------------------
-V = '/home/ajb/Documents/GitHub/MCWs/MATLAB_pipeline/validation_pipeline';
+V = fullfile(mcws_paths().repo, 'validation_pipeline');   % needs validation_pipeline on the path (for mcws_paths)
 addpath(V, fullfile(fileparts(V), 'real_response_analysis'));
 session = 'pt4_ch259';          % any id from validation_sessions() -- validation_sessions() lists them
 multi   = false;                % true when the channel has more than one GT unit (report goes to for ppt/GT c<g>)

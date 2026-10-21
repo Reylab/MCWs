@@ -18,13 +18,13 @@ if nargin < 3 || isempty(run_label), run_label = 'notch'; end
 if nargin < 4, which = {'03b', '03c', '03d'}; end
 here = fileparts(mfilename('fullpath')); addpath(here, fullfile(fileparts(here), 'real_response_analysis'));
 cfg = validation_sessions(session); g = cfg.gt.class; ch = cfg.ch; root = cfg.root;
-out = fullfile(root, 'for ppt'); if multi, out = fullfile(out, sprintf('GT c%d', g)); end
+pp = ppt_paths(cfg, multi); out = pp.rep;
 M = load(fullfile(out, sprintf('membership_ch%d.mat', ch)));
 nm = matlab.lang.makeValidName(['wc_' run_label]); R = ['wave_clus ' run_label];
 py_c = M.classes.python; wc_c = M.classes.(nm);
-d = dir(fullfile(root, 'python_recluster_*_second_pass')); py = d(end).name;
+py = pp.py;
 % python subsets use python's own full-run windows: the arm table of the wave_clus vs python run (08)
-state = fullfile(root, R, sprintf('validation_wave_clus_vs_python_c%d', py_c));
+state = fullfile(pp.wcval, sprintf('validation_wave_clus_vs_python_c%d', py_c));
 w = load(fullfile(state, 'validation_state.mat'), 'ref_tables_default');
 two = isfield(w, 'ref_tables_default') && ~isempty(w.ref_tables_default);
 col.wc = [0.00 0.45 0.70]; col.py = [0.90 0.60 0.00]; col.q = [0.80 0.15 0.15];
