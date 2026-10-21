@@ -11,6 +11,8 @@ function P = ppt_paths(cfg, multi)
 %     rep         = '<channel>/10_19 for ppt[/GT c<g>]'
 %   run tag starting with a letter (id 'pt6emu13_ch264_class3@isi3_sd1'): arm in '<channel>/run isi3_sd1',
 %     val = '<channel>/validation isi3_sd1', wcval = its 'wave_clus notch', rep = '<channel>/for ppt isi3_sd1[/GT c<g>]'
+%   python class given (cfg.python_class = k, instead of the class matched to GT): every folder above gets a
+%     subfolder 'MCWs c<k>' (rep = <report>[/GT c<g>]/MCWs c<k>)
 %   The wave_clus run itself (times, grapes) is always <channel>/wave_clus notch (P.wc).
 % P.py = python arm folder relative to the channel folder (fullfile(root, P.py) is the arm), P.pyname = its name.
 if nargin < 2, multi = false; end
@@ -29,4 +31,9 @@ d = dir(fullfile(root, sub, 'python_recluster_*_second_pass'));
 assert(~isempty(d), 'ppt_paths: no python_recluster_*_second_pass in %s', fullfile(root, sub));
 P.pyname = d(end).name; P.py = fullfile(sub, P.pyname);
 if multi, P.rep = fullfile(P.rep, sprintf('GT c%d', cfg.gt.class)); end
+if isfield(cfg, 'python_class') && ~isempty(cfg.python_class)          % a chosen python class: its own folders
+    k = sprintf('MCWs c%d', cfg.python_class);
+    P.rep = fullfile(P.rep, k); P.val = fullfile(P.val, k);
+    if isempty(tag), P.wcval = fullfile(P.wcval, k); else, P.wcval = fullfile(P.val, 'wave_clus notch'); end
+end
 end

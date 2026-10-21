@@ -34,6 +34,7 @@ if ~isempty(o.tol), cfg.tol = o.tol; end
 wc = fullfile(root, wc_folder);
 pp = ppt_paths(cfg); wo = wc;                % where the venns go: the run folder, or <tag> validation/<wc_folder>
 if ~isempty(cfg.tag), wo = fullfile(pp.val, wc_folder); end
+if strcmp(wc_folder, 'wave_clus notch'), wo = pp.wcval; end         % (ppt_paths decides, also for a chosen class)
 assert(exist(fullfile(wc, tf), 'file') == 2, 'venn_wave_clus: no %s in %s', tf, wc);
 assert(exist(fullfile(wc, 'grapes_blanks.mat'), 'file') == 2, 'venn_wave_clus: no grapes_blanks.mat in %s (build_wave_clus_arm)', wc);
 if isempty(o.python)
@@ -47,7 +48,7 @@ c.out_dir = fullfile(wo, sprintf('venn_gt_vs_wave_clus_class%d', g)); run_valida
 
 % GT vs python: kept in the channel folder, or only matched in a temp folder to find python's class X
 c = base; c.arms = struct('name', 'python_sd1', 'dir', fullfile(root, o.python), 'times_file', tf, ...
-                          'grapes_file', 'grapes_blanks_rescue.mat', 'class', []);
+                          'grapes_file', 'grapes_blanks_rescue.mat', 'class', cfg.python_class);   % [] = matched to GT
 if o.gt_vs_python
     c.out_dir = fullfile(pp.val, sprintf('venn_gt_vs_python_class%d', g));
 else
@@ -55,6 +56,7 @@ else
 end
 run_validation(c);
 A = readtable(fullfile(c.out_dir, 'arm_classes.csv')); X = A.class(1);
+if ~isempty(cfg.python_class), X = cfg.python_class; end            % a chosen python class
 
 % wave_clus vs python, around python cluster X
 python_cluster_validation(session, wc_folder, X, 'python', o.python, 'tol', cfg.tol, ...

@@ -1,4 +1,4 @@
-# <channel folder> | <recording folder, or - to use arms already in the folder> | <ch> | <gt_class> | <stims>
-# gt_class / stims are MATLAB expressions; several GT classes -> one stims vector per class in a cell
-/mnt/data0/MCWs Sessions/matlab validation/single channel/pt 6 emu 13 ch 264|/mnt/data0/sEEG_DATA/MCW-FH_006/EMU/EMU-013_subj-MCW-FH_006_task-RSVPdynamic_scr_run-03|264|3|[615 44 842]
-/mnt/data0/MCWs Sessions/matlab validation/single channel/pt 6 emu 13 ch 334|/mnt/data0/recluster_runs/_gt_notch_recordings/p06_EMU-013_ch334/EMU-013_subj-MCW-FH_006_task-RSVPdynamic_scr_run-03|334|[3 4]|{[133 418 404 717 39 180 3 107 53 265 60 175 134 132 7], [736 839 744 159 239 366 9 8 214 48 7 11 10 350 524 29 642 270 331 486]}
+# <channel folder> | <python run folder to convert, or - to use the arms already there> | <gt_class> | <stims>
+# gt_class and stims are MATLAB expressions (several GT classes: one stims vector per class, in a cell)
+/mnt/data0/MCWs Sessions/matlab validation/single channel/pt 6 emu 13 ch 264|/mnt/data0/recluster_runs/runs_isi3/p06_EMU-013_ch264|3|[615 44 842]
+/mnt/data0/MCWs Sessions/matlab validation/single channel/pt 6 emu 13 ch 334|-|[3 4]|{[133 418 404], [736 839 744]}

@@ -3,8 +3,8 @@
 Compares a MicroWireSorter (MCWs, python) sort of one channel with a wave_clus sort of the same channel and with
 the hand-selected ground truth (GT), and builds a report folder (`for ppt`) and a slide deck from it.
 
-* One channel at a time, everything in one call: `mcws_validation.m` (see `README_mcws_validation.md`).
-* Many channels: `batch/run_batch.sh` (see `README_batch.md`).
+* One channel, everything in one file: `mcws_validation.m` (see `README_mcws_validation.md`).
+* Many channels: `batch/run_batch.sh` calls it once per channel (see `README_batch.md`).
 * This file: the functions behind it, what they need and what they write, in the order they run.
 
 Add the code to the MATLAB path first:
@@ -33,7 +33,7 @@ export MCWS_DATA_ROOT=/data MCWS_ROOT=$HOME/MicroWireSorter WAVE_CLUS_ROOT=$HOME
 ```matlab
 setenv('MCWS_SINGLE_CHANNEL', '/data/my channels');  P = mcws_paths()   % check what is used
 ```
-`mcws_validation` and the batch scripts work on any channel folder you give them; the defaults above only matter for
+`mcws_validation` works on any channel folder you give it; the defaults above only matter for
 the session table, `run_wave_clus_gt_notch`, and where MicroWireSorter / wave_clus are installed. The deck needs a
 python with python-pptx (`mcws_validation`'s `'deck_python'`, default `~/.venvs/pptdeck`).
 
@@ -101,13 +101,15 @@ The stimulus list (`stims`) chooses the raster pages; GT class `g` is the unit c
 | d | `ppt_not_rescued_by_mask(id, multi)` | quarantined spikes never rescued, per quarantine mask, + distance to templates and the value that quarantined each spike (`ppt_quarantine_pages`) | `<region>/not_rescued_by_mask/` (4 regions) |
 | e | `ppt_check_unit(id, multi)` | every venn region rebuilt and counted; regions add up to each class; in-window counts add up to the raster pages | `accounting.csv`; returns true = PASS |
 | f | `ppt_flags(id, multi)` | findings worth a look (large regions, response-rich / -poor regions, ...) | `flags.csv` |
-| opt | `ppt_compare_classes(id, multi, k)` | the whole comparison with python class k instead of the matched one | `alt_python_c<k>/` |
+| opt | `ppt_compare_classes(id, multi, k)` | the whole comparison with python class k instead of the matched one (example: `README_mcws_validation.md`) | `alt_python_c<k>/` |
 
 Response windows: every raster uses the full-run windows of the sort its spikes come from (stimulus latency - 30 ms
 to latency + duration + 30 ms); stimuli with latency > 400 ms or duration > 250 ms also get a default-window page
 (50-550 ms), in `*_default_window` folders.
 
 ## 5. Figures (python) and deck
+
+`mcws_validation`'s section 5 runs these after the report when it is given a python (`README_mcws_validation.md`).
 
 | script | input | output |
 |---|---|---|

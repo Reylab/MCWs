@@ -5,8 +5,10 @@ function cfg = validation_sessions(id, varargin)
 %   run_validation('pt11_ch328_second_pass')      % run_validation looks the id up
 %   cfg = validation_sessions('pt11_ch328_second_pass');
 %   validation_sessions()                         % list every id
-%   validation_sessions('add', id, folder, ch, stims, gt_times_file, gt_class)
-%                                                 % add a session for this MATLAB session only
+%   validation_sessions('add', id, folder, ch, stims, gt_times_file, gt_class[, python_class])
+%                                                 % add a session for this MATLAB session only;
+%                                                 % python_class = compare this python class instead of the
+%                                                 % one matched to GT (report in 'MCWs c<k>/', ppt_paths)
 %                                                 % (folder = absolute channel folder; used by mcws_validation)
 %
 % Row: id | channel folder | ch | stim list | reference | arm(s) | output folder | flags
@@ -91,8 +93,9 @@ persistent EXTRA                                 % sessions added at run time ('
 if isempty(EXTRA), EXTRA = cell(0, size(R, 2)); end
 if nargin >= 1 && strcmp(id, 'add')
     [nid, folder, ch, stims, tf, g] = varargin{1:6};
+    flags = {}; if numel(varargin) >= 7 && ~isempty(varargin{7}), flags = {'python_class', varargin{7}}; end
     row = {nid, folder, ch, stims, {'gt', 'hand selected', tf, gb, g}, {{'python', '', tf, gr, []}}, ...
-           sprintf('validation_gt_vs_python_class%d', g), {}};
+           sprintf('validation_gt_vs_python_class%d', g), flags};
     EXTRA(strcmp(EXTRA(:, 1), nid), :) = []; EXTRA(end + 1, :) = row;
     cfg = nid; return
 end
@@ -122,6 +125,8 @@ cfg.x_jitter   = 0.12;  % half-width of x jitter on the GT-vs-ARM paired-line pa
 if any(strcmp(r{8}, 'detections')), cfg.venn_detections = true; end
 if any(strcmp(r{8}, 'channel')),    cfg.channel_subsets = true; end
 cfg.tag = tag;
+cfg.python_class = [];                                   % python class given instead of matched to GT
+k = find(cellfun(@(x) isequal(x, 'python_class'), r{8}), 1); if ~isempty(k), cfg.python_class = r{8}{k + 1}; end
 if ~isempty(tag)                    % the tagged python arm, and the run's output in the tag's validation folder
     p = ppt_paths(cfg);
     for j = 1:numel(cfg.arms), cfg.arms(j).dir = fullfile(cfg.root, p.py); end

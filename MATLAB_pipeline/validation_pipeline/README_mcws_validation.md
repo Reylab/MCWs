@@ -1,24 +1,28 @@
-# mcws_validation.m -- one channel, every step
+# mcws_validation.m -- the whole validation of one channel, in one file
 
-Runs, for one channel folder: (optionally) the conversion of a python run into MATLAB arms, the grapes check, the
-comparisons with wave_clus and GT, the validation, the `for ppt` report, the python figures and the slide deck.
+For one channel folder, in order (the sections of the file):
 
-Paths (MicroWireSorter, data roots, wave_clus) come from `mcws_paths.m` / environment variables: `README.md`, section 0.
+1. check the folder has what the validation needs;
+2. (optional) convert a python sort into MATLAB arms, with their grapes;
+3. check every arm's grapes match its times file;
+4. for each GT unit: comparisons with wave_clus and GT, validation, the `for ppt` report, its checks;
+5. (optional, only when a python is given) the python figures, the second-pass pages and the slide deck.
+
+Sections 1-4 need MATLAB only. The python sorter itself (`test_full_pipeline.py`) is run before, separately.
+Paths (MicroWireSorter, data roots, wave_clus): `mcws_paths.m`, `README.md` section 0.
 
 ## Folder layout
-
-Put the files in one channel folder (subfolders as named):
 
 ```
 <channel folder>/
   <name>.NC5                              e.g. 'mRAMY08 raw_264.NC5' (the channel number is read from its name)
   NSx.mat  finalevents.mat  stimulus.mat  experiment_properties_online3.mat
-  hand selected/   times_<name>.mat  grapes_blanks.mat          GT
+  hand selected/   times_<name>.mat  grapes_blanks.mat              GT
   wave_clus notch/ times_<name>.mat  <name>_spikes.mat  fig2print_*.png     the wave_clus run (GT's notch)
 ```
 
-and either the python arms already converted (`python_recluster_<date>_clustered/_rescued/_second_pass`, in the
-folder or in `run <tag>/`), or a python output folder (`test_full_pipeline.py`) to convert: `'python_run'`.
+plus the python arms (`python_recluster_<date>_clustered / _rescued / _second_pass`, in the channel folder or in
+`run <tag>/`), or a python output folder to convert (`'python_run'`).
 
 ## Run
 
@@ -26,45 +30,53 @@ folder or in `run <tag>/`), or a python output folder (`test_full_pipeline.py`) 
 addpath('<repo>/MATLAB_pipeline/validation_pipeline')
 cd('<channel folder>')
 
-% one GT unit, arms already in the folder
-mcws_validation('gt_class', 3, 'stims', [615 44 842])
+mcws_validation(3, [615 44 842])                            % one GT unit, arms already in the folder
 
-% two GT units, convert a python run first, keep it apart from earlier runs with a tag
-mcws_validation('gt_class', [3 4], 'stims', {[133 418 404], [736 839 744]}, ...
-                'python_run', '/mnt/data0/recluster_runs/runs_isi3/p06_EMU-013_ch334', 'tag', 'isi3')
+mcws_validation([3 4], {[133 418 404], [736 839 744]}, ...    % two GT units, convert a python run first
+    'python_run', '/mnt/data0/recluster_runs/runs_isi3/p06_EMU-013_ch334', 'tag', 'isi3')
+
+mcws_validation(3, [615 44 842], 'tag', 'isi3', ...          % + figures, second-pass pages, deck
+    'python', '/path/to/MicroWireSorter/.venv/bin/python', 'deck_python', '~/.venvs/pptdeck/bin/python')
 ```
 
-| option | default | |
+| argument | default | |
 |---|---|---|
-| `gt_class` | required | GT class(es) to report on |
+| `gt_class` | required | GT class(es) in `hand selected/times_<name>.mat` |
 | `stims` | required | stimuli for the raster pages; one vector, or one per GT class in a cell |
-| `folder` | current folder | the channel folder |
-| `ch` | from the .NC5 name | channel number |
-| `python_run` | `''` | python output folder to convert first |
-| `tag` | `''` | `''`: arms in the channel folder, report in `for ppt`; `isi3`: `run isi3/`, `validation isi3/`, `for ppt isi3/` |
-| `steps` | all | any of `convert`, `report`, `figures`, `deck` |
-| `python`, `deck_python` | MicroWireSorter `.venv`, `~/.venvs/pptdeck` | pythons for the figures / the deck |
-| `rescue_sd` | 1 | the run's second-pass rescue radius (for the figures) |
+| `'folder'` | current folder | the channel folder |
+| `'python_run'` | none | python output folder (`test_full_pipeline.py`) to convert first |
+| `'tag'` | none | none: arms in the channel folder, report in `for ppt`; `'isi3'`: arms in `run isi3/`, validation in `validation isi3/`, report in `for ppt isi3/` |
+| `'python_class'` | none (matched) | compare this python class instead of the one matched to GT, one per GT class; report in `<report>/MCWs c<k>/` |
+| `'python'` | none | a python with MicroWireSorter's packages; given = run section 5 |
+| `'deck_python'` | `'python'` | a python with python-pptx, for the deck |
+| `'rescue_sd'` | 1 | the run's second-pass rescue radius (section 5 figures) |
 
-## What it does, in order
+Returns one row per GT class: report folder, check (true = PASS), matched python class. Several GT classes: each
+report is in `<report>/GT c<g>/`. Use a tag for every new python run so earlier arms and reports are kept.
 
-1. checks the files above are there;
-2. `python_run` given: converts its three sorts into arms (`build_python_arm_from_times`), copies their metrics and
-   the second-pass report;
-3. checks grapes = times in every arm (`check_arm_grapes`; stops if not);
-4. for each GT class: `ppt_session` -> `ppt_wc_py_destinations` -> `ppt_mahal_forced_rescued` ->
-   `ppt_not_rescued_by_mask` -> `ppt_check_unit` -> `ppt_flags`, the second-pass report pages, the Euclidean vs
-   Mahalanobis figure, the deck;
-5. the channel's reassignment figures (`reassignment_scores/`).
+## What each section calls
 
-Returns one row per GT class: the report folder and its check (true = PASS). With more than one GT class each report
-is in `<report>/GT c<g>/`.
+| section | calls | writes |
+|---|---|---|
+| 2 | `build_python_arm_from_times` per sort | arm folders: adapted times / spikes, `grapes_blanks.mat`, `grapes_blanks_rescue.mat`, `metrics/`, `second_pass_report/` |
+| 3 | `check_arm_grapes` | `[grapes]` lines; stops if any arm does not match |
+| 4 | `ppt_session`, `ppt_wc_py_destinations`, `ppt_mahal_forced_rescued`, `ppt_not_rescued_by_mask`, `ppt_check_unit`, `ppt_flags` | the validation folders and the report (`accounting.csv`, `flags.csv`, sections 01-10) |
+| 5 | `pdftoppm`, `mahal_exact.py`, `build_channel_deck.py`, `reassign_scores.py` | `01_metrics/python_second_pass/`, `10_mahal_forced_rescued/c<k>_euclid_vs_mahal.png`, the deck, `reassignment_scores/` |
 
-## Notes
+Section 5 runs outside MATLAB (it needs `pdftoppm` and the given pythons on that computer); a failed command there
+is a warning, the report from sections 1-4 is kept.
 
-* Without a tag the report goes in `for ppt/` and the arms are read from the channel folder; use a tag for every new
-  python run so earlier reports and arms are kept.
-* Nothing in `hand selected/` or `wave_clus notch/` is changed when a tag is used (venns and validation runs go in
-  the tag's validation folder); without a tag the wave_clus-side runs are written in `wave_clus notch/`.
-* Needs `pdftoppm` for the second-pass pages; the figures and the deck are skipped with a warning if their python
-  fails. Function details: `README.md`.
+## Comparing a different python class
+
+By default each GT unit is compared with the python class that holds most of its spikes (and wave_clus with the
+class matching that python class). To use a python class of your choice instead, give `'python_class'`: the whole
+validation and report then use that class, and go in their own `MCWs c<k>/` subfolders (report, validation runs),
+so the matched report is kept.
+
+```matlab
+mcws_validation(3, [615 44 842], 'tag', 'isi3', 'python_class', 2)        % GT c3 vs python c2 -> for ppt isi3/MCWs c2/
+mcws_validation([3 4], {s3, s4}, 'python_class', [2 5])                     % one python class per GT class
+```
+
+`ppt_compare_classes(session, multi, k)` does a similar comparison after a matched report, into
+`<report>/alt_python_c<k>/` (see `README.md`).

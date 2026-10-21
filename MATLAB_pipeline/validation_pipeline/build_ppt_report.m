@@ -56,7 +56,7 @@ end
 if ~have                                                  % GT's response windows (raster tables) for this python arm
     c = cfg; c.out_dir = state; c.stages = {'class_match', 'rasters'};
     c.arms = struct('name', 'python_sd1', 'dir', fullfile(o.root, o.python), 'times_file', tf, ...
-                    'grapes_file', 'grapes_blanks_rescue.mat', 'class', []);
+                    'grapes_file', 'grapes_blanks_rescue.mat', 'class', cfg.python_class);   % [] = matched to GT
     run_validation(c);
 end
 col.wc = [0.00 0.45 0.70]; col.py = [0.90 0.60 0.00]; col.both = [0.35 0.35 0.35]; col.q = [0.80 0.15 0.15];
@@ -72,7 +72,8 @@ sorts = struct('name', [{'gt', 'python'}, rn], 'file', [{fullfile(o.root, 'hand 
     fullfile(o.root, o.python, tf)}, arrayfun(@(r) fullfile(o.root, r.folder, tf), o.runs, 'UniformOutput', false)]);
 M = build_sort_membership(sorts, 'tol', o.tol, 'out_file', fullfile(out, sprintf('membership_ch%d.mat', ch)));
 P = M.python; G = M.gt;
-py_c = mode(G.python_class(G.class == g & G.python_class > 0));
+py_c = mode(G.python_class(G.class == g & G.python_class > 0));     % the python class matched to GT ...
+if ~isempty(cfg.python_class), py_c = cfg.python_class; end         % ... or the one given
 % 06: every GT and python class, all with the windows of that sort's MATCHED class (GT's class g, python's
 % matched class): the GT vs python run's reference table for GT spikes, its arm table for python spikes
 w = load(fullfile(state, 'validation_state.mat'), 'ref_tables_default');
@@ -89,6 +90,7 @@ M.classes = struct('gt', g, 'python', py_c);
 for r = 1:numel(o.runs)
     run = o.runs(r); nm = rn{r}; R = run.folder; wcf = fullfile(o.root, R);
     wco = wcf; if ~isempty(cfg.tag), wco = fullfile(pp.val, R); end   % its validation runs / venns
+    if strcmp(R, 'wave_clus notch'), wco = pp.wcval; end                 % (ppt_paths decides, also for a chosen class)
     W = M.(nm); wave = M.waves.(nm);
     wc_c = mode(P.([nm '_class'])(P.class == py_c & P.([nm '_class']) > 0));
     M.classes.(nm) = wc_c;
